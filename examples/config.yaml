@@ -1,0 +1,17 @@
+# KubeWise 配置文件示例
+# 复制到 ~/.kubewise.yaml 即可使用
+
+# Kubernetes配置文件路径，不填则默认使用 ~/.kube/config
+kubeconfig: "~/.kube/config"
+
+# LLM相关配置
+llm:
+  # 模型名称，支持 glm-5.1、qwen3、gpt-4o 等兼容OpenAI API的模型
+  model: "glm-5.1"
+  # API Key
+  api_key: "your-api-key-here"
+  # API Base URL，对于国产模型需要填写对应的API地址
+  # 智谱AI: https://open.bigmodel.cn/api/paas/v4/
+  # 通义千问: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # DeepSeek: https://api.deepseek.com/v1
+  api_base: "https://open.bigmodel.cn/api/paas/v4/"
