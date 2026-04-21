@@ -64,7 +64,10 @@ var chatCmd = &cobra.Command{
 		}
 
 		// 初始化路由Agent
-		routerAgent := router.New(k8sClient, llmClient)
+		routerAgent, err := router.New(k8sClient, llmClient)
+		if err != nil {
+			return fmt.Errorf("初始化路由Agent失败: %w", err)
+		}
 
 		// 处理查询
 		fmt.Println("\n处理中...")

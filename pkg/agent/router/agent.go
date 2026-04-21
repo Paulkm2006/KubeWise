@@ -20,12 +20,16 @@ type Agent struct {
 }
 
 // New 创建路由Agent
-func New(k8sClient *k8s.Client, llmClient *llm.Client) *Agent {
+func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
+	queryAgent, err := query.New(k8sClient, llmClient)
+	if err != nil {
+		return nil, fmt.Errorf("初始化查询Agent失败: %w", err)
+	}
 	return &Agent{
 		k8sClient:  k8sClient,
 		llmClient:  llmClient,
-		queryAgent: query.New(k8sClient, llmClient),
-	}
+		queryAgent: queryAgent,
+	}, nil
 }
 
 // HandleQuery 处理用户查询

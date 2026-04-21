@@ -1,177 +1,159 @@
 package llm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
+
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 )
 
-// Config LLM配置
-type Config struct {
-	Model   string `json:"model"`
-	APIKey  string `json:"api_key"`
-	APIBase string `json:"api_base"`
-}
-
-// Message 聊天消息
-type Message struct {
-	Role         string        `json:"role"`
-	Content      string        `json:"content"`
-	FunctionCall *FunctionCall `json:"function_call,omitempty"`
-}
-
-// FunctionCall 函数调用
-type FunctionCall struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
-}
-
-// ChatCompletionRequest 聊天补全请求
-type ChatCompletionRequest struct {
-	Model     string               `json:"model"`
-	Messages  []Message            `json:"messages"`
-	Functions []FunctionDefinition `json:"functions,omitempty"`
-}
-
-// FunctionDefinition 函数定义
-type FunctionDefinition struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters"`
-}
-
-// ChatCompletionResponse 聊天补全响应
-type ChatCompletionResponse struct {
-	Choices []struct {
-		Message struct {
-			Role         string        `json:"role"`
-			Content      string        `json:"content"`
-			FunctionCall *FunctionCall `json:"function_call,omitempty"`
-		} `json:"message"`
-		// 兼容GLM等模型的返回格式
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-}
-
-// GLMFunctionCall GLM模型返回的函数调用格式
-type GLMFunctionCall struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"parameters"`
-}
-
-// Client LLM客户端
+// Client LLM客户端，封装openai-go SDK
 type Client struct {
+	client openai.Client
 	config Config
-	client *http.Client
 }
 
-// NewClient 创建LLM客户端
+// NewClient 创建新的LLM客户端
 func NewClient(config Config) (*Client, error) {
-	if config.APIBase == "" {
-		config.APIBase = "https://api.openai.com/v1"
+	if config.APIKey == "" {
+		return nil, fmt.Errorf("API key is required")
+	}
+	if config.Model == "" {
+		config.Model = "glm-5.1" // 默认模型
 	}
 
+	// 初始化openai客户端
+	opts := []option.RequestOption{
+		option.WithAPIKey(config.APIKey),
+	}
+	if config.APIBase != "" {
+		opts = append(opts, option.WithBaseURL(config.APIBase))
+	}
+
+	client := openai.NewClient(opts...)
+
 	return &Client{
+		client: client,
 		config: config,
-		client: &http.Client{},
 	}, nil
 }
 
-// ChatCompletion 聊天补全
+// ChatCompletion 聊天补全接口，支持工具调用
 func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functions []FunctionDefinition) (*Message, error) {
-	reqBody := ChatCompletionRequest{
-		Model:     c.config.Model,
-		Messages:  messages,
-		Functions: functions,
+	// 转换消息格式到openai格式
+	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
+	for i, msg := range messages {
+		switch msg.Role {
+		case "user":
+			openaiMessages[i] = openai.UserMessage(msg.Content)
+		case "assistant":
+			openaiMessages[i] = openai.AssistantMessage(msg.Content)
+		case "system":
+			openaiMessages[i] = openai.SystemMessage(msg.Content)
+		case "developer":
+			openaiMessages[i] = openai.DeveloperMessage(msg.Content)
+		case "tool", "function":
+			// 工具返回消息
+			openaiMessages[i] = openai.ToolMessage(msg.Content, msg.ToolCallID)
+		default:
+			return nil, fmt.Errorf("unsupported message role: %s", msg.Role)
+		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	// 构建请求参数
+	params := openai.ChatCompletionNewParams{
+		Messages: openaiMessages,
+		Model:    openai.ChatModel(c.config.Model),
+	}
+
+	// 构建请求选项
+	reqOpts := []option.RequestOption{}
+
+	// 如果有工具定义，通过JSON Set添加到请求中
+	if len(functions) > 0 {
+		// 转换工具定义
+		tools := make([]map[string]any, len(functions))
+		for i, fn := range functions {
+			tools[i] = map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name":        fn.Name,
+					"description": fn.Description,
+					"parameters":  fn.Parameters,
+				},
+			}
+		}
+		reqOpts = append(reqOpts, option.WithJSONSet("tools", tools))
+	}
+
+	// 调用OpenAI API
+	resp, err := c.client.Chat.Completions.New(ctx, params, reqOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("序列化请求失败: %w", err)
+		return nil, fmt.Errorf("chat completion failed: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", c.config.APIBase)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("no response from LLM")
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.config.APIKey))
+	choice := resp.Choices[0]
 
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("发送请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API请求失败，状态码: %d，响应: %s", resp.StatusCode, string(body))
+	// 转换响应回我们的Message格式
+	result := &Message{
+		Role:    string(choice.Message.Role),
+		Content: choice.Message.Content,
 	}
 
-	var respBody ChatCompletionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
+	// 检查是否有工具调用（通过原始JSON解析）
+	var rawResp map[string]any
+	respJSON, err := json.Marshal(resp)
+	if err == nil {
+		if err := json.Unmarshal(respJSON, &rawResp); err == nil {
+			if choices, ok := rawResp["choices"].([]any); ok && len(choices) > 0 {
+				if choice, ok := choices[0].(map[string]any); ok {
+					if message, ok := choice["message"].(map[string]any); ok {
+						// 处理工具调用
+						if toolCallsRaw, ok := message["tool_calls"].([]any); ok && len(toolCallsRaw) > 0 {
+							result.ToolCalls = make([]ToolCall, len(toolCallsRaw))
+							for j, tcRaw := range toolCallsRaw {
+								if tc, ok := tcRaw.(map[string]any); ok {
+									functionRaw, _ := tc["function"].(map[string]any)
+									if functionRaw == nil {
+										continue
+									}
 
-	if len(respBody.Choices) == 0 {
-		return nil, fmt.Errorf("API返回空响应")
-	}
+									name, _ := functionRaw["name"].(string)
+									argsStr, _ := functionRaw["arguments"].(string)
 
-	choice := respBody.Choices[0]
-	message := &Message{
-		Role:         choice.Message.Role,
-		Content:      choice.Message.Content,
-		FunctionCall: choice.Message.FunctionCall,
-	}
+									var args map[string]any
+									if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+										args = map[string]any{
+											"raw_arguments": argsStr,
+										}
+									}
 
-	// 处理GLM等模型的特殊函数调用格式 <|FunctionCallBegin|>...<|FunctionCallEnd|>
-	if message.FunctionCall == nil && strings.Contains(message.Content, "<|FunctionCallBegin|>") {
-		// 提取函数调用内容
-		startIdx := strings.Index(message.Content, "<|FunctionCallBegin|>") + len("<|FunctionCallBegin|>")
-		endIdx := strings.Index(message.Content, "<|FunctionCallEnd|>")
-		if endIdx > startIdx {
-			funcCallJSON := strings.TrimSpace(message.Content[startIdx:endIdx])
+									id, _ := tc["id"].(string)
+									typeStr, _ := tc["type"].(string)
 
-			// 尝试解析为GLM格式的函数调用
-			var glmFuncCalls []GLMFunctionCall
-			if err := json.Unmarshal([]byte(funcCallJSON), &glmFuncCalls); err == nil && len(glmFuncCalls) > 0 {
-				glmFunc := glmFuncCalls[0]
-				message.FunctionCall = &FunctionCall{
-					Name:      glmFunc.Name,
-					Arguments: glmFunc.Arguments,
-				}
-				// 清空content，避免被当作普通回复
-				message.Content = ""
-			} else {
-				// 尝试直接解析为单个FunctionCall
-				var singleFuncCall FunctionCall
-				if err := json.Unmarshal([]byte(funcCallJSON), &singleFuncCall); err == nil {
-					message.FunctionCall = &singleFuncCall
-					message.Content = ""
+									result.ToolCalls[j] = ToolCall{
+										ID:   id,
+										Type: typeStr,
+										Function: FunctionCall{
+											Name:      name,
+											Arguments: args,
+										},
+									}
+								}
+							}
+
+						}
+					}
 				}
 			}
 		}
 	}
 
-	return message, nil
-}
-
-// Completion 文本补全
-func (c *Client) Completion(ctx context.Context, prompt string) (string, error) {
-	messages := []Message{
-		{Role: "user", Content: prompt},
-	}
-
-	resp, err := c.ChatCompletion(ctx, messages, nil)
-	if err != nil {
-		return "", err
-	}
-
-	return resp.Content, nil
+	return result, nil
 }

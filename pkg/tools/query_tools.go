@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/kubewise/kubewise/pkg/k8s"
 )
@@ -177,5 +178,110 @@ func (t *QueryTools) ListNamespaces(ctx context.Context) (string, error) {
 	}
 
 	result.WriteString(fmt.Sprintf("\n总计: %d个命名空间", len(namespaces)))
+	return result.String(), nil
+}
+
+// ListConfigMapsInNamespace 列出指定命名空间下的ConfigMap
+func (t *QueryTools) ListConfigMapsInNamespace(ctx context.Context, namespace string) (string, error) {
+	configMaps, err := t.k8sClient.ListConfigMaps(ctx, namespace)
+	if err != nil {
+		return "", fmt.Errorf("获取ConfigMap列表失败: %w", err)
+	}
+
+	var result strings.Builder
+	if namespace == "" {
+		result.WriteString("所有命名空间的ConfigMap列表:\n")
+	} else {
+		result.WriteString(fmt.Sprintf("命名空间 %s 的ConfigMap列表:\n", namespace))
+	}
+	result.WriteString("命名空间\t名称\t数据项数\t创建时间\n")
+	result.WriteString("--------------------------------------------------------\n")
+
+	for _, cm := range configMaps {
+		result.WriteString(fmt.Sprintf("%s\t%s\t%d\t%s\n",
+			cm.Namespace, cm.Name, len(cm.Data), cm.CreationTimestamp.Format("2006-01-02 15:04:05")))
+	}
+
+	result.WriteString(fmt.Sprintf("\n总计: %d个ConfigMap", len(configMaps)))
+	return result.String(), nil
+}
+
+// GetConfigMapContent 获取指定ConfigMap的内容
+func (t *QueryTools) GetConfigMapContent(ctx context.Context, configmapName, namespace string) (string, error) {
+	cm, err := t.k8sClient.GetConfigMap(ctx, namespace, configmapName)
+	if err != nil {
+		return "", fmt.Errorf("获取ConfigMap信息失败: %w", err)
+	}
+
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("ConfigMap %s/%s 的内容:\n", namespace, configmapName))
+	result.WriteString(fmt.Sprintf("创建时间: %s\n", cm.CreationTimestamp.Format("2006-01-02 15:04:05")))
+
+	if len(cm.Labels) > 0 {
+		result.WriteString("\n标签:\n")
+		for k, v := range cm.Labels {
+			result.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
+		}
+	}
+
+	if len(cm.Annotations) > 0 {
+		result.WriteString("\n注解:\n")
+		for k, v := range cm.Annotations {
+			result.WriteString(fmt.Sprintf("  %s: %s\n", k, v))
+		}
+	}
+
+	if len(cm.Data) > 0 {
+		result.WriteString("\n数据:\n")
+		for k, v := range cm.Data {
+			result.WriteString(fmt.Sprintf("  %s:\n    %s\n", k, strings.ReplaceAll(v, "\n", "\n    ")))
+		}
+	}
+
+	return result.String(), nil
+}
+
+// ListCustomResourcesByGvr 根据GVR列出自定义资源
+func (t *QueryTools) ListCustomResourcesByGvr(ctx context.Context, group, version, resource, namespace string) (string, error) {
+	gvr := schema.GroupVersionResource{
+		Group:    group,
+		Version:  version,
+		Resource: resource,
+	}
+
+	customResources, err := t.k8sClient.ListCustomResources(ctx, gvr, namespace)
+	if err != nil {
+		return "", fmt.Errorf("获取自定义资源列表失败: %w", err)
+	}
+
+	var result strings.Builder
+	if namespace == "" {
+		result.WriteString(fmt.Sprintf("所有命名空间的 %s.%s.%s 自定义资源列表:\n", resource, version, group))
+	} else {
+		result.WriteString(fmt.Sprintf("命名空间 %s 的 %s.%s.%s 自定义资源列表:\n", namespace, resource, version, group))
+	}
+
+	result.WriteString("名称\t命名空间\t创建时间\n")
+	result.WriteString("----------------------------------------\n")
+
+	for _, cr := range customResources {
+		crObj, ok := cr.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		metadata, ok := crObj["metadata"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		name := metadata["name"].(string)
+		ns := metadata["namespace"].(string)
+		creationTimestamp := metadata["creationTimestamp"].(string)
+
+		result.WriteString(fmt.Sprintf("%s\t%s\t%s\n", name, ns, creationTimestamp))
+	}
+
+	result.WriteString(fmt.Sprintf("\n总计: %d个自定义资源", len(customResources)))
 	return result.String(), nil
 }
