@@ -65,7 +65,6 @@ KubeWise is a Kubernetes intelligent operation and maintenance Agent system that
 ### Tool Organization
 Query tools are located in `pkg/tools/v1/query/`, each as a separate file:
 - `list_persistent_volumes.go`: List all PVs in the cluster
-- `get_largest_pv.go`: Get the largest PV by capacity
 - `find_pods_using_pvc.go`: Find pods using a specific PVC
 - `list_pods_in_namespace.go`: List pods in a namespace
 - `get_pod_resource_usage.go`: Get resource configuration for a specific pod

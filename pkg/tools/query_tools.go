@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -48,36 +47,6 @@ func (t *QueryTools) ListPersistentVolumes(ctx context.Context) (string, error) 
 	}
 
 	return result.String(), nil
-}
-
-// GetLargestPV 获取最大的PV信息
-func (t *QueryTools) GetLargestPV(ctx context.Context) (string, error) {
-	pvs, err := t.k8sClient.ListPersistentVolumes(ctx)
-	if err != nil {
-		return "", fmt.Errorf("获取PV列表失败: %w", err)
-	}
-
-	if len(pvs) == 0 {
-		return "集群中没有PV", nil
-	}
-
-	// 按容量排序
-	sort.Slice(pvs, func(i, j int) bool {
-		capI := pvs[i].Spec.Capacity.Storage().Value()
-		capJ := pvs[j].Spec.Capacity.Storage().Value()
-		return capI > capJ
-	})
-
-	largestPV := pvs[0]
-	capacity := largestPV.Spec.Capacity.Storage().String()
-	status := string(largestPV.Status.Phase)
-	claimRef := ""
-	if largestPV.Spec.ClaimRef != nil {
-		claimRef = fmt.Sprintf("%s/%s", largestPV.Spec.ClaimRef.Namespace, largestPV.Spec.ClaimRef.Name)
-	}
-
-	return fmt.Sprintf("最大的PV是: %s\n容量: %s\n状态: %s\n绑定PVC: %s",
-		largestPV.Name, capacity, status, claimRef), nil
 }
 
 // FindPodsUsingPVC 查找使用指定PVC的Pod
