@@ -46,8 +46,8 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 	if intent.Entities.Namespace != "" {
 		fmt.Printf("目标命名空间：%s\n", intent.Entities.Namespace)
 	}
-	if intent.Entities.ResourceName != "" {
-		fmt.Printf("目标资源：%s/%s\n", intent.Entities.ResourceType, intent.Entities.ResourceName)
+	if intent.Entities.ResourceName != "" && len(intent.Entities.ResourceType) > 0 {
+		fmt.Printf("目标资源：%s/%s\n", strings.Join([]string(intent.Entities.ResourceType), ","), intent.Entities.ResourceName)
 	}
 
 	// 2. 路由到对应的Agent处理

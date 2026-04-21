@@ -42,6 +42,24 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
 // buildDynamicSystemPrompt 动态生成系统提示词
 func (a *Agent) buildDynamicSystemPrompt() string {
 	return `你是Kubernetes智能查询助手，可以调用工具来回答用户的问题。
+你现在拥有通用资源查询能力：
+1. 使用 list_resources_by_gvr 工具可以查询任意类型的Kubernetes资源列表（包括内置资源和自定义资源）
+2. 使用 get_resource_by_gvr_and_name 工具可以查询任意单个Kubernetes资源的详细信息
+3. 对于核心API组的资源（如pods、services、configmaps等），group参数请设置为空字符串""
+4. 常见的资源GVR对照表：
+   - Pod: group="", version="v1", resource="pods"
+   - Service: group="", version="v1", resource="services"
+   - ConfigMap: group="", version="v1", resource="configmaps"
+   - Secret: group="", version="v1", resource="secrets"
+   - Deployment: group="apps", version="v1", resource="deployments"
+   - StatefulSet: group="apps", version="v1", resource="statefulsets"
+   - DaemonSet: group="apps", version="v1", resource="daemonsets"
+   - Job: group="batch", version="v1", resource="jobs"
+   - CronJob: group="batch", version="v1", resource="cronjobs"
+   - PersistentVolume: group="", version="v1", resource="persistentvolumes"
+   - PersistentVolumeClaim: group="", version="v1", resource="persistentvolumeclaims"
+   - Namespace: group="", version="v1", resource="namespaces"
+   - Node: group="", version="v1", resource="nodes"
 如果已经获取到足够的信息，请直接用自然语言回答用户的问题，不要调用不必要的工具。`
 }
 
@@ -61,8 +79,8 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	}
 
 	// 最多允许5轮工具调用
-	maxSteps := 5
-	for step := 0; step < maxSteps; step++ {
+	maxSteps := 10
+	for step := range maxSteps {
 		// 调用LLM
 		resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
 		if err != nil {

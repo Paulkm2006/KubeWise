@@ -12,46 +12,46 @@ import (
 	"github.com/kubewise/kubewise/pkg/tool"
 )
 
-// GetCustomResourceByGvrAndNameTool 获取指定自定义资源详情工具
-type GetCustomResourceByGvrAndNameTool struct {
+// GetResourceByGvrAndNameTool 获取指定资源详情工具
+type GetResourceByGvrAndNameTool struct {
 	k8sClient *k8s.Client
 }
 
-// NewGetCustomResourceByGvrAndNameTool 创建获取自定义资源详情工具实例
-func NewGetCustomResourceByGvrAndNameTool(k8sClient *k8s.Client) *GetCustomResourceByGvrAndNameTool {
-	return &GetCustomResourceByGvrAndNameTool{k8sClient: k8sClient}
+// NewGetResourceByGvrAndNameTool 创建获取资源详情工具实例
+func NewGetResourceByGvrAndNameTool(k8sClient *k8s.Client) *GetResourceByGvrAndNameTool {
+	return &GetResourceByGvrAndNameTool{k8sClient: k8sClient}
 }
 
 // Name 返回工具唯一标识
-func (t *GetCustomResourceByGvrAndNameTool) Name() string {
-	return "get_custom_resource_by_gvr_and_name"
+func (t *GetResourceByGvrAndNameTool) Name() string {
+	return "get_resource_by_gvr_and_name"
 }
 
 // Description 返回工具功能描述
-func (t *GetCustomResourceByGvrAndNameTool) Description() string {
-	return "根据GVR（Group/Version/Resource）和名称获取指定自定义资源的详细内容"
+func (t *GetResourceByGvrAndNameTool) Description() string {
+	return "根据GVR（Group/Version/Resource）和名称获取指定Kubernetes资源的详细内容，支持内置资源和自定义资源"
 }
 
 // Parameters 返回工具参数定义（JSON Schema格式）
-func (t *GetCustomResourceByGvrAndNameTool) Parameters() map[string]any {
+func (t *GetResourceByGvrAndNameTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"group": map[string]any{
 				"type":        "string",
-				"description": "自定义资源的API组",
+				"description": "资源的API组，核心API组为空字符串，例如：\"\"（核心API组）、\"apps\"、\"batch\"等",
 			},
 			"version": map[string]any{
 				"type":        "string",
-				"description": "自定义资源的API版本",
+				"description": "资源的API版本，例如：\"v1\"、\"v1beta1\"等",
 			},
 			"resource": map[string]any{
 				"type":        "string",
-				"description": "自定义资源的资源类型名称（复数形式）",
+				"description": "资源类型的复数名称，例如：\"pods\"、\"services\"、\"deployments\"等",
 			},
 			"name": map[string]any{
 				"type":        "string",
-				"description": "自定义资源的名称，使用metadata.name字段的值",
+				"description": "资源的名称，使用metadata.name字段的值",
 			},
 			"namespace": map[string]any{
 				"type":        "string",
@@ -63,10 +63,10 @@ func (t *GetCustomResourceByGvrAndNameTool) Parameters() map[string]any {
 }
 
 // Execute 执行工具调用
-func (t *GetCustomResourceByGvrAndNameTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+func (t *GetResourceByGvrAndNameTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	group, ok := args["group"].(string)
-	if !ok || group == "" {
-		return "", fmt.Errorf("参数group不能为空")
+	if !ok {
+		return "", fmt.Errorf("参数group必须为字符串")
 	}
 
 	version, ok := args["version"].(string)
@@ -103,9 +103,17 @@ func (t *GetCustomResourceByGvrAndNameTool) Execute(ctx context.Context, args ma
 	// 格式化输出
 	var result strings.Builder
 	if namespace == "" {
-		fmt.Fprintf(&result, "集群级自定义资源 %s/%s/%s/%s 的详情:\n", group, version, resource, name)
+		if group == "" {
+			fmt.Fprintf(&result, "集群级资源 %s/%s/%s 的详情:\n", version, resource, name)
+		} else {
+			fmt.Fprintf(&result, "集群级资源 %s/%s/%s/%s 的详情:\n", group, version, resource, name)
+		}
 	} else {
-		fmt.Fprintf(&result, "命名空间 %s 下的自定义资源 %s/%s/%s/%s 的详情:\n", namespace, group, version, resource, name)
+		if group == "" {
+			fmt.Fprintf(&result, "命名空间 %s 下的资源 %s/%s/%s 的详情:\n", namespace, version, resource, name)
+		} else {
+			fmt.Fprintf(&result, "命名空间 %s 下的资源 %s/%s/%s/%s 的详情:\n", namespace, group, version, resource, name)
+		}
 	}
 
 	// 转换为格式化JSON
@@ -121,26 +129,26 @@ func (t *GetCustomResourceByGvrAndNameTool) Execute(ctx context.Context, args ma
 // 注册工具到全局注册中心
 func init() {
 	tool.RegisterGlobal(tool.ToolMetadata{
-		Name:        "get_custom_resource_by_gvr_and_name",
-		Description: "根据GVR（Group/Version/Resource）和名称获取指定自定义资源的详细内容",
+		Name:        "get_resource_by_gvr_and_name",
+		Description: "根据GVR（Group/Version/Resource）和名称获取指定Kubernetes资源的详细内容，支持内置资源和自定义资源",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"group": map[string]any{
 					"type":        "string",
-					"description": "自定义资源的API组",
+					"description": "资源的API组，核心API组为空字符串，例如：\"\"（核心API组）、\"apps\"、\"batch\"等",
 				},
 				"version": map[string]any{
 					"type":        "string",
-					"description": "自定义资源的API版本",
+					"description": "资源的API版本，例如：\"v1\"、\"v1beta1\"等",
 				},
 				"resource": map[string]any{
 					"type":        "string",
-					"description": "自定义资源的资源类型名称（复数形式）",
+					"description": "资源类型的复数名称，例如：\"pods\"、\"services\"、\"deployments\"等",
 				},
 				"name": map[string]any{
 					"type":        "string",
-					"description": "自定义资源的名称",
+					"description": "资源的名称",
 				},
 				"namespace": map[string]any{
 					"type":        "string",
@@ -154,7 +162,46 @@ func init() {
 			if !ok {
 				return nil, fmt.Errorf("invalid dependency type")
 			}
-			return NewGetCustomResourceByGvrAndNameTool(toolDep.K8sClient), nil
+			return NewGetResourceByGvrAndNameTool(toolDep.K8sClient), nil
+		},
+	})
+
+	// 保留旧工具名称的注册，确保向后兼容
+	tool.RegisterGlobal(tool.ToolMetadata{
+		Name:        "get_custom_resource_by_gvr_and_name",
+		Description: "根据GVR（Group/Version/Resource）和名称获取指定自定义资源的详细内容（已废弃，请使用get_resource_by_gvr_and_name）",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"group": map[string]any{
+					"type":        "string",
+					"description": "资源的API组，核心API组为空字符串，例如：\"\"（核心API组）、\"apps\"、\"batch\"等",
+				},
+				"version": map[string]any{
+					"type":        "string",
+					"description": "资源的API版本，例如：\"v1\"、\"v1beta1\"等",
+				},
+				"resource": map[string]any{
+					"type":        "string",
+					"description": "资源类型的复数名称，例如：\"pods\"、\"services\"、\"deployments\"等",
+				},
+				"name": map[string]any{
+					"type":        "string",
+					"description": "资源的名称",
+				},
+				"namespace": map[string]any{
+					"type":        "string",
+					"description": "命名空间，集群级资源不需要提供，命名空间级资源必须提供",
+				},
+			},
+			"required": []string{"group", "version", "resource", "name"},
+		},
+		Factory: func(dep any) (tool.Tool, error) {
+			toolDep, ok := dep.(tool.ToolDependency)
+			if !ok {
+				return nil, fmt.Errorf("invalid dependency type")
+			}
+			return NewGetResourceByGvrAndNameTool(toolDep.K8sClient), nil
 		},
 	})
 }

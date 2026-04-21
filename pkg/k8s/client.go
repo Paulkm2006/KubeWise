@@ -7,6 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -146,7 +147,17 @@ func (c *Client) GetConfigMap(ctx context.Context, namespace, cmName string) (*c
 
 // ListCustomResources 获取指定GroupVersionResource的自定义资源
 func (c *Client) ListCustomResources(ctx context.Context, gvr schema.GroupVersionResource, namespace string) ([]any, error) {
-	result, err := c.dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	var result *unstructured.UnstructuredList
+	var err error
+
+	if namespace == "" {
+		// 空命名空间表示查询所有命名空间的资源
+		result, err = c.dynamicClient.Resource(gvr).List(ctx, metav1.ListOptions{})
+	} else {
+		// 查询指定命名空间的资源
+		result, err = c.dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +171,17 @@ func (c *Client) ListCustomResources(ctx context.Context, gvr schema.GroupVersio
 
 // GetCustomResource 获取指定名称的自定义资源
 func (c *Client) GetCustomResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (any, error) {
-	result, err := c.dynamicClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	var result *unstructured.Unstructured
+	var err error
+
+	if namespace == "" {
+		// 空命名空间表示查询集群级资源
+		result, err = c.dynamicClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+	} else {
+		// 查询指定命名空间的资源
+		result, err = c.dynamicClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	}
+
 	if err != nil {
 		return nil, err
 	}

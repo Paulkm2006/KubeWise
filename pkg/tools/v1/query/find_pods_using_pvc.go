@@ -42,10 +42,10 @@ func (t *FindPodsUsingPVCTool) Parameters() map[string]any {
 			},
 			"namespace": map[string]any{
 				"type":        "string",
-				"description": "PVC所在的命名空间",
+				"description": "PVC所在的命名空间，可选，不指定则在所有命名空间中查找",
 			},
 		},
-		"required": []string{"pvcName", "namespace"},
+		"required": []string{"pvcName"},
 	}
 }
 
@@ -56,9 +56,9 @@ func (t *FindPodsUsingPVCTool) Execute(ctx context.Context, args map[string]any)
 		return "", fmt.Errorf("参数pvcName不能为空")
 	}
 
-	namespace, ok := args["namespace"].(string)
-	if !ok || namespace == "" {
-		return "", fmt.Errorf("参数namespace不能为空")
+	namespace := ""
+	if ns, ok := args["namespace"].(string); ok {
+		namespace = ns
 	}
 
 	pods, err := t.k8sClient.ListPods(ctx, namespace)
@@ -77,11 +77,18 @@ func (t *FindPodsUsingPVCTool) Execute(ctx context.Context, args map[string]any)
 	}
 
 	if len(usingPods) == 0 {
+		if namespace == "" {
+			return fmt.Sprintf("没有找到使用PVC名称为 %s 的Pod（在所有命名空间中查找）", pvcName), nil
+		}
 		return fmt.Sprintf("没有找到使用PVC %s/%s 的Pod", namespace, pvcName), nil
 	}
 
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("使用PVC %s/%s 的Pod:\n", namespace, pvcName))
+	if namespace == "" {
+		result.WriteString(fmt.Sprintf("在所有命名空间中找到使用PVC名称为 %s 的Pod:\n", pvcName))
+	} else {
+		result.WriteString(fmt.Sprintf("使用PVC %s/%s 的Pod:\n", namespace, pvcName))
+	}
 	for _, pod := range usingPods {
 		result.WriteString(fmt.Sprintf("- %s/%s (状态: %s)\n", pod.Namespace, pod.Name, pod.Status.Phase))
 	}
@@ -93,7 +100,7 @@ func (t *FindPodsUsingPVCTool) Execute(ctx context.Context, args map[string]any)
 func init() {
 	tool.RegisterGlobal(tool.ToolMetadata{
 		Name:        "find_pods_using_pvc",
-		Description: "查找使用指定PVC的所有Pod",
+		Description: "查找使用指定PVC的所有Pod，不指定命名空间则在所有命名空间中查找",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -103,10 +110,10 @@ func init() {
 				},
 				"namespace": map[string]any{
 					"type":        "string",
-					"description": "PVC所在的命名空间",
+					"description": "PVC所在的命名空间，可选，不指定则在所有命名空间中查找",
 				},
 			},
-			"required": []string{"pvcName", "namespace"},
+			"required": []string{"pvcName"},
 		},
 		Factory: func(dep any) (tool.Tool, error) {
 			toolDep, ok := dep.(tool.ToolDependency)
