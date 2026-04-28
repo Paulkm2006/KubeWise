@@ -95,13 +95,15 @@ func (c *Client) ListPods(ctx context.Context, namespace string) ([]corev1.Pod, 
 	return podList.Items, nil
 }
 
-// GetPodLogs 获取Pod日志
-func (c *Client) GetPodLogs(ctx context.Context, namespace, podName, containerName string) (string, error) {
+// GetPodLogs 获取Pod日志，tailLines为0时使用默认100行
+func (c *Client) GetPodLogs(ctx context.Context, namespace, podName, containerName string, tailLines int64) (string, error) {
+	if tailLines <= 0 {
+		tailLines = 100
+	}
 	req := c.clientset.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
 		Container: containerName,
-		TailLines: ptr(int64(100)),
+		TailLines: ptr(tailLines),
 	})
-
 	logs, err := req.DoRaw(ctx)
 	if err != nil {
 		return "", err
@@ -186,6 +188,36 @@ func (c *Client) GetCustomResource(ctx context.Context, gvr schema.GroupVersionR
 		return nil, err
 	}
 	return result.Object, nil
+}
+
+// GetEvents 获取指定资源相关的K8s事件
+func (c *Client) GetEvents(ctx context.Context, namespace, involvedObjectName string) ([]corev1.Event, error) {
+	fieldSelector := fmt.Sprintf("involvedObject.name=%s", involvedObjectName)
+	eventList, err := c.clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: fieldSelector,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return eventList.Items, nil
+}
+
+// GetEndpoints 获取Service对应的Endpoints
+func (c *Client) GetEndpoints(ctx context.Context, namespace, serviceName string) (*corev1.Endpoints, error) {
+	ep, err := c.clientset.CoreV1().Endpoints(namespace).Get(ctx, serviceName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return ep, nil
+}
+
+// GetNodeList 获取所有节点列表
+func (c *Client) GetNodeList(ctx context.Context) ([]corev1.Node, error) {
+	nodeList, err := c.clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return nodeList.Items, nil
 }
 
 func ptr[T any](v T) *T {
