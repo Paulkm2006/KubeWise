@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/asus/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/requesting-code-review/**)",
+      "Bash(git commit -m ' *)",
+      "Bash(make build *)",
+      "Bash(git -C *)",
+      "Bash(git commit *)",
+      "Bash(go test *)",
+      "Bash(golangci-lint run *)",
+      "Bash(make test *)"
+    ]
+  }
+}
