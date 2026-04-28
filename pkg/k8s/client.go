@@ -193,6 +193,9 @@ func (c *Client) GetCustomResource(ctx context.Context, gvr schema.GroupVersionR
 // GetEvents 获取指定资源相关的K8s事件
 func (c *Client) GetEvents(ctx context.Context, namespace, involvedObjectName string) ([]corev1.Event, error) {
 	fieldSelector := fmt.Sprintf("involvedObject.name=%s", involvedObjectName)
+	if namespace != "" {
+		fieldSelector += fmt.Sprintf(",involvedObject.namespace=%s", namespace)
+	}
 	eventList, err := c.clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
 		FieldSelector: fieldSelector,
 	})
@@ -211,8 +214,8 @@ func (c *Client) GetEndpoints(ctx context.Context, namespace, serviceName string
 	return ep, nil
 }
 
-// GetNodeList 获取所有节点列表
-func (c *Client) GetNodeList(ctx context.Context) ([]corev1.Node, error) {
+// ListNodes 获取所有节点列表
+func (c *Client) ListNodes(ctx context.Context) ([]corev1.Node, error) {
 	nodeList, err := c.clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
