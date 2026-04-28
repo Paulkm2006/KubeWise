@@ -103,6 +103,9 @@ func TestAnalyzePodSecurity_SecurePod_NoFindings(t *testing.T) {
 		}),
 	}
 	result := analyzePodSecurity(pods)
+	if !strings.Contains(result, "未发现安全问题") {
+		t.Errorf("expected no findings message, got: %s", result)
+	}
 	if strings.Contains(result, "[CRITICAL]") || strings.Contains(result, "[HIGH]") {
 		t.Errorf("expected no CRITICAL/HIGH findings for secure pod, got: %s", result)
 	}

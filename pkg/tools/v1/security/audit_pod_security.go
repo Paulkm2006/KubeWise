@@ -79,7 +79,9 @@ func analyzePodSecurity(pods []corev1.Pod) string {
 		}
 
 		// 容器级检查（包含 initContainers）
-		allContainers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
+		allContainers := make([]corev1.Container, 0, len(pod.Spec.InitContainers)+len(pod.Spec.Containers))
+		allContainers = append(allContainers, pod.Spec.InitContainers...)
+		allContainers = append(allContainers, pod.Spec.Containers...)
 		for _, c := range allContainers {
 			cRef := fmt.Sprintf("%s 容器 %q", podRef, c.Name)
 
@@ -89,25 +91,23 @@ func analyzePodSecurity(pods []corev1.Pod) string {
 			}
 
 			// [HIGH] allowPrivilegeEscalation 为 true 或未设置
-			ape := true // default: vulnerable
+			allowPrivEscalation := true // default: vulnerable
 			if c.SecurityContext != nil && c.SecurityContext.AllowPrivilegeEscalation != nil {
-				ape = *c.SecurityContext.AllowPrivilegeEscalation
+				allowPrivEscalation = *c.SecurityContext.AllowPrivilegeEscalation
 			}
-			if ape {
+			if allowPrivEscalation {
 				findings = append(findings, fmt.Sprintf("[HIGH] %s: allowPrivilegeEscalation 为 true 或未设置", cRef))
 			}
 
 			// [HIGH] 可能以 root 用户运行
 			mayRunAsRoot := true
 			if c.SecurityContext != nil {
-				if c.SecurityContext.RunAsNonRoot != nil && *c.SecurityContext.RunAsNonRoot {
-					mayRunAsRoot = false
-				}
-				if c.SecurityContext.RunAsUser != nil && *c.SecurityContext.RunAsUser != 0 {
-					mayRunAsRoot = false
-				}
 				if c.SecurityContext.RunAsUser != nil && *c.SecurityContext.RunAsUser == 0 {
 					mayRunAsRoot = true
+				} else if c.SecurityContext.RunAsNonRoot != nil && *c.SecurityContext.RunAsNonRoot {
+					mayRunAsRoot = false
+				} else if c.SecurityContext.RunAsUser != nil && *c.SecurityContext.RunAsUser != 0 {
+					mayRunAsRoot = false
 				}
 			}
 			if mayRunAsRoot {
