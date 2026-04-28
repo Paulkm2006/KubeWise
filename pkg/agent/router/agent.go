@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/kubewise/kubewise/pkg/agent/query"
+	"github.com/kubewise/kubewise/pkg/agent/security"
 	"github.com/kubewise/kubewise/pkg/agent/troubleshooting"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
@@ -19,6 +20,7 @@ type Agent struct {
 	llmClient            *llm.Client
 	queryAgent           *query.Agent
 	troubleshootingAgent *troubleshooting.Agent
+	securityAgent        *security.Agent
 }
 
 // New 创建路由Agent
@@ -31,11 +33,16 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("初始化故障排查Agent失败: %w", err)
 	}
+	securityAgent, err := security.New(k8sClient, llmClient)
+	if err != nil {
+		return nil, fmt.Errorf("初始化安全审计Agent失败: %w", err)
+	}
 	return &Agent{
 		k8sClient:            k8sClient,
 		llmClient:            llmClient,
 		queryAgent:           queryAgent,
 		troubleshootingAgent: troubleshootingAgent,
+		securityAgent:        securityAgent,
 	}, nil
 }
 
@@ -66,7 +73,7 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 	case types.TaskTypeTroubleshooting:
 		return a.troubleshootingAgent.HandleQuery(ctx, userQuery, intent.Entities)
 	case types.TaskTypeSecurity:
-		return "安全审计功能正在开发中，敬请期待", nil
+		return a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
 	default:
 		return "", fmt.Errorf("不支持的任务类型: %s", intent.TaskType)
 	}
