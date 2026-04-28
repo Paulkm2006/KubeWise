@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -221,6 +222,15 @@ func (c *Client) ListNodes(ctx context.Context) ([]corev1.Node, error) {
 		return nil, err
 	}
 	return nodeList.Items, nil
+}
+
+// ListNetworkPolicies 获取指定命名空间下的NetworkPolicy（空命名空间表示所有）
+func (c *Client) ListNetworkPolicies(ctx context.Context, namespace string) ([]networkingv1.NetworkPolicy, error) {
+	npList, err := c.clientset.NetworkingV1().NetworkPolicies(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return npList.Items, nil
 }
 
 func ptr[T any](v T) *T {
