@@ -9,20 +9,25 @@ import (
 	"github.com/kubewise/kubewise/pkg/tool"
 )
 
+// GetServiceEndpointsTool 获取Service Endpoints工具
 type GetServiceEndpointsTool struct {
 	k8sClient *k8s.Client
 }
 
+// NewGetServiceEndpointsTool 创建获取Service Endpoints工具实例
 func NewGetServiceEndpointsTool(k8sClient *k8s.Client) *GetServiceEndpointsTool {
 	return &GetServiceEndpointsTool{k8sClient: k8sClient}
 }
 
+// Name 返回工具唯一标识
 func (t *GetServiceEndpointsTool) Name() string { return "get_service_endpoints" }
 
+// Description 返回工具功能描述
 func (t *GetServiceEndpointsTool) Description() string {
 	return "获取Service对应的Endpoints，检查是否有就绪的后端Pod，用于排查服务不可达、流量不通等问题"
 }
 
+// Parameters 返回工具参数定义（JSON Schema格式）
 func (t *GetServiceEndpointsTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
@@ -31,23 +36,24 @@ func (t *GetServiceEndpointsTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Service所在的命名空间",
 			},
-			"service_name": map[string]any{
+			"serviceName": map[string]any{
 				"type":        "string",
 				"description": "Service名称",
 			},
 		},
-		"required": []string{"namespace", "service_name"},
+		"required": []string{"namespace", "serviceName"},
 	}
 }
 
+// Execute 执行工具调用
 func (t *GetServiceEndpointsTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	namespace, ok := args["namespace"].(string)
 	if !ok || namespace == "" {
 		return "", fmt.Errorf("参数namespace不能为空")
 	}
-	serviceName, ok := args["service_name"].(string)
+	serviceName, ok := args["serviceName"].(string)
 	if !ok || serviceName == "" {
-		return "", fmt.Errorf("参数service_name不能为空")
+		return "", fmt.Errorf("参数serviceName不能为空")
 	}
 
 	ep, err := t.k8sClient.GetEndpoints(ctx, namespace, serviceName)
@@ -113,6 +119,7 @@ func (t *GetServiceEndpointsTool) Execute(ctx context.Context, args map[string]a
 	return result.String(), nil
 }
 
+// 注册工具到全局注册中心
 func init() {
 	tool.RegisterGlobal(tool.ToolMetadata{
 		Name:        "get_service_endpoints",
@@ -124,12 +131,12 @@ func init() {
 					"type":        "string",
 					"description": "Service所在的命名空间",
 				},
-				"service_name": map[string]any{
+				"serviceName": map[string]any{
 					"type":        "string",
 					"description": "Service名称",
 				},
 			},
-			"required": []string{"namespace", "service_name"},
+			"required": []string{"namespace", "serviceName"},
 		},
 		Factory: func(dep any) (tool.Tool, error) {
 			toolDep, ok := dep.(tool.ToolDependency)
