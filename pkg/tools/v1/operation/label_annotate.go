@@ -66,6 +66,7 @@ func (t *LabelAnnotateResourceTool) Parameters() map[string]any {
 func (t *LabelAnnotateResourceTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	namespace, _ := args["namespace"].(string)
 
+	// group may be empty for core API resources (e.g. pods, services)
 	group, ok := args["group"].(string)
 	if !ok {
 		return "", fmt.Errorf("label_annotate_resource: missing or invalid 'group' argument")

@@ -71,7 +71,7 @@ func validateYAML(content string) error {
 	if err := yaml.Unmarshal([]byte(content), &obj); err != nil {
 		return fmt.Errorf("apply_resource: invalid YAML: %w", err)
 	}
-	if obj["apiVersion"] == nil || obj["kind"] == nil {
+	if obj == nil || obj["apiVersion"] == nil || obj["kind"] == nil {
 		return fmt.Errorf("apply_resource: YAML must contain apiVersion and kind fields")
 	}
 	return nil

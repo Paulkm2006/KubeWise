@@ -56,6 +56,7 @@ func (t *DeleteResourceTool) Parameters() map[string]any {
 func (t *DeleteResourceTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	namespace, _ := args["namespace"].(string)
 
+	// group may be empty for core API resources (e.g. pods, services)
 	group, ok := args["group"].(string)
 	if !ok {
 		return "", fmt.Errorf("delete_resource: missing or invalid 'group' argument")

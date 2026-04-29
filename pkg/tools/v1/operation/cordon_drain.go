@@ -71,6 +71,10 @@ func (t *CordonDrainNodeTool) Execute(ctx context.Context, args map[string]any) 
 		}
 		return fmt.Sprintf("Successfully uncordoned node %s", nodeName), nil
 	case "drain":
+		// Cordon first to prevent new pods from being scheduled during the drain.
+		if err := t.k8sClient.CordonNode(ctx, nodeName, true); err != nil {
+			return "", fmt.Errorf("cordon_drain_node: failed to cordon node before drain: %w", err)
+		}
 		evicted, remaining, err := t.k8sClient.DrainNode(ctx, nodeName)
 		if err != nil {
 			return "", err
