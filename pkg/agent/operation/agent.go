@@ -230,7 +230,8 @@ func (a *Agent) execute(ctx context.Context, steps []OperationStep) (string, err
 				break
 			}
 
-			if attempts >= maxReplanAttempts {
+			attempts++
+			if attempts > maxReplanAttempts {
 				fmt.Printf("已达最大修正次数（%d），跳过该步骤\n", maxReplanAttempts)
 				results = append(results, stepResult{step: step, status: "skipped", detail: "超过最大修正次数"})
 				break
@@ -243,7 +244,6 @@ func (a *Agent) execute(ctx context.Context, steps []OperationStep) (string, err
 				break
 			}
 			step = replanned
-			attempts++
 		}
 	}
 
@@ -252,7 +252,10 @@ func (a *Agent) execute(ctx context.Context, steps []OperationStep) (string, err
 
 // replan asks the LLM to revise a single step given the user's correction.
 func (a *Agent) replan(ctx context.Context, original OperationStep, correction string) (OperationStep, error) {
-	originalJSON, _ := json.Marshal(original)
+	originalJSON, err := json.Marshal(original)
+	if err != nil {
+		return OperationStep{}, fmt.Errorf("failed to marshal original step: %w", err)
+	}
 
 	messages := []llm.Message{
 		{Role: "system", Content: "你是 Kubernetes 操作规划助手。用户对某个操作步骤有修正意见，请根据用户的修正指令返回修改后的操作步骤 JSON，只返回一个 JSON 对象，不要有任何额外说明。"},
