@@ -11,8 +11,7 @@ import (
 func TestStoreSaveAndLoadRecent(t *testing.T) {
 	dir := t.TempDir()
 
-	store := &session.Store{}
-	session.SetStoreDir(store, dir)
+	store := &session.Store{Dir: dir}
 
 	sess := session.New()
 	sess.Title = "test session"
@@ -39,8 +38,7 @@ func TestStoreSaveAndLoadRecent(t *testing.T) {
 func TestStoreLoadRecentCapsAtN(t *testing.T) {
 	dir := t.TempDir()
 
-	store := &session.Store{}
-	session.SetStoreDir(store, dir)
+	store := &session.Store{Dir: dir}
 
 	for i := range 25 {
 		s := session.New()
@@ -55,7 +53,7 @@ func TestStoreLoadRecentCapsAtN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRecent: %v", err)
 	}
-	if len(results) > 20 {
-		t.Errorf("want ≤20, got %d", len(results))
+	if len(results) != 20 {
+		t.Errorf("want exactly 20, got %d", len(results))
 	}
 }

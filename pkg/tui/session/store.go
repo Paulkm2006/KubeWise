@@ -14,9 +14,6 @@ type Store struct {
 	Dir string
 }
 
-// SetStoreDir is exported for tests to inject a temp directory.
-func SetStoreDir(s *Store, dir string) { s.Dir = dir }
-
 // NewStore creates a Store pointed at ~/.kubewise/sessions/, creating it if absent.
 func NewStore() (*Store, error) {
 	home, err := os.UserHomeDir()
@@ -33,7 +30,7 @@ func NewStore() (*Store, error) {
 // Save writes sess to a JSON file named <date>-<id>.json, creating the dir if needed.
 func (s *Store) Save(sess *Session) error {
 	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
-		return err
+		return fmt.Errorf("create sessions dir: %w", err)
 	}
 	sess.UpdatedAt = time.Now()
 	filename := fmt.Sprintf("%s-%s.json", sess.CreatedAt.Format("2006-01-02-150405"), sess.ID)
@@ -74,7 +71,7 @@ func (s *Store) LoadRecent(n int) ([]*Session, error) {
 		})
 	}
 
-	sort.Slice(files, func(i, j int) bool {
+	sort.SliceStable(files, func(i, j int) bool {
 		return files[i].modTime.After(files[j].modTime)
 	})
 
