@@ -64,6 +64,9 @@ func (c *Client) RestartResource(ctx context.Context, namespace, kind, name stri
 	case "statefulset":
 		_, err = c.clientset.AppsV1().StatefulSets(namespace).Patch(ctx, name, k8stypes.MergePatchType, patchBytes, metav1.PatchOptions{})
 		return err
+	case "daemonset":
+		_, err = c.clientset.AppsV1().DaemonSets(namespace).Patch(ctx, name, k8stypes.MergePatchType, patchBytes, metav1.PatchOptions{})
+		return err
 	default:
 		return fmt.Errorf("RestartResource: unsupported kind %s", kind)
 	}
@@ -89,13 +92,13 @@ func (c *Client) ApplyResource(ctx context.Context, yamlContent string) error {
 	}
 	gvr := gvrFromUnstructured(&obj)
 	forceTrue := true
-	_, err = c.dynamicClient.Resource(gvr).Namespace(obj.GetNamespace()).Patch(
-		ctx,
-		obj.GetName(),
-		k8stypes.ApplyPatchType,
-		jsonBytes,
-		metav1.PatchOptions{FieldManager: "kubewise", Force: &forceTrue},
-	)
+	ns := obj.GetNamespace()
+	opts := metav1.PatchOptions{FieldManager: "kubewise", Force: &forceTrue}
+	if ns == "" {
+		_, err = c.dynamicClient.Resource(gvr).Patch(ctx, obj.GetName(), k8stypes.ApplyPatchType, jsonBytes, opts)
+	} else {
+		_, err = c.dynamicClient.Resource(gvr).Namespace(ns).Patch(ctx, obj.GetName(), k8stypes.ApplyPatchType, jsonBytes, opts)
+	}
 	return err
 }
 
