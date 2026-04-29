@@ -109,7 +109,7 @@ func (r *Renderer) RenderKV(pairs []events.KVPair) string {
 	var sb strings.Builder
 	for _, p := range pairs {
 		key := tuistyles.KVKeyStyle.Width(maxKey + 2).Align(lipgloss.Right).Render(p.Key)
-		sb.WriteString(fmt.Sprintf("%s  %s\n", key, p.Value))
+		fmt.Fprintf(&sb, "%s  %s\n", key, p.Value)
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }
