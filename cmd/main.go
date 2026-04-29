@@ -13,6 +13,7 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/router"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/tui"
 )
 
 var (
@@ -82,6 +83,38 @@ var chatCmd = &cobra.Command{
 	},
 }
 
+var tuiCmd = &cobra.Command{
+	Use:   "tui",
+	Short: "启动交互式 TUI 多轮对话模式",
+	Long: `启动终端交互界面（TUI），支持多轮对话、会话管理和操作确认。
+快捷键：
+  Enter     发送消息
+  Ctrl+N    新建会话
+  Ctrl+C    中断当前查询（空闲时退出）
+  Ctrl+L    清空当前会话
+  Tab       切换焦点（侧边栏 ↔ 输入框）
+  /resume   重发被中断的消息`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		kubeconfig := viper.GetString("kubeconfig")
+		k8sClient, err := k8s.NewClient(kubeconfig)
+		if err != nil {
+			return fmt.Errorf("初始化K8s客户端失败: %w", err)
+		}
+
+		llmConfig := llm.Config{
+			Model:   viper.GetString("llm.model"),
+			APIKey:  viper.GetString("llm.api_key"),
+			APIBase: viper.GetString("llm.api_base"),
+		}
+		llmClient, err := llm.NewClient(llmConfig)
+		if err != nil {
+			return fmt.Errorf("初始化LLM客户端失败: %w", err)
+		}
+
+		return tui.Run(k8sClient, llmClient)
+	},
+}
+
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
@@ -92,6 +125,7 @@ func main() {
 func init() {
 	cobra.OnInitialize(initConfig, initLogger)
 	rootCmd.AddCommand(chatCmd)
+	rootCmd.AddCommand(tuiCmd)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认 $HOME/.kubewise.yaml)")
 	rootCmd.PersistentFlags().StringP("kubeconfig", "k", "", "kubeconfig文件路径")

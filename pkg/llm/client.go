@@ -106,6 +106,14 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		Content: choice.Message.Content,
 	}
 
+	if resp.Usage.TotalTokens > 0 {
+		result.Usage = &Usage{
+			PromptTokens:     int(resp.Usage.PromptTokens),
+			CompletionTokens: int(resp.Usage.CompletionTokens),
+			TotalTokens:      int(resp.Usage.TotalTokens),
+		}
+	}
+
 	// 检查是否有工具调用（通过原始JSON解析）
 	var rawResp map[string]any
 	respJSON, err := json.Marshal(resp)

@@ -4,25 +4,51 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tool"
+	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
 
 	// 加载安全审计工具，触发init函数注册
 	_ "github.com/kubewise/kubewise/pkg/tools/v1/security"
 )
 
+// Option is a functional option for Agent.
+type Option func(*Agent)
+
+// WithEventCh sets an event channel and query ID on the agent.
+func WithEventCh(ch chan<- events.TUIEvent, queryID string) Option {
+	return func(a *Agent) {
+		a.eventCh = ch
+		a.queryID = queryID
+	}
+}
+
 // Agent 安全审计Agent
 type Agent struct {
 	k8sClient    *k8s.Client
 	llmClient    *llm.Client
 	toolRegistry *tool.Registry
+	eventCh      chan<- events.TUIEvent
+	queryID      string
+}
+
+// emit sends an event to the event channel if one is set.
+func (a *Agent) emit(e events.TUIEvent) {
+	if a.eventCh == nil {
+		return
+	}
+	select {
+	case a.eventCh <- e:
+	default:
+	}
 }
 
 // New 创建安全审计Agent
-func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
+func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, error) {
 	toolDep := tool.ToolDependency{
 		K8sClient: k8sClient,
 	}
@@ -30,11 +56,15 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("加载工具注册中心失败: %w", err)
 	}
-	return &Agent{
+	a := &Agent{
 		k8sClient:    k8sClient,
 		llmClient:    llmClient,
 		toolRegistry: registry,
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a, nil
 }
 
 // buildSystemPrompt 生成系统提示词
@@ -62,6 +92,18 @@ func (a *Agent) buildSystemPrompt() string {
 
 // HandleQuery 处理安全审计请求
 func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (string, error) {
+	start := time.Now()
+	var inTokens, outTokens int
+	a.emit(events.AgentStartEvent{AgentName: "Security Agent", QueryID: a.queryID})
+	defer func() {
+		a.emit(events.AgentDoneEvent{
+			QueryID:   a.queryID,
+			Duration:  time.Since(start),
+			InTokens:  inTokens,
+			OutTokens: outTokens,
+		})
+	}()
+
 	functions := a.toolRegistry.GetAllFunctionDefinitions()
 
 	userMsg := userQuery
@@ -79,6 +121,11 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 		resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
 		if err != nil {
 			return "", fmt.Errorf("LLM调用失败: %w", err)
+		}
+
+		if resp.Usage != nil {
+			inTokens += resp.Usage.PromptTokens
+			outTokens += resp.Usage.CompletionTokens
 		}
 
 		if len(resp.ToolCalls) == 0 {
@@ -100,7 +147,10 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 		if !exists {
 			return "", fmt.Errorf("未知工具: %s", funcCall.Name)
 		}
+		toolStart := time.Now()
+		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: step + 1})
 		result, err := t.Execute(ctx, funcCall.Arguments)
+		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: step + 1})
 		if err != nil {
 			fmt.Printf("工具调用失败：%v\n", err)
 			result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用工具。", err)
