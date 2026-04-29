@@ -200,9 +200,12 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 // corresponding event. Detection priority: YAML → JSON → Table → List → KV → Text.
 func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 	// 1. YAML code block.
-	if strings.Contains(result, "apiVersion:") || strings.Contains(result, "kind:") {
-		emit(events.RenderCodeEvent{QueryID: queryID, Language: "yaml", Content: result})
-		return
+	for line := range strings.SplitSeq(result, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "apiVersion:") || strings.HasPrefix(trimmed, "kind:") {
+			emit(events.RenderCodeEvent{QueryID: queryID, Language: "yaml", Content: result})
+			return
+		}
 	}
 
 	// 2. JSON code block.
@@ -219,40 +222,43 @@ func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 	}
 
 	// 4. Status list.
-	statusWords := []string{
-		"Running", "Pending", "Error", "Failed", "CrashLoopBackOff",
-		"Terminating", "Warning", "Critical", "Healthy", "Unhealthy",
-	}
+	// Build items from ALL non-empty lines; matched lines get their detected status,
+	// others get "info".
+	statusOf := make(map[int]string) // line index → status
 	lines := strings.Split(result, "\n")
-	var matchedLines []string
-	for _, l := range lines {
-		for _, w := range statusWords {
-			if strings.Contains(strings.ToLower(l), strings.ToLower(w)) {
-				matchedLines = append(matchedLines, l)
-				break
-			}
+	matchCount := 0
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		var status string
+		switch {
+		case containsAny(lower, "error", "failed", "crashloopbackoff", "unhealthy", "critical"):
+			status = "error"
+		case containsAny(lower, "pending", "terminating", "warning"):
+			status = "warn"
+		case containsAny(lower, "running", "healthy"):
+			status = "ok"
+		default:
+			status = ""
+		}
+		if status != "" {
+			statusOf[i] = status
+			matchCount++
 		}
 	}
-	if len(matchedLines) >= 2 {
-		items := make([]events.ListItem, 0, len(matchedLines))
-		for _, l := range matchedLines {
-			ll := strings.ToLower(l)
-			status := "info"
-			switch {
-			case strings.Contains(ll, "error") ||
-				strings.Contains(ll, "failed") ||
-				strings.Contains(ll, "crashloopbackoff") ||
-				strings.Contains(ll, "unhealthy") ||
-				strings.Contains(ll, "critical"):
-				status = "error"
-			case strings.Contains(ll, "pending") ||
-				strings.Contains(ll, "terminating") ||
-				strings.Contains(ll, "warning"):
-				status = "warn"
-			case strings.Contains(ll, "running") || strings.Contains(ll, "healthy"):
-				status = "ok"
+	if matchCount >= 2 {
+		items := make([]events.ListItem, 0)
+		for i, line := range lines {
+			if line == "" {
+				continue
 			}
-			items = append(items, events.ListItem{Status: status, Text: l})
+			status, matched := statusOf[i]
+			if !matched {
+				status = "info"
+			}
+			items = append(items, events.ListItem{Status: status, Text: line})
 		}
 		emit(events.RenderListEvent{QueryID: queryID, Items: items})
 		return
@@ -290,6 +296,35 @@ func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 	emit(events.RenderTextEvent{QueryID: queryID, Text: result})
 }
 
+// containsAny reports whether s contains any of the given substrings.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// isSeparatorRow reports whether l is a markdown table separator row
+// (every non-empty cell consists only of '-' and ':' characters).
+func isSeparatorRow(line string) bool {
+	hasCell := false
+	for cell := range strings.SplitSeq(line, "|") {
+		cell = strings.TrimSpace(cell)
+		if cell == "" {
+			continue
+		}
+		hasCell = true
+		for _, ch := range cell {
+			if ch != '-' && ch != ':' {
+				return false
+			}
+		}
+	}
+	return hasCell
+}
+
 // parseTable tries to parse a pipe-delimited markdown table from result.
 // Returns ok=true only when at least one header and one data row are found.
 func parseTable(result string) (headers []string, rows [][]string, ok bool) {
@@ -303,10 +338,9 @@ func parseTable(result string) (headers []string, rows [][]string, ok bool) {
 	if len(tableLines) < 3 {
 		return nil, nil, false
 	}
-	for i, l := range tableLines {
-		trimmed := strings.Trim(l, "| ")
-		if strings.Contains(trimmed, "---") {
-			continue // skip separator
+	for _, l := range tableLines {
+		if isSeparatorRow(l) {
+			continue
 		}
 		if len(headers) == 0 {
 			for cell := range strings.SplitSeq(l, "|") {
@@ -315,7 +349,6 @@ func parseTable(result string) (headers []string, rows [][]string, ok bool) {
 					headers = append(headers, cell)
 				}
 			}
-			_ = i
 		} else {
 			var row []string
 			for cell := range strings.SplitSeq(l, "|") {
