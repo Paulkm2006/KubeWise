@@ -103,7 +103,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 }
 
 // plan runs a ReAct loop with read-only tools to produce []OperationStep.
-func (a *Agent) plan(ctx context.Context, userQuery string, entities types.Entities) ([]OperationStep, error) {
+func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([]OperationStep, error) {
 	submitToolDef := llm.FunctionDefinition{
 		Name:        "submit_operation_plan",
 		Description: "提交操作计划。在分析集群状态并确定操作步骤后，调用此工具提交计划列表。",
@@ -295,12 +295,12 @@ func parseOperationPlan(args map[string]any) ([]OperationStep, error) {
 
 func buildSummary(results []stepResult) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("\n操作执行完成，共 %d 步：\n", len(results)))
+	fmt.Fprintf(&sb, "\n操作执行完成，共 %d 步：\n", len(results))
 	for _, r := range results {
 		icon := map[string]string{"executed": "✓", "skipped": "○", "failed": "✗"}[r.status]
-		sb.WriteString(fmt.Sprintf("  %s 步骤%d [%s] %s\n", icon, r.step.StepIndex, r.status, r.step.Description))
+		fmt.Fprintf(&sb, "  %s 步骤%d [%s] %s\n", icon, r.step.StepIndex, r.status, r.step.Description)
 		if r.detail != "" && r.status != "executed" {
-			sb.WriteString(fmt.Sprintf("      → %s\n", r.detail))
+			fmt.Fprintf(&sb, "      → %s\n", r.detail)
 		}
 	}
 	return sb.String()
