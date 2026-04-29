@@ -27,7 +27,7 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
 	toolDep := tool.ToolDependency{
 		K8sClient: k8sClient,
 	}
-	registry, err := tool.LoadGlobalRegistry(toolDep)
+	registry, err := tool.LoadGlobalRegistryByCategory(toolDep, "")
 	if err != nil {
 		return nil, fmt.Errorf("加载工具注册中心失败: %w", err)
 	}
