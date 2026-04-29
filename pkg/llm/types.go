@@ -13,6 +13,7 @@ type Message struct {
 	Content    string     `json:"content,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+	// Usage is populated on assistant messages returned by ChatCompletion; ignored on input.
 	Usage      *Usage     `json:"usage,omitempty"`
 }
 
