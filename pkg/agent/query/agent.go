@@ -38,8 +38,12 @@ type Agent struct {
 
 // emit sends an event to the event channel if one is set.
 func (a *Agent) emit(e events.TUIEvent) {
-	if a.eventCh != nil {
-		a.eventCh <- e
+	if a.eventCh == nil {
+		return
+	}
+	select {
+	case a.eventCh <- e:
+	default:
 	}
 }
 
@@ -136,15 +140,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 			return resp.Content, nil
 		}
 
-		var funcCall *llm.FunctionCall
-
-		if len(resp.ToolCalls) > 0 {
-			funcCall = &resp.ToolCalls[0].Function
-		}
-
-		if funcCall == nil {
-			return "", fmt.Errorf("工具调用格式错误")
-		}
+		funcCall := &resp.ToolCalls[0].Function
 
 		fmt.Printf("第%d步：调用工具 %s\n", step+1, funcCall.Name)
 
@@ -162,9 +158,9 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 			return "", fmt.Errorf("未知工具: %s", funcCall.Name)
 		}
 		toolStart := time.Now()
-		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name})
+		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: step + 1})
 		result, err := tool.Execute(ctx, funcCall.Arguments)
-		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart)})
+		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: step + 1})
 
 		// 处理工具调用错误，将错误信息返回给LLM让其修复
 		if err != nil {

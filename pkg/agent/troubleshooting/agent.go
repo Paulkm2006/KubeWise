@@ -39,8 +39,12 @@ type Agent struct {
 
 // emit sends an event to the event channel if one is set.
 func (a *Agent) emit(e events.TUIEvent) {
-	if a.eventCh != nil {
-		a.eventCh <- e
+	if a.eventCh == nil {
+		return
+	}
+	select {
+	case a.eventCh <- e:
+	default:
 	}
 }
 
@@ -153,9 +157,9 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 			return "", fmt.Errorf("未知工具: %s", funcCall.Name)
 		}
 		toolStart := time.Now()
-		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name})
+		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: step + 1})
 		result, err := t.Execute(ctx, funcCall.Arguments)
-		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart)})
+		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: step + 1})
 		if err != nil {
 			fmt.Printf("工具调用失败：%v\n", err)
 			result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用工具。", err)
