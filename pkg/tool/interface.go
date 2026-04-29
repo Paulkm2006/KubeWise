@@ -27,6 +27,7 @@ type ToolMetadata struct {
 	Name        string
 	Description string
 	Parameters  map[string]any
+	Category    string            // "operation" for write tools; "" for read/query tools
 	Factory     func(dep any) (Tool, error) // 工具工厂函数，用于依赖注入
 }
 

@@ -108,3 +108,22 @@ func LoadGlobalRegistry(dep ToolDependency) (*Registry, error) {
 	}
 	return reg, nil
 }
+
+// LoadGlobalRegistryByCategory loads only tools whose Category matches the given value.
+// Use "" to load all tools without an explicit category (backward-compatible read tools).
+// Use "operation" to load only write/operation tools.
+func LoadGlobalRegistryByCategory(dep ToolDependency, category string) (*Registry, error) {
+	reg := NewRegistry(dep)
+	for _, meta := range globalRegistryEntries {
+		if meta.Category != category {
+			continue
+		}
+		if err := reg.Register(meta); err != nil {
+			return nil, err
+		}
+	}
+	if err := reg.LoadAll(); err != nil {
+		return nil, err
+	}
+	return reg, nil
+}
