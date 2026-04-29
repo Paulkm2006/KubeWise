@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tool"
+	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
 
 	// Trigger init() registration of all read tools
@@ -43,6 +45,14 @@ func WithConfirmationHandler(h ConfirmationHandler) Option {
 	return func(a *Agent) { a.confirmHandler = h }
 }
 
+// WithEventCh injects a TUI event channel and query ID for streaming events.
+func WithEventCh(ch chan<- events.TUIEvent, queryID string) Option {
+	return func(a *Agent) {
+		a.eventCh = ch
+		a.queryID = queryID
+	}
+}
+
 // stepResult records the outcome of a single executed step.
 type stepResult struct {
 	step   OperationStep
@@ -58,6 +68,10 @@ type Agent struct {
 	readRegistry   *tool.Registry
 	writeRegistry  writeRegistryI
 	confirmHandler ConfirmationHandler
+	eventCh        chan<- events.TUIEvent
+	queryID        string
+	inTokens       int
+	outTokens      int
 }
 
 // New creates a new Agent. Defaults to StdinConfirmationHandler.
@@ -87,8 +101,40 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, 
 	return a, nil
 }
 
+// emit sends a TUIEvent non-blocking. It is a no-op when eventCh is nil.
+func (a *Agent) emit(e events.TUIEvent) {
+	if a.eventCh == nil {
+		return
+	}
+	select {
+	case a.eventCh <- e:
+	default:
+	}
+}
+
+// accumulate adds token counts from an LLM response to the running totals.
+func (a *Agent) accumulate(resp *llm.Message) {
+	if resp.Usage != nil {
+		a.inTokens += resp.Usage.PromptTokens
+		a.outTokens += resp.Usage.CompletionTokens
+	}
+}
+
 // HandleQuery is the entry point called by the router.
 func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (string, error) {
+	a.inTokens = 0
+	a.outTokens = 0
+	start := time.Now()
+	a.emit(events.AgentStartEvent{AgentName: "Operation Agent", QueryID: a.queryID})
+	defer func() {
+		a.emit(events.AgentDoneEvent{
+			QueryID:   a.queryID,
+			Duration:  time.Since(start),
+			InTokens:  a.inTokens,
+			OutTokens: a.outTokens,
+		})
+	}()
+
 	fmt.Println("正在分析操作意图并规划执行步骤...")
 
 	steps, err := a.plan(ctx, userQuery, entities)
@@ -153,6 +199,7 @@ func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([
 		if err != nil {
 			return nil, fmt.Errorf("LLM 调用失败: %w", err)
 		}
+		a.accumulate(resp)
 
 		if len(resp.ToolCalls) == 0 {
 			return nil, fmt.Errorf("规划未完成（LLM 未调用 submit_operation_plan），请重新描述您的操作需求")
@@ -175,7 +222,10 @@ func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([
 			continue
 		}
 
+		toolStart := time.Now()
+		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: round + 1})
 		result, toolErr := t.Execute(ctx, funcCall.Arguments)
+		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: round + 1})
 		if toolErr != nil {
 			result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用。", toolErr)
 		}
@@ -266,6 +316,7 @@ func (a *Agent) replan(ctx context.Context, original OperationStep, correction s
 	if err != nil {
 		return OperationStep{}, err
 	}
+	a.accumulate(resp)
 
 	content := strings.TrimSpace(resp.Content)
 	content = strings.TrimPrefix(content, "```json")
