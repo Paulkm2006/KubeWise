@@ -84,21 +84,19 @@ func (m SidebarModel) View() string {
 			break
 		}
 
-		// Truncate title to at most 12 runes for display safety.
+		// Truncate title to at most 9 runes, then append relative time.
 		runes := []rune(s.Title)
 		title := string(runes)
-		if len(runes) > 12 {
-			title = string(runes[:12])
+		if len(runes) > 9 {
+			title = string(runes[:9])
 		}
-
-		rel := relativeTime(s.UpdatedAt)
-		_ = rel // included in future formatting; kept for completeness
+		label := title + " " + relativeTime(s.UpdatedAt)
 
 		var line string
 		if i == m.selected {
-			line = styles.SidebarActiveStyle.Render("> " + title)
+			line = styles.SidebarActiveStyle.Render("> " + label)
 		} else {
-			line = styles.SidebarItemStyle.Render("  " + title)
+			line = styles.SidebarItemStyle.Render("  " + label)
 		}
 		lines = append(lines, line)
 	}
