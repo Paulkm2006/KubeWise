@@ -42,6 +42,7 @@ type pendingMsg struct {
 // chatEntry is a completed message (user or assistant) ready for display.
 type chatEntry struct {
 	role      string // "user" | "assistant" | "error"
+	content   string // raw content for session persistence
 	lines     []string
 	blocks    []session.Block
 	timestamp time.Time
@@ -76,6 +77,7 @@ func NewChatModel(width, height int) ChatModel {
 func (m *ChatModel) AddUserMessage(text string) {
 	m.messages = append(m.messages, chatEntry{
 		role:      "user",
+		content:   text,
 		lines:     []string{styles.UserBubble.Render("You: ") + text},
 		timestamp: time.Now(),
 	})
@@ -95,7 +97,10 @@ func (m *ChatModel) CompletedMessages() []session.Message {
 		if e.role != "assistant" {
 			continue
 		}
-		content := strings.Join(e.lines, "\n")
+		content := e.content
+		if content == "" {
+			content = strings.Join(e.lines, "\n")
+		}
 		out = append(out, session.Message{
 			Role:      "assistant",
 			Content:   content,
@@ -107,6 +112,108 @@ func (m *ChatModel) CompletedMessages() []session.Message {
 		})
 	}
 	return out
+}
+
+// AllMessages returns session.Message structs for all messages (user + assistant).
+func (m *ChatModel) AllMessages() []session.Message {
+	var out []session.Message
+	for _, e := range m.messages {
+		switch e.role {
+		case "user":
+			out = append(out, session.Message{
+				Role:      "user",
+				Content:   e.content,
+				Timestamp: e.timestamp,
+			})
+		case "assistant":
+			content := e.content
+			if content == "" {
+				content = strings.Join(e.lines, "\n")
+			}
+			out = append(out, session.Message{
+				Role:      "assistant",
+				Content:   content,
+				Blocks:    e.blocks,
+				Timestamp: e.timestamp,
+				InTokens:  e.inTokens,
+				OutTokens: e.outTokens,
+				DurationS: e.durationS,
+			})
+		}
+	}
+	return out
+}
+
+// SetMessages replaces the display with previously saved session messages.
+func (m *ChatModel) SetMessages(msgs []session.Message) {
+	m.messages = make([]chatEntry, 0, len(msgs))
+	m.pending = make(map[string]*pendingMsg)
+	m.cards = make(map[string]*progressCard)
+	for _, msg := range msgs {
+		switch msg.Role {
+		case "user":
+			m.messages = append(m.messages, chatEntry{
+				role:      "user",
+				content:   msg.Content,
+				lines:     []string{styles.UserBubble.Render("You: ") + msg.Content},
+				timestamp: msg.Timestamp,
+			})
+		case "assistant":
+			var lines []string
+			if len(msg.Blocks) > 0 {
+				for _, b := range msg.Blocks {
+					lines = append(lines, m.renderBlock(b))
+				}
+			} else {
+				lines = []string{m.renderer.RenderText(msg.Content)}
+			}
+			m.messages = append(m.messages, chatEntry{
+				role:      "assistant",
+				content:   msg.Content,
+				lines:     lines,
+				blocks:    msg.Blocks,
+				timestamp: msg.Timestamp,
+				inTokens:  msg.InTokens,
+				outTokens: msg.OutTokens,
+				durationS: msg.DurationS,
+			})
+		}
+	}
+}
+
+// renderBlock renders a single session.Block to a styled string.
+func (m *ChatModel) renderBlock(b session.Block) string {
+	switch b.Type {
+	case "table":
+		var p session.TablePayload
+		if err := json.Unmarshal(b.Payload, &p); err == nil {
+			return m.renderer.RenderTable(p.Headers, p.Rows)
+		}
+	case "code":
+		var p session.CodePayload
+		if err := json.Unmarshal(b.Payload, &p); err == nil {
+			return m.renderer.RenderCode(p.Language, p.Content)
+		}
+	case "kv":
+		var p session.KVPayload
+		if err := json.Unmarshal(b.Payload, &p); err == nil {
+			pairs := make([]events.KVPair, len(p.Pairs))
+			for i, kp := range p.Pairs {
+				pairs[i] = events.KVPair{Key: kp.Key, Value: kp.Value}
+			}
+			return m.renderer.RenderKV(pairs)
+		}
+	case "list":
+		var p session.ListPayload
+		if err := json.Unmarshal(b.Payload, &p); err == nil {
+			items := make([]events.ListItem, len(p.Items))
+			for i, li := range p.Items {
+				items[i] = events.ListItem{Status: li.Status, Text: li.Text}
+			}
+			return m.renderer.RenderList(items)
+		}
+	}
+	return m.renderer.RenderText(string(b.Payload))
 }
 
 // Update handles TUIEvent messages dispatched from the event channel.
@@ -176,7 +283,6 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		m.addPending(ev.QueryID, session.Block{Type: "list", Payload: payload}, rendered)
 
 	case events.StreamDoneEvent:
-		// Finalize the assistant message from pending blocks.
 		p := m.pending[ev.QueryID]
 		var lines []string
 		var blocks []session.Block
@@ -184,7 +290,6 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			lines = p.rendered
 			blocks = p.blocks
 		}
-		// If no blocks were collected, use the raw result as text.
 		if len(lines) == 0 && ev.Result != "" {
 			lines = []string{m.renderer.RenderText(ev.Result)}
 		}
@@ -194,6 +299,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		}
 		entry := chatEntry{
 			role:      "assistant",
+			content:   ev.Result,
 			lines:     lines,
 			blocks:    blocks,
 			timestamp: time.Now(),
@@ -234,7 +340,6 @@ func (m *ChatModel) addPending(queryID string, block session.Block, rendered str
 func (m ChatModel) View() string {
 	var sb strings.Builder
 
-	// Render completed messages.
 	for _, e := range m.messages {
 		ts := styles.TimestampStyle.Render(e.timestamp.Format("15:04"))
 		switch e.role {
@@ -243,7 +348,6 @@ func (m ChatModel) View() string {
 		case "assistant":
 			sb.WriteString(ts + "\n")
 		case "error":
-			// no timestamp header for errors
 		}
 		for _, line := range e.lines {
 			sb.WriteString(line + "\n")
@@ -251,7 +355,6 @@ func (m ChatModel) View() string {
 		sb.WriteString("\n")
 	}
 
-	// Render active progress cards.
 	for _, card := range m.cards {
 		sb.WriteString(m.renderCard(card))
 		sb.WriteString("\n")
@@ -262,10 +365,7 @@ func (m ChatModel) View() string {
 
 // renderCard renders a single progress card to a styled string.
 func (m ChatModel) renderCard(c *progressCard) string {
-	var lines []string
-
 	if c.done {
-		// Collapsed summary when the agent has finished.
 		summary := fmt.Sprintf("✓ %s  %.1fs | ↑ %d ↓ %d tok",
 			c.agentName, c.duration.Seconds(), c.inTokens, c.outTokens)
 		return styles.CardDone.Render(summary)
@@ -276,9 +376,8 @@ func (m ChatModel) renderCard(c *progressCard) string {
 	}
 
 	icon := "⚙"
-	lines = append(lines, styles.CardRunning.Render(fmt.Sprintf("%s %s", icon, c.agentName)))
+	lines := []string{styles.CardRunning.Render(fmt.Sprintf("%s %s", icon, c.agentName))}
 
-	// Tool lines.
 	for _, t := range c.tools {
 		if t.done {
 			line := fmt.Sprintf("  ✓ %-30s %s", t.name, t.elapsed.Round(time.Millisecond).String())
