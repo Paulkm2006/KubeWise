@@ -62,7 +62,11 @@ func (h *StdinConfirmationHandler) formatStep(step OperationStep, totalSteps int
 	}
 	switch step.OperationType {
 	case "scale":
-		fmt.Fprintf(h.writer, "  变更：replicas → %d\n", *step.Replicas)
+		if step.Replicas != nil {
+			fmt.Fprintf(h.writer, "  变更：replicas → %d\n", *step.Replicas)
+		} else {
+			fmt.Fprintln(h.writer, "  变更：replicas → (未指定)")
+		}
 	case "restart":
 		fmt.Fprintln(h.writer, "  操作：触发滚动重启")
 	case "delete":
