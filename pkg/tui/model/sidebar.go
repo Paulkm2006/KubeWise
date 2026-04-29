@@ -77,10 +77,7 @@ func (m SidebarModel) View() string {
 		styles.SidebarHeaderStyle.Render("会话历史"),
 	}
 
-	maxItems := m.height - 2
-	if maxItems < 0 {
-		maxItems = 0
-	}
+	maxItems := max(m.height-2, 0)
 
 	for i, s := range m.sessions {
 		if i >= maxItems {
