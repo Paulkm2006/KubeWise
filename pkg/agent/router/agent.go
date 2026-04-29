@@ -276,10 +276,10 @@ func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 	if len(kvLines) >= 2 && nonEmptyCount > 0 && len(kvLines)*2 >= nonEmptyCount {
 		pairs := make([]events.KVPair, 0, len(kvLines))
 		for _, l := range kvLines {
-			idx := strings.Index(l, ": ")
+			key, val, _ := strings.Cut(l, ": ")
 			pairs = append(pairs, events.KVPair{
-				Key:   strings.TrimSpace(l[:idx]),
-				Value: strings.TrimSpace(l[idx+2:]),
+				Key:   strings.TrimSpace(key),
+				Value: strings.TrimSpace(val),
 			})
 		}
 		emit(events.RenderKVEvent{QueryID: queryID, Pairs: pairs})
@@ -309,7 +309,7 @@ func parseTable(result string) (headers []string, rows [][]string, ok bool) {
 			continue // skip separator
 		}
 		if len(headers) == 0 {
-			for _, cell := range strings.Split(l, "|") {
+			for cell := range strings.SplitSeq(l, "|") {
 				cell = strings.TrimSpace(cell)
 				if cell != "" {
 					headers = append(headers, cell)
@@ -318,7 +318,7 @@ func parseTable(result string) (headers []string, rows [][]string, ok bool) {
 			_ = i
 		} else {
 			var row []string
-			for _, cell := range strings.Split(l, "|") {
+			for cell := range strings.SplitSeq(l, "|") {
 				cell = strings.TrimSpace(cell)
 				if cell != "" {
 					row = append(row, cell)
