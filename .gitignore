@@ -32,4 +32,4 @@ go.work.sum
 .vscode/
 .superpowers
 .claude
-.worktree
+.worktrees

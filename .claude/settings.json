@@ -8,7 +8,13 @@
       "Bash(git commit *)",
       "Bash(go test *)",
       "Bash(golangci-lint run *)",
-      "Bash(make test *)"
+      "Bash(make test *)",
+      "Bash(python3)",
+      "Bash(git check-ignore *)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__get_network_request",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_network_requests",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot",
+      "Bash(go version *)"
     ]
   }
 }
