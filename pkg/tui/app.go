@@ -33,10 +33,10 @@ type App struct {
 	active   *session.Session
 	store    *session.Store
 
-	eventCh   chan events.TUIEvent
-	cancelFn  context.CancelFunc
-	running   bool
-	querySeq  int
+	eventCh  chan events.TUIEvent
+	cancelFn context.CancelFunc
+	running  bool
+	querySeq int
 
 	routerAgent *router.Agent
 
@@ -99,7 +99,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
-		return a.handleKey(msg)
+		if cmd, handled := a.handleShortcut(msg); handled {
+			return a, cmd
+		}
+		// Not a shortcut — fall through to sub-model routing below.
 
 	// TUI events from agents
 	case events.AgentStartEvent,
@@ -140,7 +143,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, listenForEvents(a.eventCh)
 	}
 
-	// Route remaining messages to sub-models
+	// Route remaining messages (including unmatched KeyMsg) to sub-models
 	var cmd tea.Cmd
 	if a.confirm != nil {
 		*a.confirm, cmd = a.confirm.Update(msg)
@@ -155,7 +158,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
-func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// handleShortcut checks for global keyboard shortcuts. Returns (cmd, true) if
+// the key was handled, (nil, false) otherwise so the key can be forwarded to
+// the focused sub-model.
+func (a App) handleShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		if a.running {
@@ -165,18 +171,18 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.running = false
 			a.active.InterruptedQuery = a.lastUserMessage()
 			a.input.SetEnabled(true)
-			return a, nil
+			return nil, true
 		}
-		return a, tea.Quit
+		return tea.Quit, true
 
 	case tea.KeyCtrlN:
 		a.newSession()
-		return a, nil
+		return nil, true
 
 	case tea.KeyCtrlL:
 		a.active.Messages = nil
 		a.chat = model.NewChatModel(a.width-tuistyles.SidebarWidth, a.height-5)
-		return a, nil
+		return nil, true
 
 	case tea.KeyTab:
 		if a.showSidebar {
@@ -188,9 +194,9 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.input.SetEnabled(true)
 			}
 		}
-		return a, nil
+		return nil, true
 	}
-	return a, nil
+	return nil, false
 }
 
 func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
