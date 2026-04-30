@@ -124,6 +124,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	maxSteps := 10
 	for step := range maxSteps {
 		// 调用LLM
+		a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "thinking"})
 		resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
 		if err != nil {
 			return "", fmt.Errorf("LLM调用失败: %w", err)
@@ -157,6 +158,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 		if !exists {
 			return "", fmt.Errorf("未知工具: %s", funcCall.Name)
 		}
+		a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: fmt.Sprintf("running tool: %s", funcCall.Name)})
 		toolStart := time.Now()
 		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: step + 1})
 		result, err := tool.Execute(ctx, funcCall.Arguments)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/spinner"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
 	"github.com/kubewise/kubewise/pkg/k8s"
@@ -113,9 +114,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		events.RenderTableEvent,
 		events.RenderCodeEvent,
 		events.RenderKVEvent,
-		events.RenderListEvent:
-		a.chat, _ = a.chat.Update(msg)
-		return a, listenForEvents(a.eventCh)
+		events.RenderListEvent,
+		events.PhaseEvent:
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(msg)
+		return a, tea.Batch(listenForEvents(a.eventCh), chatCmd)
 
 	case events.ConfirmRequestEvent:
 		cm := model.NewConfirmModel(msg)
@@ -133,6 +136,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.chat, _ = a.chat.Update(msg)
 		a.running = false
 		a.input.SetEnabled(true)
+		return a, nil
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		a.chat, cmd = a.chat.Update(msg)
+		if cmd != nil {
+			return a, cmd
+		}
 		return a, nil
 
 	case model.SubmitMsg:

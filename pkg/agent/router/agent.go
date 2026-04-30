@@ -99,6 +99,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	}
 
 	// 1. Classify intent.
+	emit(events.PhaseEvent{QueryID: queryID, Phase: "classifying intent"})
 	intent, err := a.classifyIntent(ctx, userQuery)
 	if err != nil {
 		emit(events.StreamErrEvent{QueryID: queryID, Err: err})
@@ -108,6 +109,8 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	var result string
 
 	// 2. Route to the appropriate sub-agent (fresh instance with eventCh).
+	phaseLabel := fmt.Sprintf("routing to %s agent", intent.TaskTypeDescription)
+	emit(events.PhaseEvent{QueryID: queryID, Phase: phaseLabel})
 	switch intent.TaskType {
 	case types.TaskTypeQuery:
 		ag, agErr := query.New(a.k8sClient, a.llmClient, query.WithEventCh(eventCh, queryID))

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/tui/session"
 	"github.com/kubewise/kubewise/pkg/tui/styles"
@@ -53,16 +54,24 @@ type chatEntry struct {
 
 // ChatModel manages the chat display, progress cards, and pending message assembly.
 type ChatModel struct {
-	messages []chatEntry
-	pending  map[string]*pendingMsg
-	cards    map[string]*progressCard
-	renderer *Renderer
-	width    int
-	height   int
+	messages   []chatEntry
+	pending    map[string]*pendingMsg
+	cards      map[string]*progressCard
+	renderer   *Renderer
+	width      int
+	height     int
+	spinner    spinner.Model
+	phase      string
+	phaseStart time.Time
+	spinning   bool
 }
 
 // NewChatModel creates an empty ChatModel sized to the given terminal dimensions.
 func NewChatModel(width, height int) ChatModel {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = styles.CardRunning
+
 	return ChatModel{
 		messages: make([]chatEntry, 0),
 		pending:  make(map[string]*pendingMsg),
@@ -70,6 +79,7 @@ func NewChatModel(width, height int) ChatModel {
 		renderer: NewRenderer(width - 2),
 		width:    width,
 		height:   height,
+		spinner:  sp,
 	}
 }
 
@@ -226,6 +236,10 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			queryID:   ev.QueryID,
 			agentName: ev.AgentName,
 		}
+		m.phase = ev.AgentName
+		m.phaseStart = time.Now()
+		m.spinning = true
+		return m, m.spinner.Tick
 
 	case events.AgentDoneEvent:
 		if c, ok := m.cards[ev.QueryID]; ok {
@@ -310,6 +324,8 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			entry.durationS = card.duration.Seconds()
 		}
 		m.messages = append(m.messages, entry)
+		m.spinning = false
+		m.phase = ""
 		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
 
@@ -320,8 +336,23 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			lines:     []string{styles.CardFailed.Render(errMsg)},
 			timestamp: time.Now(),
 		})
+		m.spinning = false
+		m.phase = ""
 		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
+
+	case events.PhaseEvent:
+		if _, ok := m.cards[ev.QueryID]; ok {
+			m.phase = ev.Phase
+			m.phaseStart = time.Now()
+		}
+
+	case spinner.TickMsg:
+		if m.spinning {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
 	}
 
 	return m, nil
@@ -337,6 +368,7 @@ func (m *ChatModel) addPending(queryID string, block session.Block, rendered str
 }
 
 // View renders the entire chat area: completed messages followed by any active progress cards.
+// Output is clipped to m.height lines so the input prompt below stays visible.
 func (m ChatModel) View() string {
 	var sb strings.Builder
 
@@ -360,7 +392,16 @@ func (m ChatModel) View() string {
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	result := sb.String()
+	if m.height <= 0 {
+		return result
+	}
+
+	lines := strings.Split(result, "\n")
+	if len(lines) > m.height {
+		lines = lines[len(lines)-m.height:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // renderCard renders a single progress card to a styled string.
@@ -375,8 +416,14 @@ func (m ChatModel) renderCard(c *progressCard) string {
 		return styles.CardFailed.Render(summary)
 	}
 
-	icon := "⚙"
-	lines := []string{styles.CardRunning.Render(fmt.Sprintf("%s %s", icon, c.agentName))}
+	// Phase line with spinner and elapsed time
+	phaseLabel := m.phase
+	if phaseLabel == "" {
+		phaseLabel = c.agentName
+	}
+	elapsed := time.Since(m.phaseStart).Round(time.Second)
+	header := fmt.Sprintf("%s %s... %s", m.spinner.View(), phaseLabel, elapsed)
+	lines := []string{styles.CardRunning.Render(header)}
 
 	for _, t := range c.tools {
 		if t.done {
@@ -389,4 +436,14 @@ func (m ChatModel) renderCard(c *progressCard) string {
 	}
 
 	return styles.CardStyle.Width(m.width - 4).Render(strings.Join(lines, "\n"))
+}
+
+// Phase returns the current phase label for the thinking indicator.
+func (m ChatModel) Phase() string {
+	return m.phase
+}
+
+// IsSpinning reports whether the spinner is currently active.
+func (m ChatModel) IsSpinning() bool {
+	return m.spinning
 }

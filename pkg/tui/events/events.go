@@ -123,3 +123,11 @@ type StreamErrEvent struct {
 }
 
 func (StreamErrEvent) isTUIEvent() {}
+
+// PhaseEvent carries a human-readable phase label for the thinking indicator.
+type PhaseEvent struct {
+	QueryID string
+	Phase   string // e.g. "classifying intent", "thinking", "running tool: get_pods"
+}
+
+func (PhaseEvent) isTUIEvent() {}
