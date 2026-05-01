@@ -28,6 +28,11 @@ var (
 	CardRunning = lipgloss.NewStyle().Foreground(Warning)
 	CardFailed  = lipgloss.NewStyle().Foreground(Error)
 
+	// Step bubbles (phase history inside progress cards)
+	StepActiveStyle = lipgloss.NewStyle().Foreground(Warning).Bold(true)
+	StepDoneStyle   = lipgloss.NewStyle().Foreground(Success)
+	StepPendingStyle = lipgloss.NewStyle().Foreground(Secondary)
+
 	// Renderer
 	TableBorderStyle = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(Secondary)
 	CodeBlockStyle   = lipgloss.NewStyle().Background(lipgloss.Color("#1E1E2E")).Padding(0, 1)
@@ -42,6 +47,9 @@ var (
 	ModalStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(60)
 	ModalTitleStyle = lipgloss.NewStyle().Foreground(Warning).Bold(true)
 	ModalHintStyle  = lipgloss.NewStyle().Foreground(Secondary)
+
+	// Scroll
+	ScrollIndicatorStyle = lipgloss.NewStyle().Foreground(Secondary).Italic(true)
 
 	// Input bar
 	InputStyle = lipgloss.NewStyle().BorderTop(true).BorderStyle(lipgloss.NormalBorder()).BorderForeground(Secondary)

@@ -3,7 +3,6 @@ package troubleshooting
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/kubewise/kubewise/pkg/k8s"
@@ -144,14 +143,6 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 
 		funcCall := &resp.ToolCalls[0].Function
 
-		fmt.Printf("第%d步：调用工具 %s\n", step+1, funcCall.Name)
-		if len(funcCall.Arguments) > 0 {
-			args := make([]string, 0, len(funcCall.Arguments))
-			for k, v := range funcCall.Arguments {
-				args = append(args, fmt.Sprintf("%s=%v", k, v))
-			}
-			fmt.Printf("参数：%s\n", strings.Join(args, ", "))
-		}
 
 		t, exists := a.toolRegistry.GetTool(funcCall.Name)
 		if !exists {
@@ -163,10 +154,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 		result, err := t.Execute(ctx, funcCall.Arguments)
 		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: step + 1})
 		if err != nil {
-			fmt.Printf("工具调用失败：%v\n", err)
 			result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用工具。", err)
-		} else {
-			fmt.Printf("工具返回结果长度：%d 字节\n", len(result))
 		}
 
 		messages = append(messages, *resp)

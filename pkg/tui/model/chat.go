@@ -21,11 +21,20 @@ type toolLine struct {
 	elapsed time.Duration
 }
 
+// phaseLine tracks a phase transition for step-bubble rendering.
+type phaseLine struct {
+	label   string
+	start   time.Time
+	done    bool
+	elapsed time.Duration
+}
+
 // progressCard tracks an in-flight agent execution.
 type progressCard struct {
 	queryID   string
 	agentName string
 	tools     []toolLine
+	phases    []phaseLine
 	done      bool
 	failed    bool
 	errMsg    string
@@ -54,16 +63,17 @@ type chatEntry struct {
 
 // ChatModel manages the chat display, progress cards, and pending message assembly.
 type ChatModel struct {
-	messages   []chatEntry
-	pending    map[string]*pendingMsg
-	cards      map[string]*progressCard
-	renderer   *Renderer
-	width      int
-	height     int
-	spinner    spinner.Model
-	phase      string
-	phaseStart time.Time
-	spinning   bool
+	messages     []chatEntry
+	pending      map[string]*pendingMsg
+	cards        map[string]*progressCard
+	renderer     *Renderer
+	width        int
+	height       int
+	spinner      spinner.Model
+	phase        string
+	phaseStart   time.Time
+	spinning     bool
+	scrollOffset int // 0 = pinned to bottom; >0 = number of lines scrolled up
 }
 
 // NewChatModel creates an empty ChatModel sized to the given terminal dimensions.
@@ -226,18 +236,59 @@ func (m *ChatModel) renderBlock(b session.Block) string {
 	return m.renderer.RenderText(string(b.Payload))
 }
 
+// ScrollUp scrolls the chat view up by n lines.
+func (m *ChatModel) ScrollUp(n int) {
+	m.scrollOffset += n
+	total := m.totalLines()
+	maxScroll := total - m.height
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.scrollOffset > maxScroll {
+		m.scrollOffset = maxScroll
+	}
+}
+
+// ScrollDown scrolls the chat view down by n lines.
+func (m *ChatModel) ScrollDown(n int) {
+	m.scrollOffset -= n
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+}
+
+// ScrollToBottom resets the scroll offset to pin the view to the bottom.
+func (m *ChatModel) ScrollToBottom() {
+	m.scrollOffset = 0
+}
+
+// totalLines counts the total number of rendered lines across all messages and cards.
+func (m ChatModel) totalLines() int {
+	var count int
+	for _, e := range m.messages {
+		count += len(e.lines) + 2 // lines + timestamp + blank separator
+	}
+	for _, card := range m.cards {
+		rendered := m.renderCard(card)
+		count += strings.Count(rendered, "\n") + 2 // card lines + trailing newline
+	}
+	return count
+}
+
 // Update handles TUIEvent messages dispatched from the event channel.
 // Returns (ChatModel, tea.Cmd) — sub-model pattern, NOT (tea.Model, tea.Cmd).
 func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	switch ev := msg.(type) {
 
 	case events.AgentStartEvent:
+		now := time.Now()
 		m.cards[ev.QueryID] = &progressCard{
 			queryID:   ev.QueryID,
 			agentName: ev.AgentName,
+			phases:    []phaseLine{{label: ev.AgentName, start: now}},
 		}
 		m.phase = ev.AgentName
-		m.phaseStart = time.Now()
+		m.phaseStart = now
 		m.spinning = true
 		return m, m.spinner.Tick
 
@@ -247,6 +298,13 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			c.duration = ev.Duration
 			c.inTokens = ev.InTokens
 			c.outTokens = ev.OutTokens
+			if len(c.phases) > 0 {
+				last := &c.phases[len(c.phases)-1]
+				if !last.done {
+					last.done = true
+					last.elapsed = time.Since(last.start)
+				}
+			}
 		}
 
 	case events.ToolCallEvent:
@@ -326,6 +384,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		m.messages = append(m.messages, entry)
 		m.spinning = false
 		m.phase = ""
+		m.scrollOffset = 0
 		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
 
@@ -338,13 +397,23 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		})
 		m.spinning = false
 		m.phase = ""
+		m.scrollOffset = 0
 		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
 
 	case events.PhaseEvent:
-		if _, ok := m.cards[ev.QueryID]; ok {
+		if c, ok := m.cards[ev.QueryID]; ok {
+			now := time.Now()
+			if len(c.phases) > 0 {
+				last := &c.phases[len(c.phases)-1]
+				if !last.done {
+					last.done = true
+					last.elapsed = now.Sub(last.start)
+				}
+			}
+			c.phases = append(c.phases, phaseLine{label: ev.Phase, start: now})
 			m.phase = ev.Phase
-			m.phaseStart = time.Now()
+			m.phaseStart = now
 		}
 
 	case spinner.TickMsg:
@@ -369,6 +438,8 @@ func (m *ChatModel) addPending(queryID string, block session.Block, rendered str
 
 // View renders the entire chat area: completed messages followed by any active progress cards.
 // Output is clipped to m.height lines so the input prompt below stays visible.
+// When scrollOffset > 0 the view shifts up from the bottom, allowing the user to scroll
+// through history. A subtle scroll indicator is shown when the view is not at the bottom.
 func (m ChatModel) View() string {
 	var sb strings.Builder
 
@@ -398,10 +469,36 @@ func (m ChatModel) View() string {
 	}
 
 	lines := strings.Split(result, "\n")
-	if len(lines) > m.height {
-		lines = lines[len(lines)-m.height:]
+	total := len(lines)
+	visible := m.height
+
+	if total <= visible {
+		return result
 	}
-	return strings.Join(lines, "\n")
+
+	// Bottom of the visible window (0-indexed from end).
+	// scrollOffset=0 means pinned to bottom (show last `visible` lines).
+	bottomFromEnd := m.scrollOffset
+	topFromEnd := bottomFromEnd + visible
+
+	if topFromEnd > total {
+		topFromEnd = total
+	}
+	if bottomFromEnd > total-visible {
+		bottomFromEnd = total - visible
+	}
+
+	start := total - topFromEnd
+	end := total - bottomFromEnd
+	view := strings.Join(lines[start:end], "\n")
+
+	// Show scroll indicator when not at bottom.
+	if m.scrollOffset > 0 {
+		indicator := styles.ScrollIndicatorStyle.Render(fmt.Sprintf(" ↑ %d lines above (↓/PgDn to scroll down) ", m.scrollOffset))
+		view = indicator + "\n" + view
+	}
+
+	return view
 }
 
 // renderCard renders a single progress card to a styled string.
@@ -416,22 +513,32 @@ func (m ChatModel) renderCard(c *progressCard) string {
 		return styles.CardFailed.Render(summary)
 	}
 
-	// Phase line with spinner and elapsed time
-	phaseLabel := m.phase
-	if phaseLabel == "" {
-		phaseLabel = c.agentName
-	}
-	elapsed := time.Since(m.phaseStart).Round(time.Second)
-	header := fmt.Sprintf("%s %s... %s", m.spinner.View(), phaseLabel, elapsed)
-	lines := []string{styles.CardRunning.Render(header)}
+	var lines []string
 
+	// Render phase history as step bubbles
+	for i, p := range c.phases {
+		isLast := i == len(c.phases)-1
+		if isLast && !p.done {
+			// Active phase — show spinner
+			elapsed := time.Since(p.start).Round(time.Second)
+			line := fmt.Sprintf("%s %s... %s", m.spinner.View(), p.label, elapsed)
+			lines = append(lines, styles.StepActiveStyle.Render(line))
+		} else {
+			// Completed phase
+			elapsed := p.elapsed.Round(time.Millisecond)
+			line := fmt.Sprintf("  ✓ %s %s", p.label, elapsed)
+			lines = append(lines, styles.StepDoneStyle.Render(line))
+		}
+	}
+
+	// Render tool lines nested under the active phase
 	for _, t := range c.tools {
 		if t.done {
-			line := fmt.Sprintf("  ✓ %-30s %s", t.name, t.elapsed.Round(time.Millisecond).String())
-			lines = append(lines, styles.CardDone.Render(line))
+			line := fmt.Sprintf("    ✓ %-30s %s", t.name, t.elapsed.Round(time.Millisecond).String())
+			lines = append(lines, styles.StepDoneStyle.Render(line))
 		} else {
-			line := fmt.Sprintf("  ⟳ %s", t.name)
-			lines = append(lines, styles.CardRunning.Render(line))
+			line := fmt.Sprintf("    ⟳ %s", t.name)
+			lines = append(lines, styles.StepActiveStyle.Render(line))
 		}
 	}
 

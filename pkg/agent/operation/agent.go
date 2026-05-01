@@ -211,7 +211,6 @@ func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([
 			return parseOperationPlan(funcCall.Arguments)
 		}
 
-		fmt.Printf("规划第%d轮：调用工具 %s\n", round+1, funcCall.Name)
 
 		t, exists := a.readRegistry.GetTool(funcCall.Name)
 		if !exists {
@@ -267,7 +266,6 @@ func (a *Agent) execute(ctx context.Context, steps []OperationStep) (string, err
 				}
 				execResult, execErr := t.Execute(ctx, args)
 				if execErr != nil {
-					fmt.Printf("执行失败：%v\n", execErr)
 					results = append(results, stepResult{step: step, status: "failed", detail: execErr.Error()})
 				} else {
 					results = append(results, stepResult{step: step, status: "executed", detail: execResult})
@@ -282,14 +280,12 @@ func (a *Agent) execute(ctx context.Context, steps []OperationStep) (string, err
 
 			attempts++
 			if attempts > maxReplanAttempts {
-				fmt.Printf("已达最大修正次数（%d），跳过该步骤\n", maxReplanAttempts)
 				results = append(results, stepResult{step: step, status: "skipped", detail: "超过最大修正次数"})
 				break
 			}
 
 			replanned, replanErr := a.replan(ctx, step, correction)
 			if replanErr != nil {
-				fmt.Printf("修正规划失败：%v，跳过该步骤\n", replanErr)
 				results = append(results, stepResult{step: step, status: "skipped", detail: replanErr.Error()})
 				break
 			}

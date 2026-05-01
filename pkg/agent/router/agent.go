@@ -64,12 +64,9 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 		return "", fmt.Errorf("意图分类失败: %w", err)
 	}
 
-	fmt.Printf("识别到任务类型：%s，置信度：%.2f\n", intent.TaskTypeDescription, intent.Confidence)
 	if intent.Entities.Namespace != "" {
-		fmt.Printf("目标命名空间：%s\n", intent.Entities.Namespace)
 	}
 	if intent.Entities.ResourceName != "" && len(intent.Entities.ResourceType) > 0 {
-		fmt.Printf("目标资源：%s/%s\n", strings.Join([]string(intent.Entities.ResourceType), ","), intent.Entities.ResourceName)
 	}
 
 	// 2. 路由到对应的Agent处理

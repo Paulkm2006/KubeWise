@@ -105,6 +105,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Not a shortcut — fall through to sub-model routing below.
 
+	case tea.MouseMsg:
+		switch msg.Action {
+		case tea.MouseActionPress:
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				a.chat.ScrollUp(3)
+				return a, nil
+			case tea.MouseButtonWheelDown:
+				a.chat.ScrollDown(3)
+				return a, nil
+			}
+		}
+
 	// TUI events from agents
 	case events.AgentStartEvent,
 		events.AgentDoneEvent,
@@ -206,7 +219,30 @@ func (a App) handleShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
 			}
 		}
 		return nil, true
+
+	case tea.KeyUp:
+		if a.focus == focusInput {
+			a.chat.ScrollUp(1)
+			return nil, true
+		}
+	case tea.KeyDown:
+		if a.focus == focusInput {
+			a.chat.ScrollDown(1)
+			return nil, true
+		}
+	case tea.KeyPgUp:
+		if a.focus == focusInput {
+			a.chat.ScrollUp(a.height - 2)
+			return nil, true
+		}
+	case tea.KeyPgDown:
+		if a.focus == focusInput {
+			a.chat.ScrollDown(a.height - 2)
+			return nil, true
+		}
+
 	}
+
 	return nil, false
 }
 
@@ -354,7 +390,7 @@ func Run(k8sClient *k8s.Client, llmClient *llm.Client) error {
 	app.input = model.NewInputModel()
 	app.input.SetWidth(app.width - sidebarW)
 
-	p := tea.NewProgram(app, tea.WithAltScreen())
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err = p.Run()
 	return err
 }
