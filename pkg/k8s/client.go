@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -24,12 +25,24 @@ type Client struct {
 	config        *rest.Config
 }
 
+// expandTilde 将路径开头的 "~" 展开为用户主目录
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~") {
+		home := homedir.HomeDir()
+		if home != "" {
+			return filepath.Join(home, path[1:])
+		}
+	}
+	return path
+}
+
 // NewClient 创建Kubernetes客户端
 func NewClient(kubeconfigPath string) (*Client, error) {
 	var config *rest.Config
 	var err error
 
 	if kubeconfigPath != "" {
+		kubeconfigPath = expandTilde(kubeconfigPath)
 		// 用户指定了kubeconfig路径，只使用这个路径
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 		if err != nil {
