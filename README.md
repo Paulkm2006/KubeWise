@@ -65,19 +65,10 @@ cp examples/config.yaml ~/.kubewise.yaml
 ```yaml
 # LLM 配置
 llm:
-  model: "glm-5.1"          # 支持的模型见下方说明
+  model: "glm-5.1"          # 模型名称
   api_key: "your-api-key"   # 你的 API Key
   api_base: "https://open.bigmodel.cn/api/paas/v4/"  # API 地址
 ```
-
-支持的大模型：
-
-| 模型 | API Base |
-|------|----------|
-| 智谱 GLM-5.1 | `https://open.bigmodel.cn/api/paas/v4/` |
-| 阿里通义千问 Qwen3 | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
-| DeepSeek | `https://api.deepseek.com/v1` |
-| OpenAI GPT-4o | `https://api.openai.com/v1` |
 
 ### 使用方式
 
