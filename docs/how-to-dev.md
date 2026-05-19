@@ -65,3 +65,16 @@ kubeconfig: "./.kube/config"
 ```bash
 kubectl get node
 ```
+
+## 额外工作
+
+kind默认不装metric server,导致无法监控和查看资源状态（比如kubectl top node目前不会生效），所以需要自行装一下
+
+```
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+如果遇到网络问题，可以自行拉取镜像之后加载到每个kind节点
+```
+kind load image-archive /tmp/metrics-server-v0.8.1-amd64.tar --name kubewise-dev
+```
