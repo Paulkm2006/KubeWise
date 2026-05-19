@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
+	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tui"
@@ -65,7 +66,7 @@ var chatCmd = &cobra.Command{
 		}
 
 		// 初始化路由Agent
-		routerAgent, err := router.New(k8sClient, llmClient)
+		routerAgent, err := router.New(k8sClient, llmClient, viper.GetInt("agent.max_steps"), getSupervisorConfig())
 		if err != nil {
 			return fmt.Errorf("初始化路由Agent失败: %w", err)
 		}
@@ -111,7 +112,7 @@ var tuiCmd = &cobra.Command{
 			return fmt.Errorf("初始化LLM客户端失败: %w", err)
 		}
 
-		return tui.Run(k8sClient, llmClient)
+		return tui.Run(k8sClient, llmClient, viper.GetInt("agent.max_steps"), getSupervisorConfig())
 	},
 }
 
@@ -132,11 +133,14 @@ func init() {
 	rootCmd.PersistentFlags().StringP("model", "m", "glm-5.1", "LLM模型名称")
 	rootCmd.PersistentFlags().StringP("api-key", "a", "", "LLM API Key")
 	rootCmd.PersistentFlags().StringP("api-base", "b", "", "LLM API Base URL")
+	rootCmd.PersistentFlags().Int("max-steps", 20, "Agent最大工具调用轮次")
+	rootCmd.PersistentFlags().Bool("no-supervisor", false, "禁用supervisor自动干预")
 
 	viper.BindPFlag("kubeconfig", rootCmd.PersistentFlags().Lookup("kubeconfig"))
 	viper.BindPFlag("llm.model", rootCmd.PersistentFlags().Lookup("model"))
 	viper.BindPFlag("llm.api_key", rootCmd.PersistentFlags().Lookup("api-key"))
 	viper.BindPFlag("llm.api_base", rootCmd.PersistentFlags().Lookup("api-base"))
+	viper.BindPFlag("agent.max_steps", rootCmd.PersistentFlags().Lookup("max-steps"))
 }
 
 func initConfig() {
@@ -158,6 +162,15 @@ func initConfig() {
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("KUBEWISE")
 
+	viper.SetDefault("agent.max_steps", 20)
+	viper.SetDefault("agent.supervisor.enabled", true)
+	viper.SetDefault("agent.supervisor.repeat_threshold", 3)
+	viper.SetDefault("agent.supervisor.ping_pong_threshold", 3)
+	viper.SetDefault("agent.supervisor.same_tool_threshold", 5)
+	viper.SetDefault("agent.supervisor.max_extensions", 2)
+	viper.SetDefault("agent.supervisor.extension_step_grant", 10)
+	viper.SetDefault("agent.supervisor.max_evaluator_calls", 2)
+
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Printf("使用配置文件: %s\n", viper.ConfigFileUsed())
 	}
@@ -176,4 +189,22 @@ func initLogger() {
 		os.Exit(1)
 	}
 	defer logger.Sync()
+}
+
+// getSupervisorConfig builds a supervisor.Config from Viper, respecting the --no-supervisor flag.
+func getSupervisorConfig() supervisor.Config {
+	cfg := supervisor.DefaultConfig()
+	if noSup, _ := rootCmd.PersistentFlags().GetBool("no-supervisor"); noSup {
+		cfg.Enabled = false
+	}
+	cfg.RepeatThreshold = viper.GetInt("agent.supervisor.repeat_threshold")
+	cfg.PingPongThreshold = viper.GetInt("agent.supervisor.ping_pong_threshold")
+	cfg.SameToolThreshold = viper.GetInt("agent.supervisor.same_tool_threshold")
+	cfg.MaxExtensions = viper.GetInt("agent.supervisor.max_extensions")
+	cfg.ExtensionStepGrant = viper.GetInt("agent.supervisor.extension_step_grant")
+	cfg.MaxEvaluatorCalls = viper.GetInt("agent.supervisor.max_evaluator_calls")
+	if viper.IsSet("agent.supervisor.enabled") {
+		cfg.Enabled = viper.GetBool("agent.supervisor.enabled")
+	}
+	return cfg
 }

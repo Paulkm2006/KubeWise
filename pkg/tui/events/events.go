@@ -131,3 +131,13 @@ type PhaseEvent struct {
 }
 
 func (PhaseEvent) isTUIEvent() {}
+
+// SupervisorEvent fires when the supervisor intervenes in an agent loop.
+type SupervisorEvent struct {
+	QueryID  string
+	Reason   string // "loop detected" | "max steps reached"
+	Decision string // "continue" | "reset" | "abort"
+	Detail   string // Human-readable explanation or hint
+}
+
+func (SupervisorEvent) isTUIEvent() {}

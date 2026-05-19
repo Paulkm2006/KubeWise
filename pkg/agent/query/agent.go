@@ -7,6 +7,7 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/tool"
 	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
@@ -14,6 +15,9 @@ import (
 	// 导入所有工具包，触发init函数注册工具
 	_ "github.com/kubewise/kubewise/pkg/tools/v1/query"
 )
+
+// DefaultMaxSteps is the default maximum number of tool-calling rounds.
+const DefaultMaxSteps = 20
 
 // Option is a functional option for Agent.
 type Option func(*Agent)
@@ -26,6 +30,22 @@ func WithEventCh(ch chan<- events.TUIEvent, queryID string) Option {
 	}
 }
 
+// WithMaxSteps sets the maximum number of tool-calling rounds.
+func WithMaxSteps(n int) Option {
+	return func(a *Agent) {
+		if n > 0 {
+			a.maxSteps = n
+		}
+	}
+}
+
+// WithSupervisorConfig configures the supervisor.
+func WithSupervisorConfig(cfg supervisor.Config) Option {
+	return func(a *Agent) {
+		a.supervisorCfg = cfg
+	}
+}
+
 // Agent 查询Agent
 type Agent struct {
 	k8sClient    *k8s.Client
@@ -33,6 +53,8 @@ type Agent struct {
 	toolRegistry *tool.Registry
 	eventCh      chan<- events.TUIEvent
 	queryID      string
+	maxSteps     int
+	supervisorCfg supervisor.Config
 }
 
 // emit sends an event to the event channel if one is set.
@@ -61,6 +83,8 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, 
 		k8sClient:    k8sClient,
 		llmClient:    llmClient,
 		toolRegistry: registry,
+		maxSteps:     DefaultMaxSteps,
+		supervisorCfg: supervisor.DefaultConfig(),
 	}
 	for _, opt := range opts {
 		opt(a)
@@ -89,7 +113,8 @@ func (a *Agent) buildDynamicSystemPrompt() string {
    - PersistentVolumeClaim: group="", version="v1", resource="persistentvolumeclaims"
    - Namespace: group="", version="v1", resource="namespaces"
    - Node: group="", version="v1", resource="nodes"
-如果已经获取到足够的信息，请直接用自然语言回答用户的问题，不要调用不必要的工具。`
+
+重要：尽量在一次回复中调用多个工具来并行收集信息，减少对话轮次。如果已经获取到足够的信息，请直接用自然语言回答用户的问题，不要调用不必要的工具。`
 }
 
 // HandleQuery 处理查询请求
@@ -119,62 +144,105 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 		{Role: "user", Content: userQuery},
 	}
 
-	// 最多允许5轮工具调用
-	maxSteps := 10
-	for step := range maxSteps {
-		// 调用LLM
-		a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "thinking"})
-		resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
+	sv := supervisor.New(a.supervisorCfg, a.llmClient)
+	sv.Reset()
+	iterationsRemaining := a.maxSteps
+
+outer:
+	for iterationsRemaining > 0 {
+		for step := range iterationsRemaining {
+			// 调用LLM
+			a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "thinking"})
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
+			if err != nil {
+				return "", fmt.Errorf("LLM调用失败: %w", err)
+			}
+
+			if resp.Usage != nil {
+				inTokens += resp.Usage.PromptTokens
+				outTokens += resp.Usage.CompletionTokens
+			}
+
+			// 检查是否有工具调用
+			if len(resp.ToolCalls) == 0 {
+				return resp.Content, nil
+			}
+
+			// 执行所有工具调用（支持并行tool calls）
+			messages = append(messages, *resp)
+			for _, tc := range resp.ToolCalls {
+				funcCall := &tc.Function
+
+				t, exists := a.toolRegistry.GetTool(funcCall.Name)
+				if !exists {
+					messages = append(messages, llm.Message{
+						Role:       "tool",
+						Content:    fmt.Sprintf("未知工具: %s", funcCall.Name),
+						ToolCallID: tc.ID,
+					})
+					continue
+				}
+				a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: fmt.Sprintf("running tool: %s", funcCall.Name)})
+				toolStart := time.Now()
+				a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: step + 1})
+				result, err := t.Execute(ctx, funcCall.Arguments)
+				a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: step + 1})
+
+				if err != nil {
+					result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用工具。", err)
+				}
+
+				messages = append(messages, llm.Message{
+					Role:       "tool",
+					Content:    fmt.Sprintf("工具返回结果：\n%s", result),
+					ToolCallID: tc.ID,
+				})
+			}
+
+			// Supervisor: cheap loop check after tool execution
+			if triggered, loopResult := sv.CheckLoop(ctx, step, resp.ToolCalls, messages); triggered {
+				a.emit(events.SupervisorEvent{
+					QueryID:  a.queryID,
+					Reason:   "loop detected",
+					Decision: string(loopResult.Decision),
+					Detail:   loopResult.Explanation,
+				})
+				switch loopResult.Decision {
+				case supervisor.DecisionContinue:
+					iterationsRemaining = loopResult.ExtraSteps
+					continue outer
+				case supervisor.DecisionReset:
+					messages = append(messages, llm.Message{Role: "user", Content: loopResult.Hint})
+					iterationsRemaining = a.maxSteps
+					sv.Reset()
+					continue outer
+				case supervisor.DecisionAbort:
+					return "", fmt.Errorf("supervisor: %s", loopResult.Explanation)
+				}
+			}
+		}
+
+		// Reached maxSteps boundary — ask supervisor to evaluate
+		result, err := sv.Evaluate(ctx, messages, iterationsRemaining, a.maxSteps)
 		if err != nil {
-			return "", fmt.Errorf("LLM调用失败: %w", err)
+			return "", fmt.Errorf("超过最大调用轮次（%d），无法完成查询，可通过 --max-steps 参数或 agent.max_steps 配置项调大", a.maxSteps)
 		}
-
-		if resp.Usage != nil {
-			inTokens += resp.Usage.PromptTokens
-			outTokens += resp.Usage.CompletionTokens
+		a.emit(events.SupervisorEvent{
+			QueryID:  a.queryID,
+			Reason:   "max steps reached",
+			Decision: string(result.Decision),
+			Detail:   result.Explanation,
+		})
+		switch result.Decision {
+		case supervisor.DecisionContinue:
+			iterationsRemaining = result.ExtraSteps
+		case supervisor.DecisionReset:
+			messages = append(messages, llm.Message{Role: "user", Content: result.Hint})
+			iterationsRemaining = a.maxSteps
+			sv.Reset()
+		case supervisor.DecisionAbort:
+			return "", fmt.Errorf("supervisor: %s", result.Explanation)
 		}
-
-		// 检查是否有工具调用（使用SDK原生解析的结果）
-		if len(resp.ToolCalls) == 0 {
-			// 不是工具调用，直接返回内容
-			return resp.Content, nil
-		}
-
-		funcCall := &resp.ToolCalls[0].Function
-
-
-
-		// 执行工具调用（注册中心已确保存在）
-		tool, exists := a.toolRegistry.GetTool(funcCall.Name)
-		if !exists {
-			return "", fmt.Errorf("未知工具: %s", funcCall.Name)
-		}
-		a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: fmt.Sprintf("running tool: %s", funcCall.Name)})
-		toolStart := time.Now()
-		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: step + 1})
-		result, err := tool.Execute(ctx, funcCall.Arguments)
-		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: step + 1})
-
-		// 处理工具调用错误，将错误信息返回给LLM让其修复
-		if err != nil {
-			result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用工具。", err)
-		}
-
-		// 将工具调用结果（成功或失败）添加到消息历史
-		messages = append(messages, *resp)
-
-		// 构造工具返回消息，使用标准的tool角色
-		toolMsg := llm.Message{
-			Role:    "tool",
-			Content: fmt.Sprintf("工具返回结果：\n%s", result),
-		}
-
-		// 设置tool_call_id
-		if len(resp.ToolCalls) > 0 {
-			toolMsg.ToolCallID = resp.ToolCalls[0].ID
-		}
-
-		messages = append(messages, toolMsg)
 	}
 
 	return "", fmt.Errorf("超过最大调用轮次，无法完成查询")

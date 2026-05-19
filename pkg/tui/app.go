@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
+	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tui/events"
@@ -48,7 +49,7 @@ type App struct {
 }
 
 // NewApp creates the App, loading recent sessions from disk.
-func NewApp(k8sClient *k8s.Client, llmClient *llm.Client) (*App, error) {
+func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) (*App, error) {
 	store, err := session.NewStore()
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
@@ -61,7 +62,7 @@ func NewApp(k8sClient *k8s.Client, llmClient *llm.Client) (*App, error) {
 
 	activeSession := session.New()
 
-	routerAgent, err := router.New(k8sClient, llmClient)
+	routerAgent, err := router.New(k8sClient, llmClient, maxSteps, supervisorCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +129,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		events.RenderCodeEvent,
 		events.RenderKVEvent,
 		events.RenderListEvent,
-		events.PhaseEvent:
+		events.PhaseEvent,
+			events.SupervisorEvent:
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(msg)
 		return a, tea.Batch(listenForEvents(a.eventCh), chatCmd)
@@ -372,8 +374,8 @@ func (a App) View() string {
 }
 
 // Run starts the bubbletea program.
-func Run(k8sClient *k8s.Client, llmClient *llm.Client) error {
-	app, err := NewApp(k8sClient, llmClient)
+func Run(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) error {
+	app, err := NewApp(k8sClient, llmClient, maxSteps, supervisorCfg)
 	if err != nil {
 		return err
 	}

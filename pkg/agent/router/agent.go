@@ -9,6 +9,7 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/operation"
 	"github.com/kubewise/kubewise/pkg/agent/query"
 	"github.com/kubewise/kubewise/pkg/agent/security"
+	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/agent/troubleshooting"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
@@ -20,6 +21,8 @@ import (
 type Agent struct {
 	k8sClient            *k8s.Client
 	llmClient            *llm.Client
+	maxSteps             int
+	supervisorCfg        supervisor.Config
 	queryAgent           *query.Agent
 	troubleshootingAgent *troubleshooting.Agent
 	securityAgent        *security.Agent
@@ -27,26 +30,31 @@ type Agent struct {
 }
 
 // New 创建路由Agent
-func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
-	queryAgent, err := query.New(k8sClient, llmClient)
+func New(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) (*Agent, error) {
+	if maxSteps <= 0 {
+		maxSteps = 20
+	}
+	queryAgent, err := query.New(k8sClient, llmClient, query.WithMaxSteps(maxSteps), query.WithSupervisorConfig(supervisorCfg))
 	if err != nil {
 		return nil, fmt.Errorf("初始化查询Agent失败: %w", err)
 	}
-	troubleshootingAgent, err := troubleshooting.New(k8sClient, llmClient)
+	troubleshootingAgent, err := troubleshooting.New(k8sClient, llmClient, troubleshooting.WithMaxSteps(maxSteps), troubleshooting.WithSupervisorConfig(supervisorCfg))
 	if err != nil {
 		return nil, fmt.Errorf("初始化故障排查Agent失败: %w", err)
 	}
-	securityAgent, err := security.New(k8sClient, llmClient)
+	securityAgent, err := security.New(k8sClient, llmClient, security.WithMaxSteps(maxSteps), security.WithSupervisorConfig(supervisorCfg))
 	if err != nil {
 		return nil, fmt.Errorf("初始化安全审计Agent失败: %w", err)
 	}
-	operationAgent, err := operation.New(k8sClient, llmClient)
+	operationAgent, err := operation.New(k8sClient, llmClient, operation.WithMaxSteps(maxSteps), operation.WithSupervisorConfig(supervisorCfg))
 	if err != nil {
 		return nil, fmt.Errorf("初始化操作Agent失败: %w", err)
 	}
 	return &Agent{
 		k8sClient:            k8sClient,
 		llmClient:            llmClient,
+		maxSteps:             maxSteps,
+		supervisorCfg:        supervisorCfg,
 		queryAgent:           queryAgent,
 		troubleshootingAgent: troubleshootingAgent,
 		securityAgent:        securityAgent,
@@ -110,7 +118,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	emit(events.PhaseEvent{QueryID: queryID, Phase: phaseLabel})
 	switch intent.TaskType {
 	case types.TaskTypeQuery:
-		ag, agErr := query.New(a.k8sClient, a.llmClient, query.WithEventCh(eventCh, queryID))
+		ag, agErr := query.New(a.k8sClient, a.llmClient, query.WithEventCh(eventCh, queryID), query.WithMaxSteps(a.maxSteps), query.WithSupervisorConfig(a.supervisorCfg))
 		if agErr != nil {
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
@@ -118,7 +126,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeTroubleshooting:
-		ag, agErr := troubleshooting.New(a.k8sClient, a.llmClient, troubleshooting.WithEventCh(eventCh, queryID))
+		ag, agErr := troubleshooting.New(a.k8sClient, a.llmClient, troubleshooting.WithEventCh(eventCh, queryID), troubleshooting.WithMaxSteps(a.maxSteps), troubleshooting.WithSupervisorConfig(a.supervisorCfg))
 		if agErr != nil {
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
@@ -126,7 +134,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeSecurity:
-		ag, agErr := security.New(a.k8sClient, a.llmClient, security.WithEventCh(eventCh, queryID))
+		ag, agErr := security.New(a.k8sClient, a.llmClient, security.WithEventCh(eventCh, queryID), security.WithMaxSteps(a.maxSteps), security.WithSupervisorConfig(a.supervisorCfg))
 		if agErr != nil {
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
@@ -175,6 +183,8 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			a.k8sClient, a.llmClient,
 			operation.WithConfirmationHandler(handler),
 			operation.WithEventCh(eventCh, queryID),
+			operation.WithMaxSteps(a.maxSteps),
+				operation.WithSupervisorConfig(a.supervisorCfg),
 		)
 		if agErr != nil {
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})

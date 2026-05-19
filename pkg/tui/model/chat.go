@@ -416,6 +416,22 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			m.phaseStart = now
 		}
 
+	case events.SupervisorEvent:
+		if c, ok := m.cards[ev.QueryID]; ok {
+			now := time.Now()
+			if len(c.phases) > 0 {
+				last := &c.phases[len(c.phases)-1]
+				if !last.done {
+					last.done = true
+					last.elapsed = now.Sub(last.start)
+				}
+			}
+			label := fmt.Sprintf("supervisor: %s — %s", ev.Decision, ev.Detail)
+			c.phases = append(c.phases, phaseLine{label: label, start: now})
+			m.phase = label
+			m.phaseStart = now
+		}
+
 	case spinner.TickMsg:
 		if m.spinning {
 			var cmd tea.Cmd
