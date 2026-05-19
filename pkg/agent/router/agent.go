@@ -6,14 +6,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kubewise/kubewise/pkg/agent/deploy"
 	"github.com/kubewise/kubewise/pkg/agent/operation"
 	"github.com/kubewise/kubewise/pkg/agent/query"
 	"github.com/kubewise/kubewise/pkg/agent/security"
 	"github.com/kubewise/kubewise/pkg/agent/troubleshooting"
+	"github.com/kubewise/kubewise/pkg/catalog"
+	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
+	"go.uber.org/zap"
 )
 
 // Agent 路由Agent
@@ -24,6 +28,25 @@ type Agent struct {
 	troubleshootingAgent *troubleshooting.Agent
 	securityAgent        *security.Agent
 	operationAgent       *operation.Agent
+	deployAgent          *deploy.Agent
+	log                  *zap.Logger
+}
+
+// SetLogger injects a logger and propagates it to all sub-agents.
+func (a *Agent) SetLogger(l *zap.Logger) {
+	a.log = l
+	a.queryAgent.SetLogger(l)
+	a.troubleshootingAgent.SetLogger(l)
+	a.securityAgent.SetLogger(l)
+	a.operationAgent.SetLogger(l)
+	a.deployAgent.SetLogger(l)
+}
+
+func (a *Agent) logger() *zap.Logger {
+	if a.log == nil {
+		return zap.NewNop()
+	}
+	return a.log
 }
 
 // New 创建路由Agent
@@ -44,6 +67,8 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("初始化操作Agent失败: %w", err)
 	}
+	helmClient := helm.New("")
+	deployAgent := deploy.New(llmClient, helmClient, k8sClient)
 	return &Agent{
 		k8sClient:            k8sClient,
 		llmClient:            llmClient,
@@ -51,6 +76,7 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
 		troubleshootingAgent: troubleshootingAgent,
 		securityAgent:        securityAgent,
 		operationAgent:       operationAgent,
+		deployAgent:          deployAgent,
 	}, nil
 }
 
@@ -61,6 +87,7 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 	// 1. 意图分类
 	intent, err := a.classifyIntent(ctx, userQuery)
 	if err != nil {
+		a.logger().Error("intent classification failed", zap.Error(err))
 		return "", fmt.Errorf("意图分类失败: %w", err)
 	}
 
@@ -79,6 +106,8 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 		return a.troubleshootingAgent.HandleQuery(ctx, userQuery, intent.Entities)
 	case types.TaskTypeSecurity:
 		return a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
+	case types.TaskTypeDeploy:
+		return a.deployAgent.HandleQuery(ctx, userQuery, intent.Entities)
 	default:
 		return "", fmt.Errorf("不支持的任务类型: %s", intent.TaskType)
 	}
@@ -99,9 +128,14 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	emit(events.PhaseEvent{QueryID: queryID, Phase: "classifying intent"})
 	intent, err := a.classifyIntent(ctx, userQuery)
 	if err != nil {
+		a.logger().Error("intent classification failed", zap.Error(err))
 		emit(events.StreamErrEvent{QueryID: queryID, Err: err})
 		return err
 	}
+	a.logger().Info("intent classified",
+		zap.String("task_type", string(intent.TaskType)),
+		zap.Float64("confidence", intent.Confidence),
+	)
 
 	var result string
 
@@ -115,6 +149,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
 		}
+		ag.SetLogger(a.log)
 		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeTroubleshooting:
@@ -123,6 +158,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
 		}
+		ag.SetLogger(a.log)
 		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeSecurity:
@@ -131,7 +167,36 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
 		}
+		ag.SetLogger(a.log)
 		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
+
+	case types.TaskTypeDeploy:
+		// Bridge goroutine: 将 Deploy Agent 的同步 ConfirmHandler / SelectionHandler
+		// 转换为通过 eventCh 发送 RequestEvent → TUI → 接收 DoneMsg → 解阻塞 Agent。
+		bridgeCtx, bridgeCancel := context.WithCancel(ctx)
+		defer bridgeCancel()
+
+		selectionHandler := &tuiChartSelectionHandler{
+			eventCh:   eventCh,
+			queryID:   queryID,
+			bridgeCtx: bridgeCtx,
+		}
+		confirmHandler := &tuiDeployConfirmHandler{
+			eventCh:   eventCh,
+			queryID:   queryID,
+			bridgeCtx: bridgeCtx,
+		}
+
+		deployAgentWithEvents := deploy.New(
+			a.llmClient,
+			helm.New(""),
+			a.k8sClient,
+			deploy.WithEventChannel(eventCh, queryID),
+			deploy.WithSelectionHandler(selectionHandler),
+			deploy.WithConfirmHandler(confirmHandler),
+		)
+		deployAgentWithEvents.SetLogger(a.log)
+		result, err = deployAgentWithEvents.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeOperation:
 		handler := operation.NewChannelConfirmationHandler()
@@ -180,9 +245,11 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
 		}
+			opAgent.SetLogger(a.log)
 		result, err = opAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	default:
+		a.logger().Error("unsupported task type", zap.String("task_type", string(intent.TaskType)))
 		err = fmt.Errorf("不支持的任务类型: %s", intent.TaskType)
 	}
 
@@ -367,14 +434,15 @@ func parseTable(result string) (headers []string, rows [][]string, ok bool) {
 
 // classifyIntent 意图分类
 func (a *Agent) classifyIntent(ctx context.Context, userQuery string) (*types.IntentClassification, error) {
-	systemPrompt := `你是Kubernetes智能运维系统的路由分析器，负责将用户的自然语言查询分类到以下四种任务类型之一：
-1. operation（操作类）：用户需要执行创建、修改、删除、部署等主动操作
+	systemPrompt := `你是Kubernetes智能运维系统的路由分析器，负责将用户的自然语言查询分类到以下五种任务类型之一：
+1. operation（操作类）：用户需要对已有资源执行原子操作，如扩缩容、重启、删除 Pod/Deployment 等
 2. query（查询类）：用户需要查询集群的状态、信息、统计等
 3. troubleshooting（故障排查类）：用户需要排查异常、错误、崩溃等问题
 4. security（安全审计类）：用户需要进行安全检查、权限审计、合规扫描等
+5. deploy（应用部署类）：用户想要安装、部署、升级或卸载一个完整应用（如 ArgoCD、Prometheus、Nginx Ingress 等 Helm Chart）。与 operation 的区别：deploy 用于安装完整应用，operation 用于对已有资源的原子操作。
 
 请分析用户查询，返回JSON格式的结果，包含：
-- task_type: 任务类型枚举值（operation/query/troubleshooting/security）
+- task_type: 任务类型枚举值（operation/query/troubleshooting/security/deploy）
 - task_type_description: 任务类型中文描述
 - entities: 提取的关键实体，包含：
   - namespace: 提到的命名空间（如果有）
@@ -406,8 +474,72 @@ func (a *Agent) classifyIntent(ctx context.Context, userQuery string) (*types.In
 	content = strings.TrimSpace(content)
 
 	if err := json.Unmarshal([]byte(content), &intent); err != nil {
+		a.logger().Error("failed to parse intent JSON", zap.Error(err), zap.String("content", content))
 		return nil, fmt.Errorf("解析意图结果失败: %w，原始内容: %s", err, content)
 	}
 
 	return &intent, nil
+}
+
+// tuiChartSelectionHandler 通过 eventCh 将 Chart 选择请求转发给 TUI，
+// 阻塞等待用户在 TUI 中完成选择或取消。
+type tuiChartSelectionHandler struct {
+	eventCh   chan<- events.TUIEvent
+	queryID   string
+	bridgeCtx context.Context
+}
+
+func (h *tuiChartSelectionHandler) SelectChart(ctx context.Context, appName string, candidates []catalog.ChartInfo) (*catalog.ChartInfo, error) {
+	respCh := make(chan *catalog.ChartInfo, 1)
+
+	select {
+	case h.eventCh <- events.ChartSelectRequestEvent{
+		QueryID:    h.queryID,
+		AppName:    appName,
+		Candidates: candidates,
+		RespCh:     respCh,
+	}:
+	case <-h.bridgeCtx.Done():
+		return nil, h.bridgeCtx.Err()
+	}
+
+	select {
+	case result := <-respCh:
+		return result, nil
+	case <-h.bridgeCtx.Done():
+		return nil, h.bridgeCtx.Err()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// tuiDeployConfirmHandler 通过 eventCh 将 Deploy 确认请求转发给 TUI，
+// 阻塞等待用户在 TUI 中执行、编辑或取消。
+type tuiDeployConfirmHandler struct {
+	eventCh   chan<- events.TUIEvent
+	queryID   string
+	bridgeCtx context.Context
+}
+
+func (h *tuiDeployConfirmHandler) ConfirmDeploy(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error) {
+	respCh := make(chan events.DeployDecision, 1)
+
+	select {
+	case h.eventCh <- events.DeployConfirmRequestEvent{
+		QueryID: h.queryID,
+		Plan:    plan,
+		RespCh:  respCh,
+	}:
+	case <-h.bridgeCtx.Done():
+		return events.DeployDecision{Action: "cancel"}, h.bridgeCtx.Err()
+	}
+
+	select {
+	case result := <-respCh:
+		return result, nil
+	case <-h.bridgeCtx.Done():
+		return events.DeployDecision{Action: "cancel"}, h.bridgeCtx.Err()
+	case <-ctx.Done():
+		return events.DeployDecision{Action: "cancel"}, ctx.Err()
+	}
 }

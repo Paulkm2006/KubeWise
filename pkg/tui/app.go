@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
+	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tui/events"
@@ -30,6 +32,13 @@ type App struct {
 	input   model.InputModel
 	confirm *model.ConfirmModel // nil when no modal is shown
 
+	// Deploy TUI 组件（同一时刻最多一个 active）
+	chartSelectModel   *model.ChartSelectModel
+	manualInputModel   *model.ManualChartInputModel
+	deployConfirmModel *model.DeployConfirmModel
+	deployRespCh       chan<- *catalog.ChartInfo    // Chart 选择响应通道（接收后置nil）
+	confirmRespCh      chan<- events.DeployDecision // Deploy 确认响应通道（接收后置nil）
+
 	sessions []*session.Session
 	active   *session.Session
 	store    *session.Store
@@ -48,7 +57,7 @@ type App struct {
 }
 
 // NewApp creates the App, loading recent sessions from disk.
-func NewApp(k8sClient *k8s.Client, llmClient *llm.Client) (*App, error) {
+func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger) (*App, error) {
 	store, err := session.NewStore()
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
@@ -65,6 +74,7 @@ func NewApp(k8sClient *k8s.Client, llmClient *llm.Client) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	routerAgent.SetLogger(log)
 
 	return &App{
 		sidebar:     model.NewSidebarModel(),
@@ -133,6 +143,45 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.chat, chatCmd = a.chat.Update(msg)
 		return a, tea.Batch(listenForEvents(a.eventCh), chatCmd)
 
+	case events.ChartSelectRequestEvent:
+		a.deployRespCh = msg.RespCh
+		m := model.NewChartSelectModel(msg.QueryID, msg.AppName, msg.Candidates)
+		a.chartSelectModel = &m
+		return a, tea.Batch(listenForEvents(a.eventCh), m.Init())
+
+	case events.ManualChartInputRequestEvent:
+		m := model.NewManualChartInputModel(msg.QueryID)
+		a.manualInputModel = &m
+		return a, tea.Batch(listenForEvents(a.eventCh), m.Init())
+
+	case events.DeployConfirmRequestEvent:
+		a.confirmRespCh = msg.RespCh
+		m := model.NewDeployConfirmModel(msg.QueryID, msg.Plan, a.width, a.height)
+		a.deployConfirmModel = &m
+		return a, tea.Batch(listenForEvents(a.eventCh), m.Init())
+
+	case model.ChartSelectedMsg:
+		// 将用户选择（或取消）发回 Agent，解除 Agent 阻塞
+		if a.deployRespCh != nil {
+			a.deployRespCh <- msg.ChartInfo
+			a.deployRespCh = nil
+		}
+		a.chartSelectModel = nil
+		return a, listenForEvents(a.eventCh)
+
+	case model.ManualChartInputDoneMsg:
+		a.manualInputModel = nil
+		return a, listenForEvents(a.eventCh)
+
+	case model.DeployConfirmDoneMsg:
+		// 将用户决策发回 Agent，解除 Agent 阻塞
+		if a.confirmRespCh != nil {
+			a.confirmRespCh <- msg.Decision
+			a.confirmRespCh = nil
+		}
+		a.deployConfirmModel = nil
+		return a, listenForEvents(a.eventCh)
+
 	case events.ConfirmRequestEvent:
 		cm := model.NewConfirmModel(msg)
 		a.confirm = &cm
@@ -169,6 +218,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Route remaining messages (including unmatched KeyMsg) to sub-models
 	var cmd tea.Cmd
+	if a.deployConfirmModel != nil {
+		updated, dcCmd := a.deployConfirmModel.Update(msg)
+		*a.deployConfirmModel = updated
+		return a, dcCmd
+	}
+	if a.chartSelectModel != nil {
+		updated, csCmd := a.chartSelectModel.Update(msg)
+		*a.chartSelectModel = updated
+		return a, csCmd
+	}
+	if a.manualInputModel != nil {
+		updated, miCmd := a.manualInputModel.Update(msg)
+		*a.manualInputModel = updated
+		return a, miCmd
+	}
 	if a.confirm != nil {
 		*a.confirm, cmd = a.confirm.Update(msg)
 		return a, cmd
@@ -186,6 +250,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // the key was handled, (nil, false) otherwise so the key can be forwarded to
 // the focused sub-model.
 func (a App) handleShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
+	// 如果 deploy TUI 组件 active，不拦截任何方向键/快捷键，
+	// 让按键事件透传到子模型的 Update() 方法。
+	if a.chartSelectModel != nil || a.deployConfirmModel != nil || a.manualInputModel != nil {
+		return nil, false
+	}
+
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		if a.running {
@@ -358,6 +428,16 @@ func (a *App) doLayout() {
 
 // View renders the full TUI.
 func (a App) View() string {
+	// Deploy TUI 组件优先级最高（覆盖主界面）
+	if a.deployConfirmModel != nil {
+		return a.deployConfirmModel.View()
+	}
+	if a.chartSelectModel != nil {
+		return a.chartSelectModel.View()
+	}
+	if a.manualInputModel != nil {
+		return a.manualInputModel.View()
+	}
 	if a.confirm != nil {
 		return a.confirm.View()
 	}
@@ -372,8 +452,8 @@ func (a App) View() string {
 }
 
 // Run starts the bubbletea program.
-func Run(k8sClient *k8s.Client, llmClient *llm.Client) error {
-	app, err := NewApp(k8sClient, llmClient)
+func Run(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger) error {
+	app, err := NewApp(k8sClient, llmClient, log)
 	if err != nil {
 		return err
 	}
