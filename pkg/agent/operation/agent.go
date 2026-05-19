@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tool"
@@ -72,6 +74,17 @@ type Agent struct {
 	queryID        string
 	inTokens       int
 	outTokens      int
+	log            *zap.Logger
+}
+
+// SetLogger injects a logger for debug output.
+func (a *Agent) SetLogger(l *zap.Logger) { a.log = l }
+
+func (a *Agent) logger() *zap.Logger {
+	if a.log == nil {
+		return zap.NewNop()
+	}
+	return a.log
 }
 
 // New creates a new Agent. Defaults to StdinConfirmationHandler.
@@ -126,6 +139,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	a.outTokens = 0
 	start := time.Now()
 	a.emit(events.AgentStartEvent{AgentName: "Operation Agent", QueryID: a.queryID})
+	a.logger().Debug("handling operation query", zap.String("query", userQuery))
 	defer func() {
 		a.emit(events.AgentDoneEvent{
 			QueryID:   a.queryID,

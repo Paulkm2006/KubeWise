@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tool"
@@ -34,6 +36,17 @@ type Agent struct {
 	toolRegistry *tool.Registry
 	eventCh      chan<- events.TUIEvent
 	queryID      string
+	log          *zap.Logger
+}
+
+// SetLogger injects a logger for debug output.
+func (a *Agent) SetLogger(l *zap.Logger) { a.log = l }
+
+func (a *Agent) logger() *zap.Logger {
+	if a.log == nil {
+		return zap.NewNop()
+	}
+	return a.log
 }
 
 // emit sends an event to the event channel if one is set.
@@ -109,6 +122,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	start := time.Now()
 	var inTokens, outTokens int
 	a.emit(events.AgentStartEvent{AgentName: "Troubleshooting Agent", QueryID: a.queryID})
+	a.logger().Debug("handling troubleshooting query", zap.String("query", userQuery))
 	defer func() {
 		a.emit(events.AgentDoneEvent{
 			QueryID:   a.queryID,

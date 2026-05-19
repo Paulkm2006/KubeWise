@@ -10,6 +10,7 @@ import (
 	"github.com/kubewise/kubewise/pkg/tool"
 	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
+	"go.uber.org/zap"
 
 	// 导入所有工具包，触发init函数注册工具
 	_ "github.com/kubewise/kubewise/pkg/tools/v1/query"
@@ -33,6 +34,17 @@ type Agent struct {
 	toolRegistry *tool.Registry
 	eventCh      chan<- events.TUIEvent
 	queryID      string
+	log          *zap.Logger
+}
+
+// SetLogger injects a logger for debug output.
+func (a *Agent) SetLogger(l *zap.Logger) { a.log = l }
+
+func (a *Agent) logger() *zap.Logger {
+	if a.log == nil {
+		return zap.NewNop()
+	}
+	return a.log
 }
 
 // emit sends an event to the event channel if one is set.
@@ -97,6 +109,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	start := time.Now()
 	var inTokens, outTokens int
 	a.emit(events.AgentStartEvent{AgentName: "Query Agent", QueryID: a.queryID})
+	a.logger().Debug("handling query", zap.String("query", userQuery))
 	defer func() {
 		a.emit(events.AgentDoneEvent{
 			QueryID:   a.queryID,
