@@ -32,4 +32,8 @@ go.work.sum
 .vscode/
 .superpowers
 .claude
-.worktreesconfig.yaml
+.worktrees
+
+config.yaml
+kubewise.log
+.kube

@@ -196,13 +196,12 @@ func (c *Client) InstallOrUpgrade(ctx context.Context, opts InstallOptions) (*Re
 		return nil, fmt.Errorf("加载 chart 失败: %w", err)
 	}
 
-	// 检查 release 是否已存在
-	histClient := action.NewHistory(cfg)
-	histClient.Max = 1
-	_, histErr := histClient.Run(opts.ReleaseName)
+	// 检查 release 当前是否存在（不是历史记录，uninstall 后 Status 会返回 not found）
+	statusClient := action.NewStatus(cfg)
+	_, statusErr := statusClient.Run(opts.ReleaseName)
 
 	var rel ri.Releaser
-	if histErr != nil {
+	if statusErr != nil {
 		// 全新安装
 		installClient := action.NewInstall(cfg)
 		installClient.ReleaseName = opts.ReleaseName
