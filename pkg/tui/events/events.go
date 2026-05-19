@@ -1,6 +1,10 @@
 package events
 
-import "time"
+import (
+	"time"
+
+	"github.com/kubewise/kubewise/pkg/catalog"
+)
 
 // TUIEvent is the sealed interface for all events flowing from agents to the TUI.
 type TUIEvent interface{ isTUIEvent() }
@@ -101,7 +105,7 @@ func (RenderListEvent) isTUIEvent() {}
 // RespCh must receive one operation.ConfirmResponse to unblock the agent.
 type ConfirmRequestEvent struct {
 	QueryID    string
-	Step       any      // cast to operation.OperationStep in app.go
+	Step       any // cast to operation.OperationStep in app.go
 	TotalSteps int
 	RespCh     chan<- any // send operation.ConfirmResponse here
 }
@@ -131,3 +135,75 @@ type PhaseEvent struct {
 }
 
 func (PhaseEvent) isTUIEvent() {}
+
+// DeployPlan 包含部署计划的所有信息，用于 TUI 展示和用户确认。
+// 定义在 events 包中以避免 deploy 包与 tui 包之间的循环依赖。
+type DeployPlan struct {
+	ChartInfo     *catalog.ChartInfo
+	DefaultValues string // 完整的默认 values.yaml（含注释）
+	CustomValues  string // LLM 生成的 override values
+	ReleaseName   string
+	Namespace     string
+	IsUpgrade     bool // true 表示升级已有 release
+}
+
+// DeployDecision 表示用户在确认界面的决策。
+type DeployDecision struct {
+	Action     string // "execute" | "cancel"
+	Values     string // 最终的 override values（可能被用户编辑过）
+	Correction string // 如果用户使用了自然语言修正
+}
+
+// ChartSelectRequestEvent 请求 TUI 显示 Chart 选择界面。
+// Agent 阻塞在 RespCh 上等待用户选择。
+type ChartSelectRequestEvent struct {
+	QueryID    string
+	AppName    string
+	Candidates []catalog.ChartInfo       // 候选 Chart 列表（来自 ArtifactHub）
+	RespCh     chan<- *catalog.ChartInfo // Agent 在此等待结果；nil 表示取消
+}
+
+func (ChartSelectRequestEvent) isTUIEvent() {}
+
+// ChartSelectResponseEvent 用户从 TUI 选择了 Chart（或手动输入）。
+type ChartSelectResponseEvent struct {
+	QueryID   string
+	ChartInfo *catalog.ChartInfo // nil 表示用户取消
+}
+
+func (ChartSelectResponseEvent) isTUIEvent() {}
+
+// ManualChartInputRequestEvent 请求 TUI 显示手动输入界面。
+type ManualChartInputRequestEvent struct {
+	QueryID string
+}
+
+func (ManualChartInputRequestEvent) isTUIEvent() {}
+
+// ManualChartInputResponseEvent 用户完成手动输入。
+type ManualChartInputResponseEvent struct {
+	QueryID   string
+	RepoURL   string
+	ChartName string
+	Cancelled bool
+}
+
+func (ManualChartInputResponseEvent) isTUIEvent() {}
+
+// DeployConfirmRequestEvent 请求 TUI 显示 Deploy 确认界面。
+// Agent 阻塞在 RespCh 上等待用户决策。
+type DeployConfirmRequestEvent struct {
+	QueryID string
+	Plan    DeployPlan
+	RespCh  chan<- DeployDecision // Agent 在此等待结果
+}
+
+func (DeployConfirmRequestEvent) isTUIEvent() {}
+
+// DeployConfirmResponseEvent 用户完成 Deploy 确认。
+type DeployConfirmResponseEvent struct {
+	QueryID  string
+	Decision DeployDecision
+}
+
+func (DeployConfirmResponseEvent) isTUIEvent() {}
