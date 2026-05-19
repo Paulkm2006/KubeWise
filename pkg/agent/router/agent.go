@@ -207,8 +207,17 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 }
 
 // emitRenderEvent detects the best render format for result and emits the
-// corresponding event. Detection priority: YAML → JSON → Table → List → KV → Text.
+// corresponding event. Detection priority: Detail marker → YAML → JSON → Table → List → KV → Text.
 func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
+	// 0. KubeWise detail marker.
+	if detail, stripped, ok := extractDetailMarker(result); ok {
+		emit(events.RenderDetailEvent{QueryID: queryID, Detail: detail})
+		if strings.TrimSpace(stripped) == "" {
+			return
+		}
+		result = stripped
+	}
+
 	// 1. YAML code block.
 	for line := range strings.SplitSeq(result, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -304,6 +313,52 @@ func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 
 	// 6. Default: plain text.
 	emit(events.RenderTextEvent{QueryID: queryID, Text: result})
+}
+
+// extractDetailMarker looks for a __KUBEWISE_DETAIL:<kind>__ ... __END__ block
+// in the result string. If found, it parses the JSON payload into a ResourceDetail,
+// returns the result with the marker block stripped, and ok=true.
+func extractDetailMarker(result string) (events.ResourceDetail, string, bool) {
+	const startPrefix = "__KUBEWISE_DETAIL:"
+	const startSuffix = "__"
+	const endMarker = "__END__"
+
+	startIdx := strings.Index(result, startPrefix)
+	if startIdx < 0 {
+		return events.ResourceDetail{}, result, false
+	}
+	kindEnd := strings.Index(result[startIdx+len(startPrefix):], startSuffix)
+	if kindEnd < 0 {
+		return events.ResourceDetail{}, result, false
+	}
+	payloadStart := startIdx + len(startPrefix) + kindEnd + len(startSuffix)
+	// Skip whitespace after the marker line.
+	payloadStart = skipLeadingNewline(result, payloadStart)
+
+	endIdx := strings.Index(result[payloadStart:], endMarker)
+	if endIdx < 0 {
+		return events.ResourceDetail{}, result, false
+	}
+	jsonStr := strings.TrimSpace(result[payloadStart : payloadStart+endIdx])
+
+	var detail events.ResourceDetail
+	if err := json.Unmarshal([]byte(jsonStr), &detail); err != nil {
+		return events.ResourceDetail{}, result, false
+	}
+
+	stripped := result[:startIdx] + result[payloadStart+endIdx+len(endMarker):]
+	return detail, stripped, true
+}
+
+// skipLeadingNewline advances past a single \n or \r\n at pos.
+func skipLeadingNewline(s string, pos int) int {
+	if pos < len(s) && s[pos] == '\n' {
+		return pos + 1
+	}
+	if pos+1 < len(s) && s[pos] == '\r' && s[pos+1] == '\n' {
+		return pos + 2
+	}
+	return pos
 }
 
 // containsAny reports whether s contains any of the given substrings.

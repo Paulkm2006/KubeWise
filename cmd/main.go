@@ -12,6 +12,7 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
+	"github.com/kubewise/kubewise/pkg/api"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tui"
@@ -116,6 +117,42 @@ var tuiCmd = &cobra.Command{
 	},
 }
 
+var serveCmd = &cobra.Command{
+	Use:   "serve",
+	Short: "启动 HTTP API 服务器",
+	Long: `启动 HTTP API 服务器，提供 RESTful API 和 SSE 流式接口。
+示例：
+  kubewise serve
+  kubewise serve --addr :9090`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		kubeconfig := viper.GetString("kubeconfig")
+		k8sClient, err := k8s.NewClient(kubeconfig)
+		if err != nil {
+			return fmt.Errorf("初始化K8s客户端失败: %w", err)
+		}
+
+		llmConfig := llm.Config{
+			Model:   viper.GetString("llm.model"),
+			APIKey:  viper.GetString("llm.api_key"),
+			APIBase: viper.GetString("llm.api_base"),
+		}
+		llmClient, err := llm.NewClient(llmConfig)
+		if err != nil {
+			return fmt.Errorf("初始化LLM客户端失败: %w", err)
+		}
+
+		addr := viper.GetString("api.addr")
+		handler, err := api.NewHandler(k8sClient, llmClient, viper.GetInt("agent.max_steps"), getSupervisorConfig())
+		if err != nil {
+			return fmt.Errorf("初始化API Handler失败: %w", err)
+		}
+
+		srv := api.NewServer(handler)
+		logger.Info("starting API server", zap.String("addr", addr))
+		return srv.Start(addr)
+	},
+}
+
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
@@ -127,6 +164,7 @@ func init() {
 	cobra.OnInitialize(initConfig, initLogger)
 	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(tuiCmd)
+	rootCmd.AddCommand(serveCmd)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认 $HOME/.kubewise.yaml)")
 	rootCmd.PersistentFlags().StringP("kubeconfig", "k", "", "kubeconfig文件路径")
@@ -141,6 +179,9 @@ func init() {
 	viper.BindPFlag("llm.api_key", rootCmd.PersistentFlags().Lookup("api-key"))
 	viper.BindPFlag("llm.api_base", rootCmd.PersistentFlags().Lookup("api-base"))
 	viper.BindPFlag("agent.max_steps", rootCmd.PersistentFlags().Lookup("max-steps"))
+
+	serveCmd.Flags().String("addr", ":8080", "API server listen address")
+	viper.BindPFlag("api.addr", serveCmd.Flags().Lookup("addr"))
 }
 
 func initConfig() {
