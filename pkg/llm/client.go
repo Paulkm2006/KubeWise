@@ -7,12 +7,24 @@ import (
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"go.uber.org/zap"
 )
 
 // Client LLM客户端，封装openai-go SDK
 type Client struct {
 	client openai.Client
 	config Config
+	log    *zap.Logger
+}
+
+// SetLogger injects a logger for debug output.
+func (c *Client) SetLogger(l *zap.Logger) { c.log = l }
+
+func (c *Client) logger() *zap.Logger {
+	if c.log == nil {
+		return zap.NewNop()
+	}
+	return c.log
 }
 
 // NewClient 创建新的LLM客户端
@@ -34,10 +46,13 @@ func NewClient(config Config) (*Client, error) {
 
 	client := openai.NewClient(opts...)
 
-	return &Client{
+	c := &Client{
 		client: client,
 		config: config,
-	}, nil
+		log:    zap.NewNop(),
+	}
+	c.logger().Debug("llm client initialized", zap.String("model", config.Model))
+	return c, nil
 }
 
 // ChatCompletion 聊天补全接口，支持工具调用
@@ -89,8 +104,14 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 	}
 
 	// 调用OpenAI API
+	c.logger().Debug("chat completion request",
+		zap.String("model", string(params.Model)),
+		zap.Int("messages", len(messages)),
+		zap.Int("tools", len(functions)),
+	)
 	resp, err := c.client.Chat.Completions.New(ctx, params, reqOpts...)
 	if err != nil {
+		c.logger().Error("chat completion failed", zap.Error(err))
 		return nil, fmt.Errorf("chat completion failed: %w", err)
 	}
 

@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	"go.uber.org/zap"
 )
 
 // Client Kubernetes客户端封装
@@ -23,6 +24,17 @@ type Client struct {
 	clientset     *kubernetes.Clientset
 	dynamicClient dynamic.Interface
 	config        *rest.Config
+	log           *zap.Logger
+}
+
+// SetLogger injects a logger for debug output.
+func (c *Client) SetLogger(l *zap.Logger) { c.log = l }
+
+func (c *Client) logger() *zap.Logger {
+	if c.log == nil {
+		return zap.NewNop()
+	}
+	return c.log
 }
 
 // expandTilde 将路径开头的 "~" 展开为用户主目录
@@ -75,11 +87,14 @@ func NewClient(kubeconfigPath string) (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{
+	c := &Client{
 		clientset:     clientset,
 		dynamicClient: dynamicClient,
 		config:        config,
-	}, nil
+		log:           zap.NewNop(),
+	}
+	c.logger().Info("k8s client connected", zap.String("host", config.Host))
+	return c, nil
 }
 
 // ListPersistentVolumes 获取所有PV
