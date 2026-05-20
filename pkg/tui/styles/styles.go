@@ -31,6 +31,7 @@ var (
 	// Step bubbles (phase history inside progress cards)
 	StepActiveStyle  = lipgloss.NewStyle().Foreground(Warning).Bold(true)
 	StepDoneStyle    = lipgloss.NewStyle().Foreground(Success)
+	StepFailedStyle  = lipgloss.NewStyle().Foreground(Error)
 	StepPendingStyle = lipgloss.NewStyle().Foreground(Secondary)
 
 	// Renderer

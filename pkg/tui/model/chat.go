@@ -18,6 +18,7 @@ type toolLine struct {
 	name    string
 	step    int
 	done    bool
+	failed  bool
 	elapsed time.Duration
 }
 
@@ -348,6 +349,18 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			}
 		}
 
+	case events.ToolFailEvent:
+		if c, ok := m.cards[ev.QueryID]; ok {
+			for i := range c.tools {
+				if c.tools[i].name == ev.ToolName && c.tools[i].step == ev.Step && !c.tools[i].done {
+					c.tools[i].done = true
+					c.tools[i].failed = true
+					c.tools[i].elapsed = ev.Elapsed
+					break
+				}
+			}
+		}
+
 	case events.RenderTextEvent:
 		m.addPending(ev.QueryID, session.Block{Type: "text"}, m.renderer.RenderText(ev.Text))
 
@@ -609,10 +622,14 @@ func (m ChatModel) renderCard(c *progressCard) string {
 
 	// Render tool lines nested under the active phase
 	for _, t := range c.tools {
-		if t.done {
+		switch {
+		case t.done && t.failed:
+			line := fmt.Sprintf("    ✗ %-30s %s", t.name, t.elapsed.Round(time.Millisecond).String())
+			lines = append(lines, styles.StepFailedStyle.Render(line))
+		case t.done:
 			line := fmt.Sprintf("    ✓ %-30s %s", t.name, t.elapsed.Round(time.Millisecond).String())
 			lines = append(lines, styles.StepDoneStyle.Render(line))
-		} else {
+		default:
 			line := fmt.Sprintf("    ⟳ %s", t.name)
 			lines = append(lines, styles.StepActiveStyle.Render(line))
 		}

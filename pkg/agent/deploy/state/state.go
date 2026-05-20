@@ -9,6 +9,7 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/values"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
@@ -49,7 +50,7 @@ type State struct {
 
 	// --- events / logging ---
 	QueryID string
-	EventCh chan<- events.TUIEvent
+	EventCh chan<- stream.Event
 	Log     *zap.Logger
 
 	// --- state machine ---
@@ -130,14 +131,14 @@ type Deps struct {
 	Select                SelectionHandler
 	BuildReport           func(ctx context.Context, rel *helm.Release, chart *catalog.ChartInfo, namespace, releaseName string) string
 	QueryID               string
-	EventCh               chan<- events.TUIEvent
+	EventCh               chan<- stream.Event
 	Log                   *zap.Logger
 	MaxCorrectionAttempts int
 	MaxRecoveryAttempts   int
 }
 
-// Emit sends a non-blocking TUI event.
-func (s *State) Emit(e events.TUIEvent) {
+// Emit sends a non-blocking stream event.
+func (s *State) Emit(e stream.Event) {
 	if s.EventCh == nil {
 		return
 	}
@@ -147,8 +148,8 @@ func (s *State) Emit(e events.TUIEvent) {
 	}
 }
 
-// EmitCritical sends a blocking TUI event.
-func (s *State) EmitCritical(e events.TUIEvent) {
+// EmitCritical sends a blocking stream event.
+func (s *State) EmitCritical(e stream.Event) {
 	if s.EventCh == nil {
 		return
 	}
@@ -157,34 +158,37 @@ func (s *State) EmitCritical(e events.TUIEvent) {
 
 // RunTool executes fn while emitting deploy tool progress events.
 func (s *State) RunTool(ctx context.Context, name string, step int, fn func(context.Context) error) error {
-	s.Emit(events.ToolCallEvent{QueryID: s.QueryID, ToolName: name, Step: step})
+	s.Emit(stream.ToolCall{QueryID: s.QueryID, ToolName: name, Step: step})
 	start := time.Now()
 	err := fn(ctx)
-	if err == nil {
-		s.Emit(events.ToolDoneEvent{
-			QueryID:  s.QueryID,
-			ToolName: name,
-			Step:     step,
-			Elapsed:  time.Since(start),
+	elapsed := time.Since(start)
+	if err != nil {
+		s.Emit(stream.ToolFail{
+			QueryID: s.QueryID, ToolName: name, Step: step, Elapsed: elapsed, Err: err.Error(),
 		})
+		return err
 	}
-	return err
+	s.Emit(stream.ToolDone{
+		QueryID: s.QueryID, ToolName: name, Step: step, Elapsed: elapsed,
+	})
+	return nil
 }
 
 // RunToolWithResult executes fn and returns its result with deploy tool events.
 func RunToolWithResult[T any](s *State, ctx context.Context, name string, step int, fn func(context.Context) (T, error)) (T, error) {
 	var zero T
-	s.Emit(events.ToolCallEvent{QueryID: s.QueryID, ToolName: name, Step: step})
+	s.Emit(stream.ToolCall{QueryID: s.QueryID, ToolName: name, Step: step})
 	start := time.Now()
 	out, err := fn(ctx)
+	elapsed := time.Since(start)
 	if err != nil {
+		s.Emit(stream.ToolFail{
+			QueryID: s.QueryID, ToolName: name, Step: step, Elapsed: elapsed, Err: err.Error(),
+		})
 		return zero, err
 	}
-	s.Emit(events.ToolDoneEvent{
-		QueryID:  s.QueryID,
-		ToolName: name,
-		Step:     step,
-		Elapsed:  time.Since(start),
+	s.Emit(stream.ToolDone{
+		QueryID: s.QueryID, ToolName: name, Step: step, Elapsed: elapsed,
 	})
 	return out, nil
 }

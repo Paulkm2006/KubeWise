@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
-	"github.com/kubewise/kubewise/pkg/agent/stream"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/k8s"
@@ -39,10 +39,8 @@ type App struct {
 	chartSelectModel   *model.ChartSelectModel
 	manualInputModel   *model.ManualChartInputModel
 	deployConfirmModel *model.DeployConfirmModel
-	deployRespCh           chan<- *catalog.ChartInfo // legacy chart path
-	confirmRespCh          chan<- events.DeployDecision
-	deployConfirmStreamResp chan<- json.RawMessage // stream deploy_confirm
-	streamChartResp        chan<- json.RawMessage // stream chart_select
+	deployConfirmStreamResp chan<- json.RawMessage // deploy_confirm InteractionRequest
+	streamChartResp         chan<- json.RawMessage // chart_select InteractionRequest
 	streamChartCandidates  []catalog.ChartInfo
 
 	sessions []*session.Session
@@ -119,7 +117,7 @@ func chartCandidateIndex(chosen *catalog.ChartInfo, list []catalog.ChartInfo) in
 func (a App) dispatchInteractionRequest(ir stream.InteractionRequest) (tea.Model, tea.Cmd) {
 	switch ir.Kind {
 	case stream.KindOperationStep:
-		cm, err := model.NewConfirmModelFromStream(ir.QueryID, ir.TotalSteps, ir.Payload, ir.RespCh)
+		cm, err := model.NewConfirmModel(ir.QueryID, ir.TotalSteps, ir.Payload, ir.RespCh)
 		if err != nil {
 			return a, a.listenStream()
 		}
@@ -154,10 +152,14 @@ func (a App) dispatchInteractionRequest(ir stream.InteractionRequest) (tea.Model
 
 func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 	switch e := ev.(type) {
-	case stream.Legacy:
-		return a.routeLegacyTUIMsg(e.TUI)
 	case stream.InteractionRequest:
 		return a.dispatchInteractionRequest(e)
+	case stream.StreamDone:
+		a.chat, _ = a.chat.Update(events.StreamDoneEvent{QueryID: e.QueryID, Result: e.Result})
+		a.running = false
+		a.input.SetEnabled(true)
+		a.persistAssistantMessage()
+		return a, nil
 	case stream.StreamErr:
 		err := e.Err
 		if err == nil {
@@ -168,61 +170,21 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 		a.input.SetEnabled(true)
 		return a, nil
 	default:
-		return a.routeNativeStream(ev)
-	}
-}
-
-func (a App) routeNativeStream(ev stream.Event) (tea.Model, tea.Cmd) {
-	switch e := ev.(type) {
-	case stream.Phase:
-		return a.routeLegacyTUIMsg(events.PhaseEvent{QueryID: e.QueryID, Phase: e.Phase})
-	case stream.AgentStart:
-		return a.routeLegacyTUIMsg(events.AgentStartEvent{QueryID: e.QueryID, AgentName: e.AgentName})
-	case stream.AgentDone:
-		return a.routeLegacyTUIMsg(events.AgentDoneEvent{
-			QueryID: e.QueryID, Duration: e.Duration, InTokens: e.InTokens, OutTokens: e.OutTokens,
-		})
-	case stream.ToolCall:
-		return a.routeLegacyTUIMsg(events.ToolCallEvent{QueryID: e.QueryID, ToolName: e.ToolName, Step: e.Step})
-	case stream.ToolDone:
-		return a.routeLegacyTUIMsg(events.ToolDoneEvent{
-			QueryID: e.QueryID, ToolName: e.ToolName, Step: e.Step, Elapsed: e.Elapsed,
-		})
-	case stream.RenderText:
-		return a.routeLegacyTUIMsg(events.RenderTextEvent{QueryID: e.QueryID, Text: e.Text})
-	case stream.RenderTable:
-		return a.routeLegacyTUIMsg(events.RenderTableEvent{QueryID: e.QueryID, Headers: e.Headers, Rows: e.Rows})
-	case stream.RenderCode:
-		return a.routeLegacyTUIMsg(events.RenderCodeEvent{QueryID: e.QueryID, Language: e.Language, Content: e.Content})
-	case stream.RenderKV:
-		return a.routeLegacyTUIMsg(events.RenderKVEvent{QueryID: e.QueryID, Pairs: e.Pairs})
-	case stream.RenderList:
-		return a.routeLegacyTUIMsg(events.RenderListEvent{QueryID: e.QueryID, Items: e.Items})
-	case stream.RenderDetail:
-		return a.routeLegacyTUIMsg(events.RenderDetailEvent{QueryID: e.QueryID, Detail: e.Detail})
-	case stream.Supervisor:
-		return a.routeLegacyTUIMsg(events.SupervisorEvent{
-			QueryID: e.QueryID, Reason: e.Reason, Decision: e.Decision, Detail: e.Detail,
-		})
-	case stream.StreamDone:
-		return a.routeLegacyTUIMsg(events.StreamDoneEvent{QueryID: e.QueryID, Result: e.Result})
-	case stream.WorkflowStep:
-		// surfaced as phase-style text until chat has a richer card type
-		return a.routeLegacyTUIMsg(events.RenderTextEvent{
-			QueryID: e.QueryID,
-			Text:    fmt.Sprintf("[workflow:%s] %s — %s", e.Status, e.Name, e.Detail),
-		})
-	default:
+		if te, ok := ToTUI(ev); ok {
+			return a.routeChatEvent(te)
+		}
 		return a, a.listenStream()
 	}
 }
 
-func (a App) routeLegacyTUIMsg(te events.TUIEvent) (tea.Model, tea.Cmd) {
+// routeChatEvent forwards progress/render TUI events to ChatModel.
+func (a App) routeChatEvent(te events.TUIEvent) (tea.Model, tea.Cmd) {
 	switch msg := te.(type) {
 	case events.AgentStartEvent,
 		events.AgentDoneEvent,
 		events.ToolCallEvent,
 		events.ToolDoneEvent,
+		events.ToolFailEvent,
 		events.RenderTextEvent,
 		events.RenderTableEvent,
 		events.RenderCodeEvent,
@@ -234,42 +196,6 @@ func (a App) routeLegacyTUIMsg(te events.TUIEvent) (tea.Model, tea.Cmd) {
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(msg)
 		return a, tea.Batch(a.listenStream(), chatCmd)
-
-	case events.ChartSelectRequestEvent:
-		a.deployRespCh = msg.RespCh
-		m := model.NewChartSelectModel(msg.QueryID, msg.AppName, msg.Candidates)
-		a.chartSelectModel = &m
-		return a, tea.Batch(a.listenStream(), m.Init())
-
-	case events.ManualChartInputRequestEvent:
-		m := model.NewManualChartInputModel(msg.QueryID)
-		a.manualInputModel = &m
-		return a, tea.Batch(a.listenStream(), m.Init())
-
-	case events.DeployConfirmRequestEvent:
-		a.confirmRespCh = msg.RespCh
-		m := model.NewDeployConfirmModel(msg.QueryID, msg.Plan, a.width, a.height)
-		a.deployConfirmModel = &m
-		return a, tea.Batch(a.listenStream(), m.Init())
-
-	case events.ConfirmRequestEvent:
-		cm := model.NewConfirmModel(msg)
-		a.confirm = &cm
-		return a, a.listenStream()
-
-	case events.StreamDoneEvent:
-		a.chat, _ = a.chat.Update(msg)
-		a.running = false
-		a.input.SetEnabled(true)
-		a.persistAssistantMessage()
-		return a, nil
-
-	case events.StreamErrEvent:
-		a.chat, _ = a.chat.Update(msg)
-		a.running = false
-		a.input.SetEnabled(true)
-		return a, nil
-
 	default:
 		return a, a.listenStream()
 	}
@@ -339,10 +265,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.chartSelectModel = nil
 			return a, a.listenStream()
 		}
-		if a.deployRespCh != nil {
-			a.deployRespCh <- msg.ChartInfo
-			a.deployRespCh = nil
-		}
 		a.chartSelectModel = nil
 		return a, a.listenStream()
 
@@ -385,9 +307,6 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			a.deployConfirmStreamResp = nil
-		} else if a.confirmRespCh != nil {
-			a.confirmRespCh <- msg.Decision
-			a.confirmRespCh = nil
 		}
 		a.deployConfirmModel = nil
 		return a, a.listenStream()
@@ -548,7 +467,7 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 			if r := recover(); r != nil {
 				err := fmt.Errorf("agent panic: %v", r)
 				select {
-				case eventCh <- stream.Legacy{TUI: events.StreamErrEvent{QueryID: queryID, Err: err}}:
+				case eventCh <- stream.StreamErr{QueryID: queryID, Err: err}:
 				default:
 				}
 			}

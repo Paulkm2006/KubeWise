@@ -10,13 +10,13 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/values"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/catalog"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 )
 
 // GenerateValues asks the LLM for override values and builds the deploy plan.
 func GenerateValues(st *state.State) error {
-	st.Emit(events.PhaseEvent{QueryID: st.QueryID, Phase: "生成配置建议"})
+	st.Emit(stream.Phase{QueryID: st.QueryID, Phase: "生成配置建议"})
 
 	genResult, err := state.RunToolWithResult(st, st.Ctx, values.ToolGenerate, 3, func(ctx context.Context) (*values.Result, error) {
 		return values.Generate(ctx, st.LLM, values.GenerateInput{
@@ -49,9 +49,9 @@ func emitValuesNotes(st *state.State, r *values.Result) {
 	if r == nil || r.Explanation == "" {
 		return
 	}
-	st.Emit(events.RenderTextEvent{QueryID: st.QueryID, Text: r.Explanation})
+	st.Emit(stream.RenderText{QueryID: st.QueryID, Text: r.Explanation})
 	if r.RiskLevel == "high" {
-		st.Emit(events.RenderTextEvent{QueryID: st.QueryID, Text: "⚠️ 配置风险等级: high，请仔细确认"})
+		st.Emit(stream.RenderText{QueryID: st.QueryID, Text: "⚠️ 配置风险等级: high，请仔细确认"})
 	}
 }
 

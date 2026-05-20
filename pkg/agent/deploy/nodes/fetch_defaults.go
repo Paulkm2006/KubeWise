@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 const (
@@ -17,7 +17,7 @@ const (
 
 // FetchDefaults adds the Helm repo and fetches default chart values.
 func FetchDefaults(st *state.State) error {
-	st.Emit(events.PhaseEvent{QueryID: st.QueryID, Phase: "获取 Chart 默认配置"})
+	st.Emit(stream.Phase{QueryID: st.QueryID, Phase: "获取 Chart 默认配置"})
 
 	if err := st.RunTool(st.Ctx, toolRepoAdd, 1, func(ctx context.Context) error {
 		if err := st.Helm.AddRepo(ctx, st.Chart.RepoName, st.Chart.RepoURL); err != nil {

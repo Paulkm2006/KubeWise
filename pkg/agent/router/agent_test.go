@@ -3,7 +3,7 @@ package router
 import (
 	"testing"
 
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 func TestExtractDetailMarker_PodDetail(t *testing.T) {
@@ -107,8 +107,8 @@ __END__`
 }
 
 func TestEmitRenderEvent_DetailMarkerEmitsDetailEvent(t *testing.T) {
-	var emitted []events.TUIEvent
-	emit := func(e events.TUIEvent) {
+	var emitted []stream.Event
+	emit := func(e stream.Event) {
 		emitted = append(emitted, e)
 	}
 
@@ -121,9 +121,9 @@ __END__`
 	if len(emitted) < 1 {
 		t.Fatal("expected at least 1 event")
 	}
-	detailEv, ok := emitted[0].(events.RenderDetailEvent)
+	detailEv, ok := emitted[0].(stream.RenderDetail)
 	if !ok {
-		t.Fatalf("expected RenderDetailEvent, got %T", emitted[0])
+		t.Fatalf("expected RenderDetail, got %T", emitted[0])
 	}
 	if detailEv.Detail.Kind != "pod" {
 		t.Errorf("expected kind=pod, got %s", detailEv.Detail.Kind)
@@ -131,8 +131,8 @@ __END__`
 }
 
 func TestEmitRenderEvent_DetailMarkerWithTrailingText(t *testing.T) {
-	var emitted []events.TUIEvent
-	emit := func(e events.TUIEvent) {
+	var emitted []stream.Event
+	emit := func(e stream.Event) {
 		emitted = append(emitted, e)
 	}
 
@@ -146,11 +146,11 @@ The deployment is running normally.`
 	if len(emitted) < 2 {
 		t.Fatalf("expected 2 events (detail + text), got %d", len(emitted))
 	}
-	if _, ok := emitted[0].(events.RenderDetailEvent); !ok {
-		t.Errorf("expected first event to be RenderDetailEvent, got %T", emitted[0])
+	if _, ok := emitted[0].(stream.RenderDetail); !ok {
+		t.Errorf("expected first event to be RenderDetail, got %T", emitted[0])
 	}
-	if _, ok := emitted[1].(events.RenderTextEvent); !ok {
-		t.Errorf("expected second event to be RenderTextEvent, got %T", emitted[1])
+	if _, ok := emitted[1].(stream.RenderText); !ok {
+		t.Errorf("expected second event to be RenderText, got %T", emitted[1])
 	}
 }
 

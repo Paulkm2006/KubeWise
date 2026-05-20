@@ -7,9 +7,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/pkg/agent/stream"
 	"github.com/kubewise/kubewise/pkg/agent/operation"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
@@ -23,38 +22,19 @@ const (
 // ConfirmDoneMsg is sent when the modal has received an answer and closed.
 type ConfirmDoneMsg struct{}
 
-// ConfirmModel renders a modal overlay for operation step approval.
+// ConfirmModel renders a modal overlay for operation step approval (operation_step interaction).
 type ConfirmModel struct {
-	event      events.ConfirmRequestEvent
 	step       operation.OperationStep
 	queryID    string
 	totalSteps int
 	mode       confirmMode
 	editInput  textinput.Model
 	width      int
-	streamResp chan<- json.RawMessage
+	respCh     chan<- json.RawMessage
 }
 
-// NewConfirmModel creates a ConfirmModel from a ConfirmRequestEvent.
-func NewConfirmModel(ev events.ConfirmRequestEvent) ConfirmModel {
-	step, _ := ev.Step.(operation.OperationStep)
-	ti := textinput.New()
-	ti.Placeholder = "Describe your correction..."
-	ti.CharLimit = 512
-	ti.Width = 54 // fits inside ModalStyle width=60 with padding
-	return ConfirmModel{
-		event:      ev,
-		step:       step,
-		queryID:    ev.QueryID,
-		totalSteps: ev.TotalSteps,
-		mode:       confirmModeChoice,
-		editInput:  ti,
-		width:      60,
-	}
-}
-
-// NewConfirmModelFromStream builds a confirm modal for stream.InteractionRequest (operation_step).
-func NewConfirmModelFromStream(queryID string, totalSteps int, stepJSON []byte, respCh chan<- json.RawMessage) (ConfirmModel, error) {
+// NewConfirmModel builds a confirm modal from stream.InteractionRequest (kind operation_step).
+func NewConfirmModel(queryID string, totalSteps int, stepJSON []byte, respCh chan<- json.RawMessage) (ConfirmModel, error) {
 	var step operation.OperationStep
 	if err := json.Unmarshal(stepJSON, &step); err != nil {
 		return ConfirmModel{}, err
@@ -62,7 +42,7 @@ func NewConfirmModelFromStream(queryID string, totalSteps int, stepJSON []byte, 
 	ti := textinput.New()
 	ti.Placeholder = "Describe your correction..."
 	ti.CharLimit = 512
-	ti.Width = 54
+	ti.Width = 54 // fits inside ModalStyle width=60 with padding
 	return ConfirmModel{
 		queryID:    queryID,
 		totalSteps: totalSteps,
@@ -70,28 +50,19 @@ func NewConfirmModelFromStream(queryID string, totalSteps int, stepJSON []byte, 
 		mode:       confirmModeChoice,
 		editInput:  ti,
 		width:      60,
-		streamResp: respCh,
+		respCh:     respCh,
 	}, nil
 }
 
-// respond sends the confirmation response (non-blocking) and returns a Cmd
-// that emits ConfirmDoneMsg to signal the parent to close the modal.
 func (m ConfirmModel) respond(confirmed bool, correction string) tea.Cmd {
 	return func() tea.Msg {
-		if m.streamResp != nil {
-			raw, err := json.Marshal(stream.OperationConfirmResponse{
-				Confirmed:  confirmed,
-				Correction: correction,
-			})
-			if err == nil {
-				select {
-				case m.streamResp <- raw:
-				default:
-				}
-			}
-		} else {
+		raw, err := json.Marshal(stream.OperationConfirmResponse{
+			Confirmed:  confirmed,
+			Correction: correction,
+		})
+		if err == nil {
 			select {
-			case m.event.RespCh <- operation.ConfirmResponse{Confirmed: confirmed, Correction: correction}:
+			case m.respCh <- raw:
 			default:
 			}
 		}
@@ -132,7 +103,6 @@ func (m ConfirmModel) Update(msg tea.Msg) (ConfirmModel, tea.Cmd) {
 			return m, cmd
 		}
 	}
-	// Forward non-key messages to editInput when in edit mode
 	if m.mode == confirmModeEdit {
 		var cmd tea.Cmd
 		m.editInput, cmd = m.editInput.Update(msg)
@@ -145,7 +115,7 @@ func (m ConfirmModel) Update(msg tea.Msg) (ConfirmModel, tea.Cmd) {
 func (m ConfirmModel) View() string {
 	total := m.totalSteps
 	if total == 0 {
-		total = m.event.TotalSteps
+		total = 1
 	}
 	title := styles.ModalTitleStyle.Render(
 		fmt.Sprintf("步骤 %d/%d：%s", m.step.StepIndex, total, m.step.OperationType),
@@ -169,8 +139,5 @@ func (m ConfirmModel) View() string {
 
 // QueryID returns the query ID this confirm modal is responding to.
 func (m ConfirmModel) QueryID() string {
-	if m.streamResp != nil && m.queryID != "" {
-		return m.queryID
-	}
-	return m.event.QueryID
+	return m.queryID
 }

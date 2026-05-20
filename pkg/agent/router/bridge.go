@@ -6,31 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/pkg/agent/stream"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/tui/events"
 )
-
-// newTUIChanBridge returns a channel that forwards TUI events from legacy agents
-// into the shared stream channel as stream.Legacy wrappers.
-func newTUIChanBridge(ctx context.Context, out chan<- stream.Event, queryID string) chan<- events.TUIEvent {
-	se := stream.NewEmitter(out, queryID)
-	internal := make(chan events.TUIEvent, 256)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case te, ok := <-internal:
-				if !ok {
-					return
-				}
-				_ = se.EmitLegacy(ctx, te)
-			}
-		}
-	}()
-	return internal
-}
 
 // streamChartSelectionHandler sends chart selection as a unified stream interaction.
 type streamChartSelectionHandler struct {

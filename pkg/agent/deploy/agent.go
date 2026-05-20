@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/report"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
@@ -36,7 +37,7 @@ type Agent struct {
 	helmClient       *helm.Client
 	confirmHandler   DeployConfirmationHandler
 	selectionHandler ChartSelectionHandler
-	eventCh          chan<- events.TUIEvent
+	eventCh          chan<- stream.Event
 	queryID          string
 	log              *zap.Logger
 	toolRegistry     *tool.Registry
@@ -66,8 +67,8 @@ func WithSelectionHandler(h ChartSelectionHandler) Option {
 	return func(a *Agent) { a.selectionHandler = h }
 }
 
-// WithEventChannel sets the TUI event channel.
-func WithEventChannel(ch chan<- events.TUIEvent, queryID string) Option {
+// WithEventChannel sets the stream event channel.
+func WithEventChannel(ch chan<- stream.Event, queryID string) Option {
 	return func(a *Agent) {
 		a.eventCh = ch
 		a.queryID = queryID
@@ -96,7 +97,7 @@ func New(llmClient *llm.Client, helmClient *helm.Client, k8sClient *k8s.Client, 
 
 // HandleQuery runs the deploy pipeline.
 func (a *Agent) HandleQuery(ctx context.Context, query string, entities types.Entities) (string, error) {
-	a.emit(events.AgentStartEvent{AgentName: "Deploy Agent", QueryID: a.queryID})
+	a.emit(stream.AgentStart{AgentName: "Deploy Agent", QueryID: a.queryID})
 	startTime := time.Now()
 	defer func() {
 		a.logger().Info("deploy pipeline finished",
@@ -104,7 +105,7 @@ func (a *Agent) HandleQuery(ctx context.Context, query string, entities types.En
 			zap.String("query_id", a.queryID),
 			zap.Duration("elapsed", time.Since(startTime)),
 		)
-		a.emit(events.AgentDoneEvent{QueryID: a.queryID, Duration: time.Since(startTime)})
+		a.emit(stream.AgentDone{QueryID: a.queryID, Duration: time.Since(startTime)})
 	}()
 
 	return a.runDeployPipeline(ctx, query, entities)
@@ -130,7 +131,7 @@ func (a *Agent) buildReport(ctx context.Context, rel *helm.Release, chartInfo *c
 	return report.SuccessMessage(ctx, rel, chartInfo, namespace, releaseName, a.k8sClient, a.logger())
 }
 
-func (a *Agent) emit(e events.TUIEvent) {
+func (a *Agent) emit(e stream.Event) {
 	if a.eventCh == nil {
 		return
 	}
@@ -140,16 +141,9 @@ func (a *Agent) emit(e events.TUIEvent) {
 	}
 }
 
-// Emit sends a non-blocking TUI event.
-func (a *Agent) Emit(e events.TUIEvent) {
+// Emit sends a non-blocking stream event.
+func (a *Agent) Emit(e stream.Event) {
 	a.emit(e)
-}
-
-func (a *Agent) emitCritical(e events.TUIEvent) {
-	if a.eventCh == nil {
-		return
-	}
-	a.eventCh <- e
 }
 
 type recoveryLogger struct {

@@ -8,7 +8,7 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/recovery"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 type stateRecoveryLogger struct{ st *state.State }
@@ -20,7 +20,7 @@ func (l *stateRecoveryLogger) Error(msg string, fields ...zap.Field) { l.st.LogE
 
 // RecoverDeployment runs the post-failure ReAct recovery loop.
 func RecoverDeployment(st *state.State) error {
-	st.Emit(events.PhaseEvent{QueryID: st.QueryID, Phase: "诊断修复中"})
+	st.Emit(stream.Phase{QueryID: st.QueryID, Phase: "诊断修复中"})
 	st.LogInfo("entering recovery loop", zap.String("app", st.AppName))
 	if st.RecoveryAttempts >= st.MaxRecoveryAttempts {
 		st.LogWarn("recovery retry limit reached",
@@ -87,9 +87,9 @@ func applyRecoveredValues(st *state.State, result *recovery.Result) error {
 		return err
 	}
 	st.RecoveryPendingReview = true
-	st.EmitCritical(events.RenderCodeEvent{QueryID: st.QueryID, Language: "yaml", Content: st.FinalValues})
+	st.EmitCritical(stream.RenderCode{QueryID: st.QueryID, Language: "yaml", Content: st.FinalValues})
 	if result.Summary != "" {
-		st.EmitCritical(events.RenderTextEvent{QueryID: st.QueryID, Text: result.Summary})
+		st.EmitCritical(stream.RenderText{QueryID: st.QueryID, Text: result.Summary})
 	}
 	st.LogInfo("recovery values accepted by state",
 		zap.Int("attempt", st.RecoveryAttempts),

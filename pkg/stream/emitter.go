@@ -2,8 +2,6 @@ package stream
 
 import (
 	"context"
-
-	"github.com/kubewise/kubewise/pkg/tui/events"
 )
 
 // Emitter sends stream events without dropping interactions, stream terminals, or render blocks.
@@ -35,13 +33,13 @@ func (e Emitter) notifyBlocking(ctx context.Context, ev Event) error {
 	}
 }
 
-// Emit sends ev. InteractionRequest, StreamDone, StreamErr, Render*, WorkflowStep never drop.
+// Emit sends ev. InteractionRequest, StreamDone, StreamErr, and Render* never drop.
 func (e Emitter) Emit(ctx context.Context, ev Event) error {
 	if e.ch == nil {
 		return nil
 	}
 	switch ev.(type) {
-	case InteractionRequest, StreamDone, StreamErr, WorkflowStep:
+	case InteractionRequest, StreamDone, StreamErr:
 		return e.notifyBlocking(ctx, ev)
 	case RenderText, RenderTable, RenderCode, RenderKV, RenderList, RenderDetail:
 		return e.notifyBlocking(ctx, ev)
@@ -51,7 +49,3 @@ func (e Emitter) Emit(ctx context.Context, ev Event) error {
 	}
 }
 
-// EmitLegacy wraps a TUI event.
-func (e Emitter) EmitLegacy(ctx context.Context, te events.TUIEvent) error {
-	return e.Emit(ctx, Legacy{TUI: te})
-}

@@ -7,12 +7,12 @@ import (
 
 	chartcore "github.com/kubewise/kubewise/pkg/agent/deploy/core/chart"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 // ResolveChart searches Artifact Hub and applies selection policy.
 func ResolveChart(st *state.State) error {
-	st.Emit(events.PhaseEvent{QueryID: st.QueryID, Phase: fmt.Sprintf("搜索 Chart: %s", st.AppName)})
+	st.Emit(stream.Phase{QueryID: st.QueryID, Phase: fmt.Sprintf("搜索 Chart: %s", st.AppName)})
 
 	var sel chartcore.SelectChartFn
 	if st.Select != nil {

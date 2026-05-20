@@ -9,15 +9,15 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/recovery"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/helm"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 )
 
 const toolInstallUpgrade = "helm install/upgrade"
 
 // DeployRelease runs helm install/upgrade and returns deployment failures as advice.
 func DeployRelease(st *state.State) error {
-	st.Emit(events.PhaseEvent{QueryID: st.QueryID, Phase: "执行部署"})
+	st.Emit(stream.Phase{QueryID: st.QueryID, Phase: "执行部署"})
 	st.LogInfo("helm install/upgrade starting",
 		zap.String("release", st.ReleaseName),
 		zap.String("namespace", st.Plan.Namespace),

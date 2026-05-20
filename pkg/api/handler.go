@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
-	"github.com/kubewise/kubewise/pkg/agent/stream"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
@@ -19,11 +19,6 @@ type StreamQuerier interface {
 	HandleQueryStream(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error
 }
 
-type pendingConfirm struct {
-	queryID string
-	respCh  chan<- any
-}
-
 type pendingInteraction struct {
 	queryID string
 	respCh  chan<- json.RawMessage
@@ -33,7 +28,6 @@ type Handler struct {
 	querier             StreamQuerier
 	sessionStore        *session.Store
 	mu                  sync.RWMutex
-	pendingConfirms     map[string]*pendingConfirm
 	pendingInteractions map[string]*pendingInteraction
 }
 
@@ -50,7 +44,6 @@ func NewHandler(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supe
 	return &Handler{
 		querier:             routerAgent,
 		sessionStore:        store,
-		pendingConfirms:     make(map[string]*pendingConfirm),
 		pendingInteractions: make(map[string]*pendingInteraction),
 	}, nil
 }
@@ -60,19 +53,13 @@ func NewHandlerWithDeps(querier StreamQuerier, store *session.Store) *Handler {
 	return &Handler{
 		querier:             querier,
 		sessionStore:        store,
-		pendingConfirms:     make(map[string]*pendingConfirm),
 		pendingInteractions: make(map[string]*pendingInteraction),
 	}
 }
 
-func (h *Handler) cleanupPendingConfirms(queryID string) {
+func (h *Handler) cleanupPendingInteractions(queryID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for id, pc := range h.pendingConfirms {
-		if pc.queryID == queryID {
-			delete(h.pendingConfirms, id)
-		}
-	}
 	for id, pi := range h.pendingInteractions {
 		if pi.queryID == queryID {
 			delete(h.pendingInteractions, id)

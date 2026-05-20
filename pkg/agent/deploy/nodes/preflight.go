@@ -7,14 +7,14 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 const toolPreflight = "helm preflight"
 
 // Preflight validates the rendered chart before install.
 func Preflight(st *state.State) error {
-	st.Emit(events.PhaseEvent{QueryID: st.QueryID, Phase: "Helm 预检"})
+	st.Emit(stream.Phase{QueryID: st.QueryID, Phase: "Helm 预检"})
 	st.LogInfo("running helm preflight",
 		zap.String("release", st.Plan.ReleaseName),
 		zap.String("namespace", st.Plan.Namespace),

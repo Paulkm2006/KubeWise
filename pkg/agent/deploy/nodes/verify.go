@@ -7,14 +7,14 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/report"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 const toolVerifyDeploy = "verify deployment"
 
 // VerifyRelease emits verification phase and builds the success report.
 func VerifyRelease(st *state.State) error {
-	st.Emit(events.PhaseEvent{QueryID: st.QueryID, Phase: "验证部署状态"})
+	st.Emit(stream.Phase{QueryID: st.QueryID, Phase: "验证部署状态"})
 	reportText, err := state.RunToolWithResult(st, st.Ctx, toolVerifyDeploy, 7, func(ctx context.Context) (string, error) {
 		if st.BuildReport != nil {
 			return st.BuildReport(ctx, st.Release, st.Chart, st.Plan.Namespace, st.ReleaseName), nil

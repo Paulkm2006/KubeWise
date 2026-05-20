@@ -9,6 +9,7 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/values"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/events"
 )
 
@@ -16,7 +17,7 @@ const toolUserConfirm = "user confirm"
 
 // ReviewPlan runs the user confirmation loop (execute, cancel, or NL correction).
 func ReviewPlan(st *state.State) error {
-	st.Emit(events.PhaseEvent{QueryID: st.QueryID, Phase: "等待用户确认"})
+	st.Emit(stream.Phase{QueryID: st.QueryID, Phase: "等待用户确认"})
 	st.LogInfo("awaiting user confirmation",
 		zap.String("namespace", st.Plan.Namespace),
 		zap.String("release", st.Plan.ReleaseName),
@@ -75,7 +76,7 @@ func ReviewPlan(st *state.State) error {
 			zap.Int("override_lines", state.CountLines(regenResult.Values)),
 		)
 		if regenResult.Explanation != "" {
-			st.Emit(events.RenderTextEvent{QueryID: st.QueryID, Text: regenResult.Explanation})
+			st.Emit(stream.RenderText{QueryID: st.QueryID, Text: regenResult.Explanation})
 		}
 
 		st.Plan.CustomValues = plan.ApplyCRDValues(st.Chart, st.DefaultValues, regenResult.Values)

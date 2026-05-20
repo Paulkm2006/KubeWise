@@ -1,11 +1,9 @@
-// Package stream defines the common agent event pipeline for TUI and HTTP adapters.
+// Package stream defines the event pipeline domain shared by agents, TUI, and HTTP adapters.
 package stream
 
 import (
 	"encoding/json"
 	"time"
-
-	"github.com/kubewise/kubewise/pkg/tui/events"
 )
 
 // Event is the sealed interface for all events flowing from agents to consumers.
@@ -13,16 +11,7 @@ type Event interface {
 	isStreamEvent()
 }
 
-// --- Legacy bridge (wraps existing TUI events during migration) ---
-
-// Legacy wraps a TUI event so existing agents can stay on events.TUIEvent.
-type Legacy struct {
-	TUI events.TUIEvent
-}
-
-func (Legacy) isStreamEvent() {}
-
-// --- Core progress / render (native; optional path) ---
+// --- Core progress / render ---
 
 type Phase struct {
 	QueryID string
@@ -64,6 +53,17 @@ type ToolDone struct {
 
 func (ToolDone) isStreamEvent() {}
 
+// ToolFail reports a tool invocation that returned an error.
+type ToolFail struct {
+	QueryID  string
+	ToolName string
+	Step     int
+	Elapsed  time.Duration
+	Err      string
+}
+
+func (ToolFail) isStreamEvent() {}
+
 type RenderText struct {
 	QueryID string
 	Text    string
@@ -89,21 +89,21 @@ func (RenderCode) isStreamEvent() {}
 
 type RenderKV struct {
 	QueryID string
-	Pairs   []events.KVPair
+	Pairs   []KVPair
 }
 
 func (RenderKV) isStreamEvent() {}
 
 type RenderList struct {
 	QueryID string
-	Items   []events.ListItem
+	Items   []ListItem
 }
 
 func (RenderList) isStreamEvent() {}
 
 type RenderDetail struct {
 	QueryID string
-	Detail  events.ResourceDetail
+	Detail  ResourceDetail
 }
 
 func (RenderDetail) isStreamEvent() {}
@@ -130,16 +130,6 @@ type StreamErr struct {
 }
 
 func (StreamErr) isStreamEvent() {}
-
-// WorkflowStep reports structured deploy / workflow progress.
-type WorkflowStep struct {
-	QueryID string
-	Name    string
-	Status  string // started | completed | failed
-	Detail  string
-}
-
-func (WorkflowStep) isStreamEvent() {}
 
 // --- Human-in-the-loop ---
 

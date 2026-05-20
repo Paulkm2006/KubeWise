@@ -10,13 +10,12 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/operation"
 	"github.com/kubewise/kubewise/pkg/agent/query"
 	"github.com/kubewise/kubewise/pkg/agent/security"
-	"github.com/kubewise/kubewise/pkg/agent/stream"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/agent/troubleshooting"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
 	"go.uber.org/zap"
 )
@@ -135,16 +134,16 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 // render events followed by StreamDoneEvent on success.
 func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string, eventCh chan<- stream.Event) error {
 	se := stream.NewEmitter(eventCh, queryID)
-	emit := func(e events.TUIEvent) {
-		_ = se.EmitLegacy(ctx, e)
+	emit := func(ev stream.Event) {
+		_ = se.Emit(ctx, ev)
 	}
 
 	// 1. Classify intent.
-	emit(events.PhaseEvent{QueryID: queryID, Phase: "classifying intent"})
+	emit(stream.Phase{QueryID: queryID, Phase: "classifying intent"})
 	intent, err := a.classifyIntent(ctx, userQuery)
 	if err != nil {
 		a.logger().Error("intent classification failed", zap.Error(err))
-		emit(events.StreamErrEvent{QueryID: queryID, Err: err})
+		emit(stream.StreamErr{QueryID: queryID, Err: err})
 		return err
 	}
 	a.logger().Info("intent classified",
@@ -156,33 +155,30 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 
 	// 2. Route to the appropriate sub-agent (fresh instance with eventCh).
 	phaseLabel := fmt.Sprintf("routing to %s agent", intent.TaskTypeDescription)
-	emit(events.PhaseEvent{QueryID: queryID, Phase: phaseLabel})
+	emit(stream.Phase{QueryID: queryID, Phase: phaseLabel})
 	switch intent.TaskType {
 	case types.TaskTypeQuery:
-		bridge := newTUIChanBridge(ctx, eventCh, queryID)
-		ag, agErr := query.New(a.k8sClient, a.llmClient, query.WithEventCh(bridge, queryID), query.WithMaxSteps(a.maxSteps), query.WithSupervisorConfig(a.supervisorCfg))
+		ag, agErr := query.New(a.k8sClient, a.llmClient, query.WithEventChannel(eventCh, queryID), query.WithMaxSteps(a.maxSteps), query.WithSupervisorConfig(a.supervisorCfg))
 		if agErr != nil {
-			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
+			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
 			return agErr
 		}
 		ag.SetLogger(a.log)
 		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeTroubleshooting:
-		bridge := newTUIChanBridge(ctx, eventCh, queryID)
-		ag, agErr := troubleshooting.New(a.k8sClient, a.llmClient, troubleshooting.WithEventCh(bridge, queryID), troubleshooting.WithMaxSteps(a.maxSteps), troubleshooting.WithSupervisorConfig(a.supervisorCfg))
+		ag, agErr := troubleshooting.New(a.k8sClient, a.llmClient, troubleshooting.WithEventChannel(eventCh, queryID), troubleshooting.WithMaxSteps(a.maxSteps), troubleshooting.WithSupervisorConfig(a.supervisorCfg))
 		if agErr != nil {
-			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
+			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
 			return agErr
 		}
 		ag.SetLogger(a.log)
 		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeSecurity:
-		bridge := newTUIChanBridge(ctx, eventCh, queryID)
-		ag, agErr := security.New(a.k8sClient, a.llmClient, security.WithEventCh(bridge, queryID), security.WithMaxSteps(a.maxSteps), security.WithSupervisorConfig(a.supervisorCfg))
+		ag, agErr := security.New(a.k8sClient, a.llmClient, security.WithEventChannel(eventCh, queryID), security.WithMaxSteps(a.maxSteps), security.WithSupervisorConfig(a.supervisorCfg))
 		if agErr != nil {
-			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
+			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
 			return agErr
 		}
 		ag.SetLogger(a.log)
@@ -194,7 +190,6 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		bridgeCtx, bridgeCancel := context.WithCancel(ctx)
 		defer bridgeCancel()
 
-		deployBridge := newTUIChanBridge(ctx, eventCh, queryID)
 		selectionHandler := &streamChartSelectionHandler{
 			emitter:   se,
 			queryID:   queryID,
@@ -210,7 +205,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			a.llmClient,
 			a.helmClient,
 			a.k8sClient,
-			deploy.WithEventChannel(deployBridge, queryID),
+			deploy.WithEventChannel(eventCh, queryID),
 			deploy.WithSelectionHandler(selectionHandler),
 			deploy.WithConfirmHandler(confirmHandler),
 		)
@@ -223,7 +218,6 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		// Bridge goroutine: forwards InteractionRequest → operation responses.
 		bridgeCtx, bridgeCancel := context.WithCancel(ctx)
 		defer bridgeCancel()
-		opBridge := newTUIChanBridge(ctx, eventCh, queryID)
 		go func() {
 			for {
 				select {
@@ -269,12 +263,12 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		opAgent, agErr := operation.New(
 			a.k8sClient, a.llmClient,
 			operation.WithConfirmationHandler(handler),
-			operation.WithEventCh(opBridge, queryID),
+			operation.WithEventChannel(eventCh, queryID),
 			operation.WithMaxSteps(a.maxSteps),
 			operation.WithSupervisorConfig(a.supervisorCfg),
 		)
 		if agErr != nil {
-			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
+			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
 			return agErr
 		}
 		opAgent.SetLogger(a.log)
@@ -286,21 +280,21 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	}
 
 	if err != nil {
-		emit(events.StreamErrEvent{QueryID: queryID, Err: err})
+		emit(stream.StreamErr{QueryID: queryID, Err: err})
 		return err
 	}
 
 	emitRenderEvent(emit, queryID, result)
-	emit(events.StreamDoneEvent{QueryID: queryID, Result: result})
+	emit(stream.StreamDone{QueryID: queryID, Result: result})
 	return nil
 }
 
 // emitRenderEvent detects the best render format for result and emits the
 // corresponding event. Detection priority: Detail marker → YAML → JSON → Table → List → KV → Text.
-func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
+func emitRenderEvent(emit func(stream.Event), queryID, result string) {
 	// 0. KubeWise detail marker.
 	if detail, stripped, ok := extractDetailMarker(result); ok {
-		emit(events.RenderDetailEvent{QueryID: queryID, Detail: detail})
+		emit(stream.RenderDetail{QueryID: queryID, Detail: detail})
 		if strings.TrimSpace(stripped) == "" {
 			return
 		}
@@ -311,7 +305,7 @@ func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 	for line := range strings.SplitSeq(result, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "apiVersion:") || strings.HasPrefix(trimmed, "kind:") {
-			emit(events.RenderCodeEvent{QueryID: queryID, Language: "yaml", Content: result})
+			emit(stream.RenderCode{QueryID: queryID, Language: "yaml", Content: result})
 			return
 		}
 	}
@@ -319,13 +313,13 @@ func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 	// 2. JSON code block.
 	trimmed := strings.TrimSpace(result)
 	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		emit(events.RenderCodeEvent{QueryID: queryID, Language: "json", Content: result})
+		emit(stream.RenderCode{QueryID: queryID, Language: "json", Content: result})
 		return
 	}
 
 	// 3. Table (pipe-delimited, ≥ 3 lines with "|").
 	if headers, rows, ok := parseTable(result); ok {
-		emit(events.RenderTableEvent{QueryID: queryID, Headers: headers, Rows: rows})
+		emit(stream.RenderTable{QueryID: queryID, Headers: headers, Rows: rows})
 		return
 	}
 
@@ -357,7 +351,7 @@ func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 		}
 	}
 	if matchCount >= 2 {
-		items := make([]events.ListItem, 0)
+		items := make([]stream.ListItem, 0)
 		for i, line := range lines {
 			if line == "" {
 				continue
@@ -366,9 +360,9 @@ func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 			if !matched {
 				status = "info"
 			}
-			items = append(items, events.ListItem{Status: status, Text: line})
+			items = append(items, stream.ListItem{Status: status, Text: line})
 		}
-		emit(events.RenderListEvent{QueryID: queryID, Items: items})
+		emit(stream.RenderList{QueryID: queryID, Items: items})
 		return
 	}
 
@@ -388,37 +382,37 @@ func emitRenderEvent(emit func(events.TUIEvent), queryID, result string) {
 		}
 	}
 	if len(kvLines) >= 2 && nonEmptyCount > 0 && len(kvLines)*2 >= nonEmptyCount {
-		pairs := make([]events.KVPair, 0, len(kvLines))
+		pairs := make([]stream.KVPair, 0, len(kvLines))
 		for _, l := range kvLines {
 			key, val, _ := strings.Cut(l, ": ")
-			pairs = append(pairs, events.KVPair{
+			pairs = append(pairs, stream.KVPair{
 				Key:   strings.TrimSpace(key),
 				Value: strings.TrimSpace(val),
 			})
 		}
-		emit(events.RenderKVEvent{QueryID: queryID, Pairs: pairs})
+		emit(stream.RenderKV{QueryID: queryID, Pairs: pairs})
 		return
 	}
 
 	// 6. Default: plain text.
-	emit(events.RenderTextEvent{QueryID: queryID, Text: result})
+	emit(stream.RenderText{QueryID: queryID, Text: result})
 }
 
 // extractDetailMarker looks for a __KUBEWISE_DETAIL:<kind>__ ... __END__ block
 // in the result string. If found, it parses the JSON payload into a ResourceDetail,
 // returns the result with the marker block stripped, and ok=true.
-func extractDetailMarker(result string) (events.ResourceDetail, string, bool) {
+func extractDetailMarker(result string) (stream.ResourceDetail, string, bool) {
 	const startPrefix = "__KUBEWISE_DETAIL:"
 	const startSuffix = "__"
 	const endMarker = "__END__"
 
 	startIdx := strings.Index(result, startPrefix)
 	if startIdx < 0 {
-		return events.ResourceDetail{}, result, false
+		return stream.ResourceDetail{}, result, false
 	}
 	kindEnd := strings.Index(result[startIdx+len(startPrefix):], startSuffix)
 	if kindEnd < 0 {
-		return events.ResourceDetail{}, result, false
+		return stream.ResourceDetail{}, result, false
 	}
 	payloadStart := startIdx + len(startPrefix) + kindEnd + len(startSuffix)
 	// Skip whitespace after the marker line.
@@ -426,13 +420,13 @@ func extractDetailMarker(result string) (events.ResourceDetail, string, bool) {
 
 	endIdx := strings.Index(result[payloadStart:], endMarker)
 	if endIdx < 0 {
-		return events.ResourceDetail{}, result, false
+		return stream.ResourceDetail{}, result, false
 	}
 	jsonStr := strings.TrimSpace(result[payloadStart : payloadStart+endIdx])
 
-	var detail events.ResourceDetail
+	var detail stream.ResourceDetail
 	if err := json.Unmarshal([]byte(jsonStr), &detail); err != nil {
-		return events.ResourceDetail{}, result, false
+		return stream.ResourceDetail{}, result, false
 	}
 
 	stripped := result[:startIdx] + result[payloadStart+endIdx+len(endMarker):]

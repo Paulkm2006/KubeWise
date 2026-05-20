@@ -2,7 +2,9 @@ package model_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/tui/model"
@@ -42,6 +44,23 @@ func TestStreamDoneStopsSpinner(t *testing.T) {
 
 	if updated.IsSpinning() {
 		t.Error("expected spinner to stop after StreamDoneEvent")
+	}
+}
+
+func TestToolFailMarksToolDoneWithoutErrorText(t *testing.T) {
+	m := model.NewChatModel(80, 40)
+	m, _ = m.Update(events.AgentStartEvent{QueryID: "q-1", AgentName: "Deploy Agent"})
+	m, _ = m.Update(events.ToolCallEvent{QueryID: "q-1", ToolName: "helm preflight", Step: 5})
+	m, _ = m.Update(events.ToolFailEvent{
+		QueryID: "q-1", ToolName: "helm preflight", Step: 5, Elapsed: time.Second,
+	})
+
+	view := m.View()
+	if !strings.Contains(view, "✗") || !strings.Contains(view, "helm preflight") {
+		t.Fatalf("expected failed tool in card, got:\n%s", view)
+	}
+	if strings.Contains(view, "Helm 预检") || strings.Contains(view, "⟳ helm preflight") {
+		t.Fatalf("should not show error body or running state, got:\n%s", view)
 	}
 }
 
