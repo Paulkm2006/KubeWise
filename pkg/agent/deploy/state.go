@@ -8,8 +8,8 @@ import (
 	"github.com/kubewise/kubewise/pkg/types"
 )
 
-// PipelineState holds mutable data for a single deploy HandleQuery run.
-type PipelineState struct {
+// State holds mutable data for a single deploy HandleQuery run.
+type State struct {
 	Query             string
 	Entities          types.Entities
 	AppName           string
