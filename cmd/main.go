@@ -8,11 +8,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/log"
 	"github.com/kubewise/kubewise/pkg/tui"
 )
 
@@ -52,7 +52,7 @@ var chatCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("初始化K8s客户端失败: %w", err)
 		}
-			k8sClient.SetLogger(logger)
+		k8sClient.SetLogger(logger)
 
 		// 初始化LLM客户端
 		llmConfig := llm.Config{
@@ -64,14 +64,14 @@ var chatCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("初始化LLM客户端失败: %w", err)
 		}
-			llmClient.SetLogger(logger)
+		llmClient.SetLogger(logger)
 
 		// 初始化路由Agent
 		routerAgent, err := router.New(k8sClient, llmClient)
 		if err != nil {
 			return fmt.Errorf("初始化路由Agent失败: %w", err)
 		}
-			routerAgent.SetLogger(logger)
+		routerAgent.SetLogger(logger)
 
 		// 处理查询
 		fmt.Println("\n处理中...")
@@ -103,7 +103,7 @@ var tuiCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("初始化K8s客户端失败: %w", err)
 		}
-			k8sClient.SetLogger(logger)
+		k8sClient.SetLogger(logger)
 
 		llmConfig := llm.Config{
 			Model:   viper.GetString("llm.model"),
@@ -114,7 +114,7 @@ var tuiCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("初始化LLM客户端失败: %w", err)
 		}
-			llmClient.SetLogger(logger)
+		llmClient.SetLogger(logger)
 
 		return tui.Run(k8sClient, llmClient, logger)
 	},
@@ -139,7 +139,7 @@ func init() {
 	rootCmd.PersistentFlags().StringP("api-base", "b", "", "LLM API Base URL")
 	rootCmd.PersistentFlags().String("log-level", "info", "日志级别: debug / info / warn / error")
 	rootCmd.PersistentFlags().String("log-file", "stderr", "日志文件路径 (stderr 或文件路径)")
-	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "启用详细日志输出到文件")
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "启用详细日志（默认 debug，写入 kubewise.log，不干扰 TUI）")
 
 	viper.BindPFlag("kubeconfig", rootCmd.PersistentFlags().Lookup("kubeconfig"))
 	viper.BindPFlag("llm.model", rootCmd.PersistentFlags().Lookup("model"))
@@ -175,43 +175,19 @@ func initConfig() {
 }
 
 func initLogger() {
-	verbose := viper.GetBool("verbose")
-	if !verbose {
-		logger = zap.NewNop()
-		return
-	}
-
-	levelStr := viper.GetString("log.level")
-	outputPath := viper.GetString("log.file")
-
-	if levelStr == "" {
-		levelStr = "debug"
-	}
-	if outputPath == "" || outputPath == "stderr" {
-		outputPath = "./kubewise.log"
-	}
-
-	var level zapcore.Level
-	switch levelStr {
-	case "debug":
-		level = zapcore.DebugLevel
-	case "info":
-		level = zapcore.InfoLevel
-	case "warn":
-		level = zapcore.WarnLevel
-	case "error":
-		level = zapcore.ErrorLevel
-	default:
-		level = zapcore.DebugLevel
-	}
-
-	cfg := zap.NewProductionConfig()
-	cfg.Level = zap.NewAtomicLevelAt(level)
-	cfg.OutputPaths = []string{outputPath}
-	cfg.ErrorOutputPaths = []string{outputPath}
+	levelFlag := rootCmd.PersistentFlags().Lookup("log-level")
+	levelChanged := levelFlag != nil && levelFlag.Changed
+	fileFlag := rootCmd.PersistentFlags().Lookup("log-file")
+	fileChanged := fileFlag != nil && fileFlag.Changed
 
 	var err error
-	logger, err = cfg.Build()
+	logger, err = log.New(log.Options{
+		Verbose:          viper.GetBool("verbose"),
+		Level:            viper.GetString("log.level"),
+		File:             viper.GetString("log.file"),
+		LevelFlagChanged: levelChanged,
+		FileFlagChanged:  fileChanged,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "初始化日志失败: %v\n", err)
 		os.Exit(1)

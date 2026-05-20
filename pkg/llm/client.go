@@ -103,15 +103,22 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		reqOpts = append(reqOpts, option.WithJSONSet("tools", tools))
 	}
 
-	// 调用OpenAI API
+	toolNames := make([]string, 0, len(functions))
+	for _, fn := range functions {
+		toolNames = append(toolNames, fn.Name)
+	}
 	c.logger().Debug("chat completion request",
 		zap.String("model", string(params.Model)),
 		zap.Int("messages", len(messages)),
-		zap.Int("tools", len(functions)),
+		zap.Strings("tools", toolNames),
 	)
 	resp, err := c.client.Chat.Completions.New(ctx, params, reqOpts...)
 	if err != nil {
-		c.logger().Error("chat completion failed", zap.Error(err))
+		c.logger().Error("chat completion failed",
+			zap.Error(err),
+			zap.String("model", string(params.Model)),
+			zap.Int("messages", len(messages)),
+		)
 		return nil, fmt.Errorf("chat completion failed: %w", err)
 	}
 
@@ -183,6 +190,27 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 			}
 		}
 	}
+
+	fields := []zap.Field{
+		zap.String("model", string(params.Model)),
+		zap.Int("content_len", len(result.Content)),
+		zap.Int("tool_calls", len(result.ToolCalls)),
+	}
+	if len(result.ToolCalls) > 0 {
+		names := make([]string, 0, len(result.ToolCalls))
+		for _, tc := range result.ToolCalls {
+			names = append(names, tc.Function.Name)
+		}
+		fields = append(fields, zap.Strings("tool_call_names", names))
+	}
+	if result.Usage != nil {
+		fields = append(fields,
+			zap.Int("prompt_tokens", result.Usage.PromptTokens),
+			zap.Int("completion_tokens", result.Usage.CompletionTokens),
+			zap.Int("total_tokens", result.Usage.TotalTokens),
+		)
+	}
+	c.logger().Info("chat completion response", fields...)
 
 	return result, nil
 }
