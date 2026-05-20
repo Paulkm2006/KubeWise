@@ -1,4 +1,4 @@
-package deploy
+package chart
 
 import (
 	"testing"
@@ -15,9 +15,9 @@ func TestScoreChartCandidate_prefersTrustSignalsOverStars(t *testing.T) {
 		Signed:            true,
 		Official:          true,
 	}
-	if scoreChartCandidate(lowTrustHighStars) >= scoreChartCandidate(highTrust) {
+	if ScoreChartCandidate(lowTrustHighStars) >= ScoreChartCandidate(highTrust) {
 		t.Fatalf("trust signals should beat stars-only: %d vs %d",
-			scoreChartCandidate(lowTrustHighStars), scoreChartCandidate(highTrust))
+			ScoreChartCandidate(lowTrustHighStars), ScoreChartCandidate(highTrust))
 	}
 }
 
@@ -25,7 +25,7 @@ func TestMergeCuratedIntegration_argocd(t *testing.T) {
 	ah := []catalog.ChartInfo{
 		{RepoName: "argo", ChartName: "argocd-apps", Stars: 95, Official: true, CNCF: true},
 	}
-	out := catalog.MergeCuratedChartCandidate("argocd", ah, rankChartCandidates)
+	out := catalog.MergeCuratedChartCandidate("argocd", ah, RankChartCandidates)
 	if out[0].ChartName != "argo-cd" {
 		t.Fatalf("top = %q, want argo-cd (curated)", out[0].ChartName)
 	}
@@ -42,7 +42,7 @@ func TestRankChartCandidates_trustBeforeStars(t *testing.T) {
 			Official:          true,
 		},
 	}
-	ranked := rankChartCandidates("argocd", candidates)
+	ranked := RankChartCandidates("argocd", candidates)
 	if ranked[0].ChartName != "argo-cd" {
 		t.Fatalf("first = %q, want argo-cd", ranked[0].ChartName)
 	}
@@ -51,13 +51,13 @@ func TestRankChartCandidates_trustBeforeStars(t *testing.T) {
 func TestScoreChartCandidate_deprecatedPenalty(t *testing.T) {
 	active := catalog.ChartInfo{ChartName: "x", Stars: 1, VerifiedPublisher: true}
 	deprecated := catalog.ChartInfo{ChartName: "y", Stars: 100, VerifiedPublisher: true, Deprecated: true}
-	if scoreChartCandidate(deprecated) >= scoreChartCandidate(active) {
+	if ScoreChartCandidate(deprecated) >= ScoreChartCandidate(active) {
 		t.Fatal("deprecated chart should rank lower")
 	}
 }
 
-func TestChartSelectionWarnings_companionChart(t *testing.T) {
-	w := chartSelectionWarnings("argocd", &catalog.ChartInfo{ChartName: "argocd-apps"})
+func TestSelectionWarnings_companionChart(t *testing.T) {
+	w := SelectionWarnings("argocd", &catalog.ChartInfo{ChartName: "argocd-apps"})
 	if len(w) == 0 {
 		t.Fatal("expected warning for argocd-apps")
 	}

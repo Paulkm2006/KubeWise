@@ -1,4 +1,5 @@
-package deploy
+// Package chart holds Artifact Hub chart ranking, selection rules, and resolution.
+package chart
 
 import (
 	"context"
@@ -12,7 +13,8 @@ import (
 	"github.com/kubewise/kubewise/pkg/catalog"
 )
 
-func normalizeAppName(appName string) string {
+// NormalizeAppName lowercases and trims the app name for comparisons.
+func NormalizeAppName(appName string) string {
 	return strings.ToLower(strings.TrimSpace(appName))
 }
 
@@ -28,9 +30,9 @@ const (
 	scoreDeprecatedInText  = -200
 )
 
-// scoreChartCandidate ranks ArtifactHub candidates using trust signals and popularity.
+// ScoreChartCandidate ranks ArtifactHub candidates using trust signals and popularity.
 // Chart name similarity is intentionally not used.
-func scoreChartCandidate(c catalog.ChartInfo) int {
+func ScoreChartCandidate(c catalog.ChartInfo) int {
 	score := c.Stars * scorePerStar
 	if c.VerifiedPublisher {
 		score += scoreVerifiedPublisher
@@ -60,24 +62,24 @@ func scoreChartCandidate(c catalog.ChartInfo) int {
 	return score
 }
 
-func pickBestChart(appName string, candidates []catalog.ChartInfo) catalog.ChartInfo {
-	ranked := rankChartCandidates(appName, candidates)
+// PickBestChart returns the highest-ranked candidate.
+func PickBestChart(appName string, candidates []catalog.ChartInfo) catalog.ChartInfo {
+	ranked := RankChartCandidates(appName, candidates)
 	return ranked[0]
 }
 
-// rankChartCandidates sorts candidates best-first by trust signals and stars.
-func rankChartCandidates(appName string, candidates []catalog.ChartInfo) []catalog.ChartInfo {
+// RankChartCandidates sorts candidates best-first by trust signals and stars.
+func RankChartCandidates(appName string, candidates []catalog.ChartInfo) []catalog.ChartInfo {
 	if len(candidates) <= 1 {
 		return candidates
 	}
 	ranked := make([]catalog.ChartInfo, len(candidates))
 	copy(ranked, candidates)
 	sort.SliceStable(ranked, func(i, j int) bool {
-		si, sj := scoreChartCandidate(ranked[i]), scoreChartCandidate(ranked[j])
+		si, sj := ScoreChartCandidate(ranked[i]), ScoreChartCandidate(ranked[j])
 		if si != sj {
 			return si > sj
 		}
-		// Tie-break: higher stars, then chart name for stable UX.
 		if ranked[i].Stars != ranked[j].Stars {
 			return ranked[i].Stars > ranked[j].Stars
 		}
@@ -87,12 +89,12 @@ func rankChartCandidates(appName string, candidates []catalog.ChartInfo) []catal
 	return ranked
 }
 
-// chartSelectionWarnings warns when the chosen chart likely is not the main application chart.
-func chartSelectionWarnings(appName string, chart *catalog.ChartInfo) []plan.PlanWarning {
+// SelectionWarnings warns when the chosen chart likely is not the main application chart.
+func SelectionWarnings(appName string, chart *catalog.ChartInfo) []plan.PlanWarning {
 	if chart == nil {
 		return nil
 	}
-	app := normalizeAppName(appName)
+	app := NormalizeAppName(appName)
 	chartName := strings.ToLower(chart.ChartName)
 	if chart.CuratedPick {
 		return nil
@@ -114,16 +116,22 @@ func chartSelectionWarnings(appName string, chart *catalog.ChartInfo) []plan.Pla
 	return nil
 }
 
-// resolveChartFromArtifactHub searches ArtifactHub and selects a chart.
-func (a *Agent) resolveChartFromArtifactHub(ctx context.Context, appName string) (*catalog.ChartInfo, error) {
+// SelectChartFn presents chart candidates and returns the chosen chart (nil if user cancels).
+type SelectChartFn func(ctx context.Context, appName string, candidates []catalog.ChartInfo) (*catalog.ChartInfo, error)
+
+// ResolveArtifactHub searches Artifact Hub, merges curated picks, and selects a chart.
+func ResolveArtifactHub(ctx context.Context, appName string, selectChart SelectChartFn, log *zap.Logger) (*catalog.ChartInfo, error) {
+	if log == nil {
+		log = zap.NewNop()
+	}
 	ahResolver := catalog.NewArtifactHubResolver(nil)
 	candidates, err := ahResolver.SearchCandidates(ctx, appName)
 
 	if err != nil {
-		a.logWarn("artifacthub search failed, showing manual input", zap.Error(err), zap.String("app", appName))
+		log.Warn("artifacthub search failed, showing manual input", zap.Error(err), zap.String("app", appName))
 		candidates = nil
 	}
-	candidates = catalog.MergeCuratedChartCandidate(appName, candidates, rankChartCandidates)
+	candidates = catalog.MergeCuratedChartCandidate(appName, candidates, RankChartCandidates)
 	if len(candidates) > 0 {
 		top := candidates[0]
 		fields := []zap.Field{
@@ -135,22 +143,22 @@ func (a *Agent) resolveChartFromArtifactHub(ctx context.Context, appName string)
 		}
 		if !top.CuratedPick {
 			fields = append(fields,
-				zap.Int("top_score", scoreChartCandidate(top)),
+				zap.Int("top_score", ScoreChartCandidate(top)),
 				zap.Bool("verified", top.VerifiedPublisher),
 				zap.Bool("signed", top.Signed),
 				zap.Bool("official", top.Official),
 			)
 		}
-		a.logDebug("chart candidates ready", fields...)
+		log.Debug("chart candidates ready", fields...)
 	}
 
-	if a.selectionHandler == nil {
+	if selectChart == nil {
 		if len(candidates) == 0 {
 			return nil, fmt.Errorf("未找到应用 %q 的 Chart，请检查应用名称或手动指定 Chart 信息", appName)
 		}
-		c := pickBestChart(appName, candidates)
+		c := PickBestChart(appName, candidates)
 		c.Source = "artifacthub"
-		a.logInfo("auto-selected best candidate from ArtifactHub",
+		log.Info("auto-selected best candidate from ArtifactHub",
 			zap.String("app", appName),
 			zap.String("repo", c.RepoName),
 			zap.String("chart", c.ChartName),
@@ -158,5 +166,5 @@ func (a *Agent) resolveChartFromArtifactHub(ctx context.Context, appName string)
 		return &c, nil
 	}
 
-	return a.selectionHandler.SelectChart(ctx, appName, candidates)
+	return selectChart(ctx, appName, candidates)
 }
