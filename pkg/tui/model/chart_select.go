@@ -132,7 +132,7 @@ func (m ChartSelectModel) View() string {
 	// 标题
 	title := fmt.Sprintf("找到 %d 个 Helm Chart，请选择", len(m.candidates))
 	if m.countdown > 0 {
-		title += fmt.Sprintf("（%d 秒后自动选择 #1）", m.countdown)
+		title += fmt.Sprintf("（%d 秒后自动选择推荐项 #1）", m.countdown)
 	}
 	sb.WriteString(lipgloss.NewStyle().Bold(true).Render(title) + "\n\n")
 
@@ -146,10 +146,18 @@ func (m ChartSelectModel) View() string {
 		if c.Stars > 0 {
 			stars = fmt.Sprintf("⭐ %d", c.Stars)
 		}
-		line := fmt.Sprintf("%s[%d] %s/%s  %s\n    %s\n    %s\n",
+		recommended := ""
+		switch {
+		case c.CuratedPick:
+			recommended = " [常用·推荐]"
+		case i == 0:
+			recommended = " [推荐]"
+		}
+		trust := formatChartTrustBadges(c)
+		line := fmt.Sprintf("%s[%d] %s/%s%s  %s%s\n    %s\n    %s\n",
 			cursor, i+1,
-			c.RepoName, c.ChartName,
-			stars,
+			c.RepoName, c.ChartName, recommended,
+			stars, trust,
 			c.Description,
 			c.RepoURL,
 		)
@@ -166,4 +174,27 @@ func (m ChartSelectModel) View() string {
 	sb.WriteString("↑↓ 选择  Enter/数字键 确认  Esc 取消\n")
 
 	return sb.String()
+}
+
+func formatChartTrustBadges(c catalog.ChartInfo) string {
+	var badges []string
+	if c.Official {
+		badges = append(badges, "official")
+	}
+	if c.CNCF {
+		badges = append(badges, "cncf")
+	}
+	if c.VerifiedPublisher {
+		badges = append(badges, "verified")
+	}
+	if c.Signed {
+		badges = append(badges, "signed")
+	}
+	if c.Deprecated {
+		badges = append(badges, "deprecated")
+	}
+	if len(badges) == 0 {
+		return ""
+	}
+	return "  [" + strings.Join(badges, " · ") + "]"
 }

@@ -1,0 +1,193 @@
+# 内置常用 Helm Chart 目录（go:embed 编译进二进制）
+# 仅用于在 Artifact Hub 搜索结果中置顶推荐，不替代 AH 搜索。
+# cluster_singleton: 集群级/CRD 类 chart，其他 namespace 同名 release 全新 install 通常会失败
+# install_crds: true 时自动视为 cluster_singleton
+apps:
+  argocd:
+    aliases: ["argo-cd", "argo cd", "argocd"]
+    repo_name: "argo"
+    repo_url: "https://argoproj.github.io/argo-helm"
+    chart: "argo-cd"
+    default_namespace: "argocd"
+    cluster_singleton: true
+    notes: "GitOps CD tool. 通常一个集群只装一套 Argo CD（CRD 集群级）；若已有 release 请 upgrade 而非在新 namespace 重复 install。Key values: server.service.type, server.ingress.enabled"
+
+  prometheus:
+    aliases: ["prometheus", "prom", "prometheus-stack", "kube-prometheus"]
+    repo_name: "prometheus-community"
+    repo_url: "https://prometheus-community.github.io/helm-charts"
+    chart: "kube-prometheus-stack"
+    default_namespace: "monitoring"
+    cluster_singleton: true
+    notes: "Full monitoring stack. Key values: grafana.enabled, alertmanager.enabled"
+
+  cert-manager:
+    aliases: ["cert-manager", "certmanager"]
+    repo_name: "jetstack"
+    repo_url: "https://charts.jetstack.io"
+    chart: "cert-manager"
+    default_namespace: "cert-manager"
+    install_crds: true
+    cluster_singleton: true
+    notes: "TLS certificate management. Requires installCRDs=true for first install"
+
+  nginx-ingress:
+    aliases: ["nginx-ingress", "ingress-nginx", "nginx ingress controller"]
+    repo_name: "ingress-nginx"
+    repo_url: "https://kubernetes.github.io/ingress-nginx"
+    chart: "ingress-nginx"
+    default_namespace: "ingress-nginx"
+    cluster_singleton: true
+
+  metallb:
+    aliases: ["metallb", "metal-lb"]
+    repo_name: "metallb"
+    repo_url: "https://metallb.github.io/metallb"
+    chart: "metallb"
+    default_namespace: "metallb-system"
+    cluster_singleton: true
+
+  redis:
+    aliases: ["redis"]
+    repo_name: "bitnami"
+    repo_url: "https://charts.bitnami.com/bitnami"
+    chart: "redis"
+    default_namespace: "default"
+
+  mysql:
+    aliases: ["mysql"]
+    repo_name: "bitnami"
+    repo_url: "https://charts.bitnami.com/bitnami"
+    chart: "mysql"
+    default_namespace: "default"
+
+  postgresql:
+    aliases: ["postgresql", "postgres", "pg"]
+    repo_name: "bitnami"
+    repo_url: "https://charts.bitnami.com/bitnami"
+    chart: "postgresql"
+    default_namespace: "default"
+
+  grafana:
+    aliases: ["grafana"]
+    repo_name: "grafana"
+    repo_url: "https://grafana.github.io/helm-charts"
+    chart: "grafana"
+    default_namespace: "monitoring"
+
+  loki:
+    aliases: ["loki", "loki-stack"]
+    repo_name: "grafana"
+    repo_url: "https://grafana.github.io/helm-charts"
+    chart: "loki-stack"
+    default_namespace: "monitoring"
+
+  traefik:
+    aliases: ["traefik"]
+    repo_name: "traefik"
+    repo_url: "https://traefik.github.io/charts"
+    chart: "traefik"
+    default_namespace: "traefik"
+    cluster_singleton: true
+
+  harbor:
+    aliases: ["harbor"]
+    repo_name: "harbor"
+    repo_url: "https://helm.goharbor.io"
+    chart: "harbor"
+    default_namespace: "harbor"
+    cluster_singleton: true
+
+  minio:
+    aliases: ["minio"]
+    repo_name: "minio"
+    repo_url: "https://charts.min.io/"
+    chart: "minio"
+    default_namespace: "minio"
+
+  elasticsearch:
+    aliases: ["elasticsearch", "es", "elastic"]
+    repo_name: "elastic"
+    repo_url: "https://helm.elastic.co"
+    chart: "elasticsearch"
+    default_namespace: "elastic"
+
+  kafka:
+    aliases: ["kafka"]
+    repo_name: "bitnami"
+    repo_url: "https://charts.bitnami.com/bitnami"
+    chart: "kafka"
+    default_namespace: "default"
+
+  rabbitmq:
+    aliases: ["rabbitmq"]
+    repo_name: "bitnami"
+    repo_url: "https://charts.bitnami.com/bitnami"
+    chart: "rabbitmq"
+    default_namespace: "default"
+
+  vault:
+    aliases: ["vault", "hashicorp-vault"]
+    repo_name: "hashicorp"
+    repo_url: "https://helm.releases.hashicorp.com"
+    chart: "vault"
+    default_namespace: "vault"
+    cluster_singleton: true
+
+  consul:
+    aliases: ["consul", "hashicorp-consul"]
+    repo_name: "hashicorp"
+    repo_url: "https://helm.releases.hashicorp.com"
+    chart: "consul"
+    default_namespace: "consul"
+    cluster_singleton: true
+
+  istio:
+    aliases: ["istio", "istio-base"]
+    repo_name: "istio"
+    repo_url: "https://istio-release.storage.googleapis.com/charts"
+    chart: "base"
+    default_namespace: "istio-system"
+    cluster_singleton: true
+    notes: "Istio service mesh base chart. Usually installed with istiod chart."
+
+  linkerd:
+    aliases: ["linkerd"]
+    repo_name: "linkerd"
+    repo_url: "https://helm.linkerd.io/stable"
+    chart: "linkerd-control-plane"
+    default_namespace: "linkerd"
+    cluster_singleton: true
+
+  velero:
+    aliases: ["velero"]
+    repo_name: "vmware-tanzu"
+    repo_url: "https://vmware-tanzu.github.io/helm-charts"
+    chart: "velero"
+    default_namespace: "velero"
+    cluster_singleton: true
+    notes: "Backup and disaster recovery. Requires cloud provider plugin configuration."
+
+  external-dns:
+    aliases: ["external-dns", "externaldns"]
+    repo_name: "external-dns"
+    repo_url: "https://kubernetes-sigs.github.io/external-dns/"
+    chart: "external-dns"
+    default_namespace: "external-dns"
+    cluster_singleton: true
+
+  metrics-server:
+    aliases: ["metrics-server"]
+    repo_name: "metrics-server"
+    repo_url: "https://kubernetes-sigs.github.io/metrics-server/"
+    chart: "metrics-server"
+    default_namespace: "kube-system"
+    cluster_singleton: true
+
+  sealed-secrets:
+    aliases: ["sealed-secrets"]
+    repo_name: "sealed-secrets"
+    repo_url: "https://bitnami-labs.github.io/sealed-secrets"
+    chart: "sealed-secrets"
+    default_namespace: "kube-system"
+    cluster_singleton: true

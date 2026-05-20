@@ -32,14 +32,20 @@ func NewArtifactHubResolver(httpClient *http.Client) *ArtifactHubResolver {
 
 // artifactHubPackage 对应 Artifact Hub API 返回的 package 结构。
 type artifactHubPackage struct {
-	PackageID   string `json:"package_id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Version     string `json:"version"`
-	Stars       int    `json:"stars"`
-	Repository  struct {
-		Name string `json:"name"`
-		URL  string `json:"url"`
+	PackageID                    string `json:"package_id"`
+	Name                         string `json:"name"`
+	Description                  string `json:"description"`
+	Version                      string `json:"version"`
+	Stars                        int    `json:"stars"`
+	Official                     bool   `json:"official"`
+	CNCF                         bool   `json:"cncf"`
+	Deprecated                   bool   `json:"deprecated"`
+	Signed                       bool   `json:"signed"`
+	ProductionOrganizationsCount int    `json:"production_organizations_count"`
+	Repository                   struct {
+		Name              string `json:"name"`
+		URL               string `json:"url"`
+		VerifiedPublisher bool   `json:"verified_publisher"`
 	} `json:"repository"`
 }
 
@@ -97,13 +103,19 @@ func (r *ArtifactHubResolver) SearchCandidates(ctx context.Context, appName stri
 	charts := make([]ChartInfo, 0, len(result.Packages))
 	for _, pkg := range result.Packages {
 		charts = append(charts, ChartInfo{
-			RepoName:      pkg.Repository.Name,
-			RepoURL:       pkg.Repository.URL,
-			ChartName:     pkg.Name,
-			Stars:         pkg.Stars,
-			Description:   pkg.Description,
-			LatestVersion: pkg.Version,
-			Source:        "artifacthub",
+			RepoName:                     pkg.Repository.Name,
+			RepoURL:                      pkg.Repository.URL,
+			ChartName:                    pkg.Name,
+			Stars:                        pkg.Stars,
+			Description:                  pkg.Description,
+			LatestVersion:                pkg.Version,
+			Source:                       "artifacthub",
+			VerifiedPublisher:            pkg.Repository.VerifiedPublisher,
+			Signed:                       pkg.Signed,
+			Official:                     pkg.Official,
+			CNCF:                         pkg.CNCF,
+			Deprecated:                   pkg.Deprecated,
+			ProductionOrganizationsCount: pkg.ProductionOrganizationsCount,
 		})
 	}
 	return charts, nil
