@@ -76,6 +76,14 @@ kubewise chat "部署一个 nginx ingress controller"
 kubewise tui
 ```
 
+**API 模式：**
+
+```bash
+kubewise serve
+```
+
+REST + SSE，详见 [docs/api.md](docs/api.md)。
+
 TUI 快捷键：
 
 | 按键 | 功能 |
@@ -85,6 +93,7 @@ TUI 快捷键：
 | Ctrl+C | 中断当前查询 |
 | Ctrl+L | 清空会话 |
 | Tab | 切换焦点（侧边栏 ↔ 输入框） |
+| /resume | 重发被中断的消息 |
 
 操作和部署在执行前会弹出确认界面，支持审查配置、按 Y 执行、按 E 编辑、按 C 输入修正指令。
 
@@ -93,7 +102,7 @@ TUI 快捷键：
 ## 架构
 
 ```
-用户输入 (CLI / TUI)
+用户输入 (CLI / TUI / API)
        │
        ▼
 ┌──────────────────┐
@@ -104,7 +113,7 @@ TUI 快捷键：
        ├── Operation Agent      ── 规划 → 确认 → 执行
        ├── Troubleshooting Agent── 系统诊断 → 根因分析
        ├── Security Agent       ── RBAC/网络/镜像/容器审计
-       └── Deploy Agent         ── Helm 7 阶段部署流水线
+       └── Deploy Agent         ── Helm 多阶段部署流水线
                │
                ▼
 ┌──────────────────┐
@@ -120,9 +129,8 @@ TUI 快捷键：
 ### Deploy Agent 部署流程
 
 ```
-搜索 Chart (ArtifactHub) → 获取默认 values → LLM 生成配置
-→ 用户确认 (Y/编辑/NL 修正) → Helm install/upgrade
-→ 失败时自动诊断修复 (ReAct 循环, 20轮工具调用)
+解析应用 → ArtifactHub 选 Chart → LLM 生成配置 → 用户确认
+→ 预检 → Helm 部署 → 校验；失败时 ReAct 诊断修复
 ```
 
 ---
@@ -132,11 +140,11 @@ TUI 快捷键：
 | Agent | 方式 | 说明 |
 |-------|------|------|
 | Router | 单次 LLM 分类 | 识别 5 种意图类型，提取实体，路由到子 Agent |
-| Query | ReAct 循环（最多 10 轮） | 调用查询工具，自动纠错，跨资源联合推理 |
+| Query | ReAct 循环（默认 20 轮） | 调用查询工具，自动纠错，跨资源联合推理 |
 | Operation | 规划 → 确认 → 执行 | LLM 生成操作计划，逐步骤用户确认，支持 NL 修正重规划 |
 | Troubleshooting | 收集 → 分析 → 建议 | 自动检查 Pod 状态、事件、日志，输出根因和修复建议 |
 | Security | 四维并行审计 | RBAC 权限、Pod 安全配置、网络策略覆盖、镜像安全风险 |
-| Deploy | 7 阶段 Helm 流水线 | ArtifactHub 搜索、LLM 配置生成、用户确认、自动诊断重试 |
+| Deploy | 状态机流水线 | 选 Chart、生成配置、确认、预检部署、校验，失败自动修复 |
 
 ---
 
@@ -144,7 +152,7 @@ TUI 快捷键：
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
-| 查询 | 11 | 资源列表、资源用量、ConfigMap、CRD、GVR 查询 |
+| 查询 | 13 | 资源列表、详情、用量、ConfigMap、CRD、GVR 查询 |
 | 操作 | 6 | 扩缩容、滚动重启、删除、apply、节点封锁/驱逐、标签编辑 |
 | 故障排查 | 4 | Pod 日志、K8s 事件、节点状态、Service Endpoints |
 | 安全审计 | 4 | RBAC、Pod 安全、网络策略、镜像安全 |
