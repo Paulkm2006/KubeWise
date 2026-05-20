@@ -2,7 +2,6 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/openai/openai-go/v3"
@@ -57,24 +56,13 @@ func NewClient(config Config) (*Client, error) {
 
 // ChatCompletion 聊天补全接口，支持工具调用
 func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functions []FunctionDefinition) (*Message, error) {
-	// 转换消息格式到openai格式
 	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
 	for i, msg := range messages {
-		switch msg.Role {
-		case "user":
-			openaiMessages[i] = openai.UserMessage(msg.Content)
-		case "assistant":
-			openaiMessages[i] = openai.AssistantMessage(msg.Content)
-		case "system":
-			openaiMessages[i] = openai.SystemMessage(msg.Content)
-		case "developer":
-			openaiMessages[i] = openai.DeveloperMessage(msg.Content)
-		case "tool", "function":
-			// 工具返回消息
-			openaiMessages[i] = openai.ToolMessage(msg.Content, msg.ToolCallID)
-		default:
-			return nil, fmt.Errorf("unsupported message role: %s", msg.Role)
+		param, err := messageToOpenAIParam(msg)
+		if err != nil {
+			return nil, fmt.Errorf("message[%d]: %w", i, err)
 		}
+		openaiMessages[i] = param
 	}
 
 	// 构建请求参数
@@ -118,6 +106,7 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 			zap.Error(err),
 			zap.String("model", string(params.Model)),
 			zap.Int("messages", len(messages)),
+			zap.String("message_summary", summarizeMessages(messages)),
 		)
 		return nil, fmt.Errorf("chat completion failed: %w", err)
 	}
@@ -142,54 +131,7 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		}
 	}
 
-	// 检查是否有工具调用（通过原始JSON解析）
-	var rawResp map[string]any
-	respJSON, err := json.Marshal(resp)
-	if err == nil {
-		if err := json.Unmarshal(respJSON, &rawResp); err == nil {
-			if choices, ok := rawResp["choices"].([]any); ok && len(choices) > 0 {
-				if choice, ok := choices[0].(map[string]any); ok {
-					if message, ok := choice["message"].(map[string]any); ok {
-						// 处理工具调用
-						if toolCallsRaw, ok := message["tool_calls"].([]any); ok && len(toolCallsRaw) > 0 {
-							result.ToolCalls = make([]ToolCall, len(toolCallsRaw))
-							for j, tcRaw := range toolCallsRaw {
-								if tc, ok := tcRaw.(map[string]any); ok {
-									functionRaw, _ := tc["function"].(map[string]any)
-									if functionRaw == nil {
-										continue
-									}
-
-									name, _ := functionRaw["name"].(string)
-									argsStr, _ := functionRaw["arguments"].(string)
-
-									var args map[string]any
-									if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
-										args = map[string]any{
-											"raw_arguments": argsStr,
-										}
-									}
-
-									id, _ := tc["id"].(string)
-									typeStr, _ := tc["type"].(string)
-
-									result.ToolCalls[j] = ToolCall{
-										ID:   id,
-										Type: typeStr,
-										Function: FunctionCall{
-											Name:      name,
-											Arguments: args,
-										},
-									}
-								}
-							}
-
-						}
-					}
-				}
-			}
-		}
-	}
+	result.ToolCalls = toolCallsFromCompletionMessage(choice.Message)
 
 	fields := []zap.Field{
 		zap.String("model", string(params.Model)),
