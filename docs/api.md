@@ -85,7 +85,9 @@ Opens an SSE connection and streams real-time events as the agent processes the 
 | `render_code` | Code block | `query_id`, `language`, `content` |
 | `render_kv` | Key-value pairs | `query_id`, `pairs[{key, value}]` |
 | `render_list` | Status list | `query_id`, `items[{status, text}]` |
-| `confirm_request` | Needs confirmation | `confirm_id`, `query_id`, `step`, `total_steps` |
+| `interaction_request` | Human-in-the-loop | `interaction_id`, `query_id`, `kind`, `payload`, `total_steps` (operation) |
+| `tool_fail` | Tool failed | `query_id`, `tool_name`, `step`, `elapsed`, `error` |
+| `render_detail` | Resource detail | `query_id`, `detail` |
 | `stream_done` | Query completed | `query_id`, `result` |
 | `stream_err` | Query failed | `query_id`, `error` |
 | `supervisor` | Supervisor event | `query_id`, `reason`, `decision`, `detail` |
@@ -108,26 +110,23 @@ event: stream_done
 data: {"query_id":"q-abc123","result":"集群中共有以下命名空间：..."}
 ```
 
-### Confirm Operation Step
+### Answer Interaction (HITL)
 
 ```
-POST /api/v1/chat/confirm
+POST /api/v1/chat/interaction
 ```
 
-When the agent encounters an operation that requires user confirmation (e.g., scaling, deleting resources), it sends a `confirm_request` SSE event with a `confirm_id`. The client must POST to this endpoint to approve or reject the step.
+When the agent needs user input (operation step confirm, chart selection, deploy plan review), it emits `interaction_request` with an `interaction_id` and `kind`. POST the response payload here to unblock the agent.
 
 **Request:**
 ```json
 {
-  "confirm_id": "uuid-from-confirm-request",
-  "confirmed": true,
-  "correction": ""
+  "interaction_id": "uuid-from-interaction-request",
+  "payload": { "confirmed": true }
 }
 ```
 
-- `confirmed: true` — execute the step
-- `confirmed: false` with `correction` — replan with corrections
-- `confirmed: false` without `correction` — skip the step
+For `kind: operation_step`, `payload` matches operation confirm: `confirmed` (bool), optional `correction` (string).
 
 **Response:**
 ```json
@@ -200,16 +199,17 @@ es.addEventListener("phase", (e) => {
   console.log("Phase:", data.phase);
 });
 
-es.addEventListener("confirm_request", async (e) => {
+es.addEventListener("interaction_request", async (e) => {
   const data = JSON.parse(e.data);
-  const confirmed = window.confirm(`确认执行步骤 ${data.total_steps}?`);
+  if (data.kind !== "operation_step") return;
+  const confirmed = window.confirm(`确认执行步骤?`);
 
-  await fetch("/api/v1/chat/confirm", {
+  await fetch("/api/v1/chat/interaction", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      confirm_id: data.confirm_id,
-      confirmed: confirmed,
+      interaction_id: data.interaction_id,
+      payload: { confirmed },
     }),
   });
 });
