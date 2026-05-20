@@ -50,13 +50,13 @@ func WithSupervisorConfig(cfg supervisor.Config) Option {
 
 // Agent 安全审计Agent
 type Agent struct {
-	k8sClient    *k8s.Client
-	llmClient    *llm.Client
-	toolRegistry *tool.Registry
-	eventCh      chan<- events.TUIEvent
-	queryID      string
-	log          *zap.Logger
-	maxSteps     int
+	k8sClient     *k8s.Client
+	llmClient     *llm.Client
+	toolRegistry  *tool.Registry
+	eventCh       chan<- events.TUIEvent
+	queryID       string
+	log           *zap.Logger
+	maxSteps      int
 	supervisorCfg supervisor.Config
 }
 
@@ -91,10 +91,10 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, 
 		return nil, fmt.Errorf("加载工具注册中心失败: %w", err)
 	}
 	a := &Agent{
-		k8sClient:    k8sClient,
-		llmClient:    llmClient,
-		toolRegistry: registry,
-		maxSteps:     DefaultMaxSteps,
+		k8sClient:     k8sClient,
+		llmClient:     llmClient,
+		toolRegistry:  registry,
+		maxSteps:      DefaultMaxSteps,
 		supervisorCfg: supervisor.DefaultConfig(),
 	}
 	for _, opt := range opts {

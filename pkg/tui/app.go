@@ -140,7 +140,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		events.RenderKVEvent,
 		events.RenderListEvent,
 		events.PhaseEvent,
-			events.SupervisorEvent:
+		events.SupervisorEvent:
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(msg)
 		return a, tea.Batch(listenForEvents(a.eventCh), chatCmd)

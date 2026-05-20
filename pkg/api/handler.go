@@ -24,9 +24,9 @@ type pendingConfirm struct {
 }
 
 type Handler struct {
-	querier       StreamQuerier
-	sessionStore  *session.Store
-	mu            sync.RWMutex
+	querier         StreamQuerier
+	sessionStore    *session.Store
+	mu              sync.RWMutex
 	pendingConfirms map[string]*pendingConfirm
 }
 

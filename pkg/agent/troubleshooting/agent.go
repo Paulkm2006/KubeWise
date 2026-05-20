@@ -51,13 +51,13 @@ func WithSupervisorConfig(cfg supervisor.Config) Option {
 
 // Agent 故障排查Agent
 type Agent struct {
-	k8sClient    *k8s.Client
-	llmClient    *llm.Client
-	toolRegistry *tool.Registry
-	eventCh      chan<- events.TUIEvent
-	queryID      string
-	log          *zap.Logger
-	maxSteps     int
+	k8sClient     *k8s.Client
+	llmClient     *llm.Client
+	toolRegistry  *tool.Registry
+	eventCh       chan<- events.TUIEvent
+	queryID       string
+	log           *zap.Logger
+	maxSteps      int
 	supervisorCfg supervisor.Config
 }
 

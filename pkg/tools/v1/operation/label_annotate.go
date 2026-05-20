@@ -36,8 +36,10 @@ func NewLabelAnnotateResourceTool(k8sClient *k8s.Client) *LabelAnnotateResourceT
 	return &LabelAnnotateResourceTool{k8sClient: k8sClient}
 }
 
-func (t *LabelAnnotateResourceTool) Name() string        { return "label_annotate_resource" }
-func (t *LabelAnnotateResourceTool) Description() string { return "Add or update labels and/or annotations on a Kubernetes resource" }
+func (t *LabelAnnotateResourceTool) Name() string { return "label_annotate_resource" }
+func (t *LabelAnnotateResourceTool) Description() string {
+	return "Add or update labels and/or annotations on a Kubernetes resource"
+}
 func (t *LabelAnnotateResourceTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",

@@ -51,7 +51,7 @@ func (r *Renderer) RenderTable(headers []string, rows [][]string) string {
 	var sb strings.Builder
 	sb.WriteString(sep + "\n")
 	for i, h := range headers {
-		sb.WriteString(lipgloss.NewStyle().Width(colWidths[i]+2).Bold(true).Render(h))
+		sb.WriteString(lipgloss.NewStyle().Width(colWidths[i] + 2).Bold(true).Render(h))
 	}
 	sb.WriteString("\n" + sep + "\n")
 
@@ -60,7 +60,7 @@ func (r *Renderer) RenderTable(headers []string, rows [][]string) string {
 			if i >= len(colWidths) {
 				break
 			}
-			sb.WriteString(lipgloss.NewStyle().Width(colWidths[i]+2).Render(cell))
+			sb.WriteString(lipgloss.NewStyle().Width(colWidths[i] + 2).Render(cell))
 		}
 		sb.WriteString("\n")
 	}
@@ -94,7 +94,7 @@ func (r *Renderer) RenderCode(language, content string) string {
 	}
 
 	header := tuistyles.CodeLangStyle.Render(language)
-	return tuistyles.CodeBlockStyle.Width(r.width-2).Render(header + "\n" + buf.String())
+	return tuistyles.CodeBlockStyle.Width(r.width - 2).Render(header + "\n" + buf.String())
 }
 
 // RenderKV renders key-value pairs with right-aligned keys.
@@ -187,7 +187,7 @@ func (r *Renderer) RenderDetail(detail events.ResourceDetail) string {
 	// Recent Logs
 	if detail.RecentLogs != "" {
 		sb.WriteString(tuistyles.KVKeyStyle.Render("Recent Logs") + "\n")
-		sb.WriteString(tuistyles.CodeBlockStyle.Width(r.width - 2).Render(detail.RecentLogs) + "\n")
+		sb.WriteString(tuistyles.CodeBlockStyle.Width(r.width-2).Render(detail.RecentLogs) + "\n")
 	}
 
 	return strings.TrimRight(sb.String(), "\n")

@@ -164,15 +164,15 @@ type RenderDetailData struct {
 }
 
 type ResourceDetailData struct {
-	Kind       string               `json:"kind"`
-	Name       string               `json:"name"`
-	Namespace  string               `json:"namespace"`
-	Status     map[string]string    `json:"status"`
-	Containers []ContainerInfoData  `json:"containers,omitempty"`
-	Conditions []ConditionInfoData  `json:"conditions,omitempty"`
-	Events     []EventInfoData      `json:"events,omitempty"`
-	RecentLogs string               `json:"recent_logs,omitempty"`
-	Labels     map[string]string    `json:"labels,omitempty"`
+	Kind       string              `json:"kind"`
+	Name       string              `json:"name"`
+	Namespace  string              `json:"namespace"`
+	Status     map[string]string   `json:"status"`
+	Containers []ContainerInfoData `json:"containers,omitempty"`
+	Conditions []ConditionInfoData `json:"conditions,omitempty"`
+	Events     []EventInfoData     `json:"events,omitempty"`
+	RecentLogs string              `json:"recent_logs,omitempty"`
+	Labels     map[string]string   `json:"labels,omitempty"`
 }
 
 type ContainerInfoData struct {

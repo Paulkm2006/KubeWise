@@ -258,7 +258,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			operation.WithConfirmationHandler(handler),
 			operation.WithEventCh(eventCh, queryID),
 			operation.WithMaxSteps(a.maxSteps),
-				operation.WithSupervisorConfig(a.supervisorCfg),
+			operation.WithSupervisorConfig(a.supervisorCfg),
 		)
 		if agErr != nil {
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})

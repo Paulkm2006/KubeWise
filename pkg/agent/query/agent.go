@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
-	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/tool"
 	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
@@ -49,13 +49,13 @@ func WithSupervisorConfig(cfg supervisor.Config) Option {
 
 // Agent 查询Agent
 type Agent struct {
-	k8sClient    *k8s.Client
-	llmClient    *llm.Client
-	toolRegistry *tool.Registry
-	eventCh      chan<- events.TUIEvent
-	queryID      string
-	log          *zap.Logger
-	maxSteps     int
+	k8sClient     *k8s.Client
+	llmClient     *llm.Client
+	toolRegistry  *tool.Registry
+	eventCh       chan<- events.TUIEvent
+	queryID       string
+	log           *zap.Logger
+	maxSteps      int
 	supervisorCfg supervisor.Config
 }
 
@@ -92,10 +92,10 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, 
 	}
 
 	a := &Agent{
-		k8sClient:    k8sClient,
-		llmClient:    llmClient,
-		toolRegistry: registry,
-		maxSteps:     DefaultMaxSteps,
+		k8sClient:     k8sClient,
+		llmClient:     llmClient,
+		toolRegistry:  registry,
+		maxSteps:      DefaultMaxSteps,
 		supervisorCfg: supervisor.DefaultConfig(),
 	}
 	for _, opt := range opts {

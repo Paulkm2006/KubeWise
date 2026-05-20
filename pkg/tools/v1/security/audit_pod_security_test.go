@@ -19,7 +19,7 @@ func podWithContainer(namespace, name string, sc *corev1.SecurityContext) corev1
 	}
 }
 
-func boolPtr(b bool) *bool { return &b }
+func boolPtr(b bool) *bool    { return &b }
 func int64Ptr(i int64) *int64 { return &i }
 
 func TestAnalyzePodSecurity_Privileged(t *testing.T) {

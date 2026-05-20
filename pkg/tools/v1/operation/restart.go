@@ -35,8 +35,10 @@ func NewRestartResourceTool(k8sClient *k8s.Client) *RestartResourceTool {
 	return &RestartResourceTool{k8sClient: k8sClient}
 }
 
-func (t *RestartResourceTool) Name() string        { return "restart_resource" }
-func (t *RestartResourceTool) Description() string { return "Trigger a rolling restart of a Deployment, StatefulSet, or DaemonSet" }
+func (t *RestartResourceTool) Name() string { return "restart_resource" }
+func (t *RestartResourceTool) Description() string {
+	return "Trigger a rolling restart of a Deployment, StatefulSet, or DaemonSet"
+}
 func (t *RestartResourceTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
