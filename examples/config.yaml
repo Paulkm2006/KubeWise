@@ -22,3 +22,27 @@ log:
   level: "info"
   # 日志文件路径（-v 模式默认 ./kubewise.log）
   file: "stderr"
+
+# Agent相关配置
+agent:
+  # 最大工具调用轮次，默认20。复杂查询可能需要更多轮次
+  # 也可通过环境变量 KUBEWISE_AGENT_MAX_STEPS 或 --max-steps 参数设置
+  max_steps: 20
+
+  # Supervisor自动干预配置
+  # 当agent陷入循环或达到max_steps时，supervisor会评估是否继续、重置或终止
+  # 可通过 --no-supervisor 参数禁用
+  supervisor:
+    enabled: true
+    # 相同工具+参数连续调用N次后触发检测（默认3）
+    repeat_threshold: 3
+    # 两个工具交替调用A-B-A-B N次后触发检测（默认3）
+    ping_pong_threshold: 3
+    # 同一工具名连续调用N次后触发检测（默认5）
+    same_tool_threshold: 5
+    # 最大继续授权次数（默认2）
+    max_extensions: 2
+    # 每次继续授权额外给多少步（默认10）
+    extension_step_grant: 10
+    # 最大LLM评估调用次数（默认2）
+    max_evaluator_calls: 2

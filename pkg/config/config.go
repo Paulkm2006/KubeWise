@@ -8,6 +8,7 @@ type Config struct {
 	LLM        LLMConfig    `mapstructure:"llm"`
 	Deploy     DeployConfig `mapstructure:"deploy"`
 	Log        LogConfig    `mapstructure:"log"`
+	Agent      AgentConfig  `mapstructure:"agent"`
 }
 
 // LLMConfig LLM相关配置
@@ -41,4 +42,21 @@ type ArtifactHubConfig struct {
 // HelmDeployConfig Helm 部署配置
 type HelmDeployConfig struct {
 	WaitTimeout time.Duration `mapstructure:"wait_timeout"`
+}
+
+// AgentConfig Agent相关配置
+type AgentConfig struct {
+	MaxSteps   int              `mapstructure:"max_steps"`
+	Supervisor SupervisorConfig `mapstructure:"supervisor"`
+}
+
+// SupervisorConfig Supervisor相关配置
+type SupervisorConfig struct {
+	Enabled            bool `mapstructure:"enabled"`
+	RepeatThreshold    int  `mapstructure:"repeat_threshold"`
+	PingPongThreshold  int  `mapstructure:"ping_pong_threshold"`
+	SameToolThreshold  int  `mapstructure:"same_tool_threshold"`
+	MaxExtensions      int  `mapstructure:"max_extensions"`
+	ExtensionStepGrant int  `mapstructure:"extension_step_grant"`
+	MaxEvaluatorCalls  int  `mapstructure:"max_evaluator_calls"`
 }

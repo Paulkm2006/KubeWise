@@ -232,6 +232,31 @@ func (m *ChatModel) renderBlock(b session.Block) string {
 			}
 			return m.renderer.RenderList(items)
 		}
+	case "detail":
+		var p session.DetailPayload
+		if err := json.Unmarshal(b.Payload, &p); err == nil {
+			d := events.ResourceDetail{
+				Kind: p.Kind, Name: p.Name, Namespace: p.Namespace,
+				Status: p.Status, RecentLogs: p.RecentLogs, Labels: p.Labels,
+			}
+			for _, c := range p.Containers {
+				d.Containers = append(d.Containers, events.ContainerInfo{
+					Name: c.Name, Image: c.Image, Ready: c.Ready,
+					RestartCount: c.RestartCount, State: c.State, Resources: c.Resources,
+				})
+			}
+			for _, c := range p.Conditions {
+				d.Conditions = append(d.Conditions, events.ConditionInfo{
+					Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message,
+				})
+			}
+			for _, e := range p.Events {
+				d.Events = append(d.Events, events.EventInfo{
+					Type: e.Type, Reason: e.Reason, Message: e.Message, Timestamp: e.Timestamp,
+				})
+			}
+			return m.renderer.RenderDetail(d)
+		}
 	}
 	return m.renderer.RenderText(string(b.Payload))
 }
@@ -354,6 +379,12 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		payload, _ := json.Marshal(session.ListPayload{Items: listItems})
 		m.addPending(ev.QueryID, session.Block{Type: "list", Payload: payload}, rendered)
 
+	case events.RenderDetailEvent:
+		rendered := m.renderer.RenderDetail(ev.Detail)
+		dp := detailToPayload(ev.Detail)
+		payload, _ := json.Marshal(dp)
+		m.addPending(ev.QueryID, session.Block{Type: "detail", Payload: payload}, rendered)
+
 	case events.StreamDoneEvent:
 		p := m.pending[ev.QueryID]
 		var lines []string
@@ -416,6 +447,22 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			m.phaseStart = now
 		}
 
+	case events.SupervisorEvent:
+		if c, ok := m.cards[ev.QueryID]; ok {
+			now := time.Now()
+			if len(c.phases) > 0 {
+				last := &c.phases[len(c.phases)-1]
+				if !last.done {
+					last.done = true
+					last.elapsed = now.Sub(last.start)
+				}
+			}
+			label := fmt.Sprintf("supervisor: %s — %s", ev.Decision, ev.Detail)
+			c.phases = append(c.phases, phaseLine{label: label, start: now})
+			m.phase = label
+			m.phaseStart = now
+		}
+
 	case spinner.TickMsg:
 		if m.spinning {
 			var cmd tea.Cmd
@@ -425,6 +472,35 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// detailToPayload converts an events.ResourceDetail to a session.DetailPayload.
+func detailToPayload(d events.ResourceDetail) session.DetailPayload {
+	dp := session.DetailPayload{
+		Kind:       d.Kind,
+		Name:       d.Name,
+		Namespace:  d.Namespace,
+		Status:     d.Status,
+		RecentLogs: d.RecentLogs,
+		Labels:     d.Labels,
+	}
+	for _, c := range d.Containers {
+		dp.Containers = append(dp.Containers, session.ContainerInfo{
+			Name: c.Name, Image: c.Image, Ready: c.Ready,
+			RestartCount: c.RestartCount, State: c.State, Resources: c.Resources,
+		})
+	}
+	for _, c := range d.Conditions {
+		dp.Conditions = append(dp.Conditions, session.ConditionInfo{
+			Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message,
+		})
+	}
+	for _, e := range d.Events {
+		dp.Events = append(dp.Events, session.EventInfo{
+			Type: e.Type, Reason: e.Reason, Message: e.Message, Timestamp: e.Timestamp,
+		})
+	}
+	return dp
 }
 
 // addPending appends a block and its pre-rendered string to the pending message for queryID.

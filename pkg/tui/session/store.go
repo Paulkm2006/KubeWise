@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -92,4 +93,21 @@ func (s *Store) LoadRecent(n int) ([]*Session, error) {
 		sessions = append(sessions, &sess)
 	}
 	return sessions, nil
+}
+
+// Delete removes the session file matching the given ID.
+func (s *Store) Delete(id string) error {
+	entries, err := os.ReadDir(s.Dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		if strings.Contains(e.Name(), id+".json") {
+			return os.Remove(filepath.Join(s.Dir, e.Name()))
+		}
+	}
+	return fmt.Errorf("session %s not found", id)
 }

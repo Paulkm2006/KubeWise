@@ -114,6 +114,85 @@ func (r *Renderer) RenderKV(pairs []events.KVPair) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
+// RenderDetail renders a structured resource detail card.
+func (r *Renderer) RenderDetail(detail events.ResourceDetail) string {
+	var sb strings.Builder
+
+	// Header
+	header := fmt.Sprintf("%s/%s", detail.Kind, detail.Name)
+	if detail.Namespace != "" {
+		header = fmt.Sprintf("%s (ns: %s)", header, detail.Namespace)
+	}
+	sb.WriteString(tuistyles.CodeLangStyle.Render(header) + "\n")
+
+	// Status
+	if len(detail.Status) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Status") + "\n")
+		for k, v := range detail.Status {
+			fmt.Fprintf(&sb, "  %s: %s\n", k, v)
+		}
+	}
+
+	// Labels
+	if len(detail.Labels) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Labels") + "\n")
+		for k, v := range detail.Labels {
+			fmt.Fprintf(&sb, "  %s: %s\n", k, v)
+		}
+	}
+
+	// Containers
+	if len(detail.Containers) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Containers") + "\n")
+		for _, c := range detail.Containers {
+			icon := "✓"
+			if !c.Ready {
+				icon = "✗"
+			}
+			fmt.Fprintf(&sb, "  %s %s (%s) restarts=%d state=%s\n", icon, c.Name, c.Image, c.RestartCount, c.State)
+			if len(c.Resources) > 0 {
+				for k, v := range c.Resources {
+					fmt.Fprintf(&sb, "    %s: %s\n", k, v)
+				}
+			}
+		}
+	}
+
+	// Conditions
+	if len(detail.Conditions) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Conditions") + "\n")
+		for _, c := range detail.Conditions {
+			status := "ok"
+			if c.Status != "True" {
+				status = "warn"
+			}
+			icon, style := statusIconStyle(status)
+			sb.WriteString(style.Render(fmt.Sprintf("  %s %s: %s — %s", icon, c.Type, c.Reason, c.Message)) + "\n")
+		}
+	}
+
+	// Events
+	if len(detail.Events) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Events") + "\n")
+		for _, e := range detail.Events {
+			status := "info"
+			if e.Type == "Warning" {
+				status = "warn"
+			}
+			icon, style := statusIconStyle(status)
+			sb.WriteString(style.Render(fmt.Sprintf("  %s [%s] %s: %s", icon, e.Timestamp, e.Reason, e.Message)) + "\n")
+		}
+	}
+
+	// Recent Logs
+	if detail.RecentLogs != "" {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Recent Logs") + "\n")
+		sb.WriteString(tuistyles.CodeBlockStyle.Width(r.width - 2).Render(detail.RecentLogs) + "\n")
+	}
+
+	return strings.TrimRight(sb.String(), "\n")
+}
+
 // RenderList renders status items with coloured status icons.
 func (r *Renderer) RenderList(items []events.ListItem) string {
 	var sb strings.Builder

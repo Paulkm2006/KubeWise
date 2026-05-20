@@ -1,0 +1,333 @@
+openapi: 3.0.3
+info:
+  title: KubeWise API
+  description: Kubernetes intelligent operations agent system REST API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: health
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/chat:
+    post:
+      summary: Synchronous chat query
+      description: Send a natural language query and receive the final result synchronously.
+      operationId: chatSync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: Query result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Query failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/chat/stream:
+    get:
+      summary: SSE streaming chat query
+      description: |
+        Send a natural language query and receive real-time Server-Sent Events as the agent processes it.
+        The stream ends with a `stream_done` or `stream_err` event.
+      operationId: chatStream
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The natural language query
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE stream with the following event types:
+                  - `phase`: Agent processing phase
+                  - `agent_start`: Agent begins processing
+                  - `agent_done`: Agent finished (includes duration and token counts)
+                  - `tool_call`: Tool invocation started
+                  - `tool_done`: Tool invocation completed
+                  - `render_text`: Plain text result
+                  - `render_table`: Table result with headers and rows
+                  - `render_code`: Code block result (YAML/JSON)
+                  - `render_kv`: Key-value pairs result
+                  - `render_list`: Status list result
+                  - `confirm_request`: Operation step needs confirmation
+                  - `stream_done`: Query completed successfully
+                  - `stream_err`: Query failed with error
+                  - `supervisor`: Supervisor intervention event
+        "400":
+          description: Missing query parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/chat/confirm:
+    post:
+      summary: Confirm operation step
+      description: |
+        Respond to a `confirm_request` SSE event. The agent is blocked until this endpoint is called.
+      operationId: chatConfirm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmRequest"
+      responses:
+        "200":
+          description: Confirmation accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: confirm_id not found or already responded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Agent no longer waiting for confirmation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/sessions:
+    get:
+      summary: List sessions
+      operationId: listSessions
+      responses:
+        "200":
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionListResponse"
+    post:
+      summary: Create session
+      operationId: createSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+
+  /api/v1/sessions/{id}:
+    get:
+      summary: Get session detail
+      operationId: getSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDetailResponse"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Delete session
+      operationId: deleteSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        version:
+          type: string
+          example: dev
+
+    ChatRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Natural language query
+          example: "列出所有命名空间"
+        query_id:
+          type: string
+          description: Optional client-supplied query ID
+
+    ChatResponse:
+      type: object
+      properties:
+        query_id:
+          type: string
+        result:
+          type: string
+
+    ConfirmRequest:
+      type: object
+      required:
+        - confirm_id
+        - confirmed
+      properties:
+        confirm_id:
+          type: string
+          description: ID from the confirm_request SSE event
+        confirmed:
+          type: boolean
+          description: true to execute the step, false to skip
+        correction:
+          type: string
+          description: Optional correction instructions (when confirmed is false)
+
+    CreateSessionRequest:
+      type: object
+      properties:
+        title:
+          type: string
+
+    SessionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+
+    SessionDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+
+    SessionListResponse:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionResponse"
+
+    Message:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string

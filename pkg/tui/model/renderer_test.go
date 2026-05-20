@@ -43,3 +43,47 @@ func TestRenderList(t *testing.T) {
 		t.Errorf("want 'pod running' in output: %q", out)
 	}
 }
+
+func TestRenderDetail(t *testing.T) {
+	r := model.NewRenderer(80)
+	detail := events.ResourceDetail{
+		Kind:      "pod",
+		Name:      "my-pod",
+		Namespace: "default",
+		Status:    map[string]string{"phase": "Running", "ip": "10.0.0.1"},
+		Labels:    map[string]string{"app": "web"},
+		Containers: []events.ContainerInfo{
+			{Name: "app", Image: "nginx:latest", Ready: true, RestartCount: 0, State: "Running"},
+			{Name: "sidecar", Image: "envoy:1.0", Ready: false, RestartCount: 3, State: "CrashLoopBackOff"},
+		},
+		Conditions: []events.ConditionInfo{
+			{Type: "Ready", Status: "True", Reason: "", Message: ""},
+		},
+		Events: []events.EventInfo{
+			{Type: "Normal", Reason: "Pulled", Message: "image pulled", Timestamp: "2024-01-01 00:00:00"},
+			{Type: "Warning", Reason: "BackOff", Message: "back-off restarting", Timestamp: "2024-01-01 00:01:00"},
+		},
+	}
+	out := r.RenderDetail(detail)
+	if !strings.Contains(out, "pod/my-pod") {
+		t.Errorf("expected header 'pod/my-pod', got: %q", out)
+	}
+	if !strings.Contains(out, "Running") {
+		t.Errorf("expected 'Running' in output, got: %q", out)
+	}
+	if !strings.Contains(out, "app") {
+		t.Errorf("expected container 'app' in output, got: %q", out)
+	}
+	if !strings.Contains(out, "sidecar") {
+		t.Errorf("expected container 'sidecar' in output, got: %q", out)
+	}
+	if !strings.Contains(out, "CrashLoopBackOff") {
+		t.Errorf("expected 'CrashLoopBackOff' in output, got: %q", out)
+	}
+	if !strings.Contains(out, "Ready") {
+		t.Errorf("expected condition 'Ready' in output, got: %q", out)
+	}
+	if !strings.Contains(out, "BackOff") {
+		t.Errorf("expected event 'BackOff' in output, got: %q", out)
+	}
+}

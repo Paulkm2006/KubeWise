@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
+	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
@@ -57,7 +58,7 @@ type App struct {
 }
 
 // NewApp creates the App, loading recent sessions from disk.
-func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger) (*App, error) {
+func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSteps int, supervisorCfg supervisor.Config) (*App, error) {
 	store, err := session.NewStore()
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
@@ -70,7 +71,7 @@ func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger) (*App
 
 	activeSession := session.New()
 
-	routerAgent, err := router.New(k8sClient, llmClient)
+	routerAgent, err := router.New(k8sClient, llmClient, maxSteps, supervisorCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +139,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		events.RenderCodeEvent,
 		events.RenderKVEvent,
 		events.RenderListEvent,
-		events.PhaseEvent:
+		events.PhaseEvent,
+			events.SupervisorEvent:
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(msg)
 		return a, tea.Batch(listenForEvents(a.eventCh), chatCmd)
@@ -461,8 +463,8 @@ func (a App) View() string {
 }
 
 // Run starts the bubbletea program.
-func Run(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger) error {
-	app, err := NewApp(k8sClient, llmClient, log)
+func Run(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSteps int, supervisorCfg supervisor.Config) error {
+	app, err := NewApp(k8sClient, llmClient, log, maxSteps, supervisorCfg)
 	if err != nil {
 		return err
 	}

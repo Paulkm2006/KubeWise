@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tool"
@@ -39,6 +40,9 @@ func (a *toolRegistryAdapter) GetTool(name string) (toolExecutor, bool) {
 	return t, ok
 }
 
+// DefaultMaxSteps is the default maximum number of planning rounds.
+const DefaultMaxSteps = 20
+
 // Option configures the Agent.
 type Option func(*Agent)
 
@@ -52,6 +56,22 @@ func WithEventCh(ch chan<- events.TUIEvent, queryID string) Option {
 	return func(a *Agent) {
 		a.eventCh = ch
 		a.queryID = queryID
+	}
+}
+
+// WithMaxSteps sets the maximum number of planning rounds.
+func WithMaxSteps(n int) Option {
+	return func(a *Agent) {
+		if n > 0 {
+			a.maxSteps = n
+		}
+	}
+}
+
+// WithSupervisorConfig configures the supervisor.
+func WithSupervisorConfig(cfg supervisor.Config) Option {
+	return func(a *Agent) {
+		a.supervisorCfg = cfg
 	}
 }
 
@@ -72,6 +92,8 @@ type Agent struct {
 	confirmHandler ConfirmationHandler
 	eventCh        chan<- events.TUIEvent
 	queryID        string
+	maxSteps       int
+	supervisorCfg  supervisor.Config
 	inTokens       int
 	outTokens      int
 	log            *zap.Logger
@@ -107,6 +129,8 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, 
 		readRegistry:   readReg,
 		writeRegistry:  &toolRegistryAdapter{reg: writeReg},
 		confirmHandler: NewStdinConfirmationHandler(),
+		maxSteps:       DefaultMaxSteps,
+		supervisorCfg:  supervisor.DefaultConfig(),
 	}
 	for _, opt := range opts {
 		opt(a)
@@ -207,50 +231,127 @@ func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([
 		{Role: "user", Content: userQuery},
 	}
 
-	const maxRounds = 10
-	for round := range maxRounds {
-		resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
+	sv := supervisor.New(a.supervisorCfg, a.llmClient)
+	sv.Reset()
+	iterationsRemaining := a.maxSteps
+
+outer:
+	for iterationsRemaining > 0 {
+		for round := range iterationsRemaining {
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
+			if err != nil {
+				return nil, fmt.Errorf("LLM 调用失败: %w", err)
+			}
+			a.accumulate(resp)
+
+			if len(resp.ToolCalls) == 0 {
+				return nil, fmt.Errorf("规划未完成（LLM 未调用 submit_operation_plan），请重新描述您的操作需求")
+			}
+
+			// 执行所有工具调用（支持并行tool calls）
+			messages = append(messages, *resp)
+			var planResult []OperationStep
+			for _, tc := range resp.ToolCalls {
+				funcCall := &tc.Function
+
+				if funcCall.Name == "submit_operation_plan" {
+					plan, parseErr := parseOperationPlan(funcCall.Arguments)
+					if parseErr != nil {
+						messages = append(messages, llm.Message{
+							Role: "tool", Content: fmt.Sprintf("操作计划解析失败：%v\n请重新提交。", parseErr), ToolCallID: tc.ID,
+						})
+						continue
+					}
+					planResult = plan
+					continue
+				}
+
+				t, exists := a.readRegistry.GetTool(funcCall.Name)
+				if !exists {
+					messages = append(messages, llm.Message{
+						Role: "tool", Content: fmt.Sprintf("工具 %s 不存在，请选择可用工具", funcCall.Name), ToolCallID: tc.ID,
+					})
+					continue
+				}
+
+				toolStart := time.Now()
+				a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: round + 1})
+				result, toolErr := t.Execute(ctx, funcCall.Arguments)
+				a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: round + 1})
+				if toolErr != nil {
+					result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用。", toolErr)
+				}
+
+				messages = append(messages, llm.Message{
+					Role:       "tool",
+					Content:    fmt.Sprintf("工具返回结果：\n%s", result),
+					ToolCallID: tc.ID,
+				})
+			}
+
+			if planResult != nil {
+				return planResult, nil
+			}
+
+			// Supervisor: cheap loop check after tool execution
+			if triggered, loopResult := sv.CheckLoop(ctx, round, resp.ToolCalls, messages); triggered {
+				a.emit(events.SupervisorEvent{
+					QueryID:  a.queryID,
+					Reason:   "loop detected",
+					Decision: string(loopResult.Decision),
+					Detail:   loopResult.Explanation,
+				})
+				switch loopResult.Decision {
+				case supervisor.DecisionContinue:
+					iterationsRemaining = loopResult.ExtraSteps
+					continue outer
+				case supervisor.DecisionReset:
+					hint := loopResult.Hint
+					if hint == "" {
+						hint = "你已经陷入循环，请根据已获取的信息提交你的计划（调用 submit_operation_plan），或换一种方式来获取信息。"
+					} else {
+						hint = hint + " 请提交你的计划（调用 submit_operation_plan）。"
+					}
+					messages = append(messages, llm.Message{Role: "user", Content: hint})
+					iterationsRemaining = a.maxSteps
+					sv.Reset()
+					continue outer
+				case supervisor.DecisionAbort:
+					return nil, fmt.Errorf("supervisor: %s", loopResult.Explanation)
+				}
+			}
+		}
+
+		// Reached maxSteps boundary — ask supervisor to evaluate
+		evalResult, err := sv.Evaluate(ctx, messages, iterationsRemaining, a.maxSteps)
 		if err != nil {
-			return nil, fmt.Errorf("LLM 调用失败: %w", err)
+			return nil, fmt.Errorf("超过最大规划轮次（%d），无法生成操作计划，可通过 --max-steps 参数或 agent.max_steps 配置项调大", a.maxSteps)
 		}
-		a.accumulate(resp)
-
-		if len(resp.ToolCalls) == 0 {
-			return nil, fmt.Errorf("规划未完成（LLM 未调用 submit_operation_plan），请重新描述您的操作需求")
-		}
-
-		funcCall := &resp.ToolCalls[0].Function
-
-		if funcCall.Name == "submit_operation_plan" {
-			return parseOperationPlan(funcCall.Arguments)
-		}
-
-
-		t, exists := a.readRegistry.GetTool(funcCall.Name)
-		if !exists {
-			result := fmt.Sprintf("工具 %s 不存在，请选择可用工具", funcCall.Name)
-			messages = append(messages, *resp, llm.Message{
-				Role: "tool", Content: result, ToolCallID: resp.ToolCalls[0].ID,
-			})
-			continue
-		}
-
-		toolStart := time.Now()
-		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: round + 1})
-		result, toolErr := t.Execute(ctx, funcCall.Arguments)
-		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: round + 1})
-		if toolErr != nil {
-			result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用。", toolErr)
-		}
-
-		messages = append(messages, *resp, llm.Message{
-			Role:       "tool",
-			Content:    fmt.Sprintf("工具返回结果：\n%s", result),
-			ToolCallID: resp.ToolCalls[0].ID,
+		a.emit(events.SupervisorEvent{
+			QueryID:  a.queryID,
+			Reason:   "max steps reached",
+			Decision: string(evalResult.Decision),
+			Detail:   evalResult.Explanation,
 		})
+		switch evalResult.Decision {
+		case supervisor.DecisionContinue:
+			iterationsRemaining = evalResult.ExtraSteps
+		case supervisor.DecisionReset:
+			hint := evalResult.Hint
+			if hint == "" {
+				hint = "你已经陷入循环，请根据已获取的信息提交你的计划（调用 submit_operation_plan），或换一种方式来获取信息。"
+			} else {
+				hint = hint + " 请提交你的计划（调用 submit_operation_plan）。"
+			}
+			messages = append(messages, llm.Message{Role: "user", Content: hint})
+			iterationsRemaining = a.maxSteps
+			sv.Reset()
+		case supervisor.DecisionAbort:
+			return nil, fmt.Errorf("supervisor: %s", evalResult.Explanation)
+		}
 	}
 
-	return nil, fmt.Errorf("超过最大规划轮次（%d），无法生成操作计划，请重新描述您的需求", maxRounds)
+	return nil, fmt.Errorf("超过最大规划轮次，无法生成操作计划")
 }
 
 // execute iterates steps with per-step confirmation. Supports correction-based replan.
@@ -388,6 +489,7 @@ func (a *Agent) buildPlanningSystemPrompt() string {
 - scale 操作前，请先查询当前副本数并在 description 中注明变化（如"3 → 5"）
 - delete 操作前，请先确认资源存在
 - apply 操作，generated_yaml 必须是完整合法的 Kubernetes YAML
+- 尽量在一次回复中调用多个查询工具来并行收集信息，减少对话轮次
 
 常见 GVR 对照：
 - Pod: group="", version="v1", resource="pods"

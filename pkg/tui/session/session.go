@@ -30,7 +30,7 @@ type Message struct {
 
 // Block is a typed payload inside an assistant message.
 type Block struct {
-	Type    string          `json:"type"` // "table"|"code"|"kv"|"list"|"text"
+	Type    string          `json:"type"` // "table"|"code"|"kv"|"list"|"detail"|"text"
 	Payload json.RawMessage `json:"payload"`
 }
 
@@ -66,6 +66,45 @@ type ListPayload struct {
 type ListItem struct {
 	Status string `json:"status"` // "ok"|"warn"|"error"|"info"
 	Text   string `json:"text"`
+}
+
+// DetailPayload is the payload for a "detail" block.
+type DetailPayload struct {
+	Kind       string            `json:"kind"`
+	Name       string            `json:"name"`
+	Namespace  string            `json:"namespace"`
+	Status     map[string]string `json:"status"`
+	Containers []ContainerInfo   `json:"containers,omitempty"`
+	Conditions []ConditionInfo   `json:"conditions,omitempty"`
+	Events     []EventInfo       `json:"events,omitempty"`
+	RecentLogs string            `json:"recent_logs,omitempty"`
+	Labels     map[string]string `json:"labels,omitempty"`
+}
+
+// ContainerInfo describes a container within a Pod.
+type ContainerInfo struct {
+	Name         string            `json:"name"`
+	Image        string            `json:"image"`
+	Ready        bool              `json:"ready"`
+	RestartCount int32             `json:"restart_count"`
+	State        string            `json:"state"`
+	Resources    map[string]string `json:"resources,omitempty"`
+}
+
+// ConditionInfo describes a resource condition.
+type ConditionInfo struct {
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
+// EventInfo describes a Kubernetes event.
+type EventInfo struct {
+	Type      string `json:"type"`
+	Reason    string `json:"reason"`
+	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"`
 }
 
 // New creates a new session with a generated ID.

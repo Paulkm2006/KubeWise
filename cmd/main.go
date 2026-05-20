@@ -10,6 +10,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
+	"github.com/kubewise/kubewise/pkg/agent/supervisor"
+	"github.com/kubewise/kubewise/pkg/api"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/log"
@@ -67,7 +69,7 @@ var chatCmd = &cobra.Command{
 		llmClient.SetLogger(logger)
 
 		// 初始化路由Agent
-		routerAgent, err := router.New(k8sClient, llmClient)
+		routerAgent, err := router.New(k8sClient, llmClient, viper.GetInt("agent.max_steps"), getSupervisorConfig())
 		if err != nil {
 			return fmt.Errorf("初始化路由Agent失败: %w", err)
 		}
@@ -116,7 +118,43 @@ var tuiCmd = &cobra.Command{
 		}
 		llmClient.SetLogger(logger)
 
-		return tui.Run(k8sClient, llmClient, logger)
+		return tui.Run(k8sClient, llmClient, logger, viper.GetInt("agent.max_steps"), getSupervisorConfig())
+	},
+}
+
+var serveCmd = &cobra.Command{
+	Use:   "serve",
+	Short: "启动 HTTP API 服务器",
+	Long: `启动 HTTP API 服务器，提供 RESTful API 和 SSE 流式接口。
+示例：
+  kubewise serve
+  kubewise serve --addr :9090`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		kubeconfig := viper.GetString("kubeconfig")
+		k8sClient, err := k8s.NewClient(kubeconfig)
+		if err != nil {
+			return fmt.Errorf("初始化K8s客户端失败: %w", err)
+		}
+
+		llmConfig := llm.Config{
+			Model:   viper.GetString("llm.model"),
+			APIKey:  viper.GetString("llm.api_key"),
+			APIBase: viper.GetString("llm.api_base"),
+		}
+		llmClient, err := llm.NewClient(llmConfig)
+		if err != nil {
+			return fmt.Errorf("初始化LLM客户端失败: %w", err)
+		}
+
+		addr := viper.GetString("api.addr")
+		handler, err := api.NewHandler(k8sClient, llmClient, viper.GetInt("agent.max_steps"), getSupervisorConfig())
+		if err != nil {
+			return fmt.Errorf("初始化API Handler失败: %w", err)
+		}
+
+		srv := api.NewServer(handler)
+		logger.Info("starting API server", zap.String("addr", addr))
+		return srv.Start(addr)
 	},
 }
 
@@ -131,6 +169,7 @@ func init() {
 	cobra.OnInitialize(initConfig, initLogger)
 	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(tuiCmd)
+	rootCmd.AddCommand(serveCmd)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认 $HOME/.kubewise.yaml)")
 	rootCmd.PersistentFlags().StringP("kubeconfig", "k", "", "kubeconfig文件路径")
@@ -140,6 +179,8 @@ func init() {
 	rootCmd.PersistentFlags().String("log-level", "info", "日志级别: debug / info / warn / error")
 	rootCmd.PersistentFlags().String("log-file", "stderr", "日志文件路径 (stderr 或文件路径)")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "启用详细日志（默认 debug，写入 kubewise.log，不干扰 TUI）")
+	rootCmd.PersistentFlags().Int("max-steps", 20, "Agent最大工具调用轮次")
+	rootCmd.PersistentFlags().Bool("no-supervisor", false, "禁用supervisor自动干预")
 
 	viper.BindPFlag("kubeconfig", rootCmd.PersistentFlags().Lookup("kubeconfig"))
 	viper.BindPFlag("llm.model", rootCmd.PersistentFlags().Lookup("model"))
@@ -148,6 +189,10 @@ func init() {
 	viper.BindPFlag("log.level", rootCmd.PersistentFlags().Lookup("log-level"))
 	viper.BindPFlag("log.file", rootCmd.PersistentFlags().Lookup("log-file"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	viper.BindPFlag("agent.max_steps", rootCmd.PersistentFlags().Lookup("max-steps"))
+
+	serveCmd.Flags().String("addr", ":8080", "API server listen address")
+	viper.BindPFlag("api.addr", serveCmd.Flags().Lookup("addr"))
 }
 
 func initConfig() {
@@ -168,6 +213,15 @@ func initConfig() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("KUBEWISE")
+
+	viper.SetDefault("agent.max_steps", 20)
+	viper.SetDefault("agent.supervisor.enabled", true)
+	viper.SetDefault("agent.supervisor.repeat_threshold", 3)
+	viper.SetDefault("agent.supervisor.ping_pong_threshold", 3)
+	viper.SetDefault("agent.supervisor.same_tool_threshold", 5)
+	viper.SetDefault("agent.supervisor.max_extensions", 2)
+	viper.SetDefault("agent.supervisor.extension_step_grant", 10)
+	viper.SetDefault("agent.supervisor.max_evaluator_calls", 2)
 
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Printf("使用配置文件: %s\n", viper.ConfigFileUsed())
@@ -192,4 +246,22 @@ func initLogger() {
 		fmt.Fprintf(os.Stderr, "初始化日志失败: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// getSupervisorConfig builds a supervisor.Config from Viper, respecting the --no-supervisor flag.
+func getSupervisorConfig() supervisor.Config {
+	cfg := supervisor.DefaultConfig()
+	if noSup, _ := rootCmd.PersistentFlags().GetBool("no-supervisor"); noSup {
+		cfg.Enabled = false
+	}
+	cfg.RepeatThreshold = viper.GetInt("agent.supervisor.repeat_threshold")
+	cfg.PingPongThreshold = viper.GetInt("agent.supervisor.ping_pong_threshold")
+	cfg.SameToolThreshold = viper.GetInt("agent.supervisor.same_tool_threshold")
+	cfg.MaxExtensions = viper.GetInt("agent.supervisor.max_extensions")
+	cfg.ExtensionStepGrant = viper.GetInt("agent.supervisor.extension_step_grant")
+	cfg.MaxEvaluatorCalls = viper.GetInt("agent.supervisor.max_evaluator_calls")
+	if viper.IsSet("agent.supervisor.enabled") {
+		cfg.Enabled = viper.GetBool("agent.supervisor.enabled")
+	}
+	return cfg
 }
