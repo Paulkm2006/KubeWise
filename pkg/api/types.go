@@ -18,6 +18,12 @@ type ConfirmRequest struct {
 	Correction string `json:"correction,omitempty"`
 }
 
+// InteractionAnswerRequest is the body for POST /api/v1/chat/interaction.
+type InteractionAnswerRequest struct {
+	InteractionID string          `json:"interaction_id"`
+	Payload       json.RawMessage `json:"payload"`
+}
+
 type CreateSessionRequest struct {
 	Title string `json:"title,omitempty"`
 }
@@ -139,6 +145,26 @@ type ConfirmRequestData struct {
 	QueryID    string          `json:"query_id"`
 	Step       json.RawMessage `json:"step"`
 	TotalSteps int             `json:"total_steps"`
+}
+
+// InteractionRequestData is emitted as SSE event interaction_request.
+type InteractionRequestData struct {
+	InteractionID string          `json:"interaction_id"`
+	QueryID       string          `json:"query_id"`
+	Kind          string          `json:"kind"`
+	Payload       json.RawMessage `json:"payload"`
+	TotalSteps    int             `json:"total_steps,omitempty"`
+}
+
+type WorkflowStepData struct {
+	QueryID string `json:"query_id"`
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+type UnknownStreamEventData struct {
+	EventType string `json:"event_type"`
 }
 
 type StreamDoneData struct {

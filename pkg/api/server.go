@@ -23,6 +23,7 @@ func NewServer(handler *Handler) *Server {
 	v1.POST("/chat", handler.ChatSync)
 	v1.GET("/chat/stream", handler.ChatStream)
 	v1.POST("/chat/confirm", handler.ChatConfirm)
+	v1.POST("/chat/interaction", handler.ChatInteraction)
 
 	v1.GET("/sessions", handler.ListSessions)
 	v1.POST("/sessions", handler.CreateSession)

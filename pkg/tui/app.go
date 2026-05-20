@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -9,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
+	"github.com/kubewise/kubewise/pkg/agent/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/k8s"
@@ -37,14 +39,17 @@ type App struct {
 	chartSelectModel   *model.ChartSelectModel
 	manualInputModel   *model.ManualChartInputModel
 	deployConfirmModel *model.DeployConfirmModel
-	deployRespCh       chan<- *catalog.ChartInfo    // Chart 选择响应通道（接收后置nil）
-	confirmRespCh      chan<- events.DeployDecision // Deploy 确认响应通道（接收后置nil）
+	deployRespCh           chan<- *catalog.ChartInfo // legacy chart path
+	confirmRespCh          chan<- events.DeployDecision
+	deployConfirmStreamResp chan<- json.RawMessage // stream deploy_confirm
+	streamChartResp        chan<- json.RawMessage // stream chart_select
+	streamChartCandidates  []catalog.ChartInfo
 
 	sessions []*session.Session
 	active   *session.Session
 	store    *session.Store
 
-	eventCh  chan events.TUIEvent
+	eventCh  chan stream.Event
 	cancelFn context.CancelFunc
 	running  bool
 	querySeq int
@@ -93,10 +98,180 @@ func (a App) Init() tea.Cmd {
 	return a.input.Init()
 }
 
-// listenForEvents returns a Cmd that blocks until an event arrives on ch.
-func listenForEvents(ch <-chan events.TUIEvent) tea.Cmd {
-	return func() tea.Msg {
-		return <-ch
+// listenStream waits for one stream.Event from agents.
+func (a App) listenStream() tea.Cmd {
+	return stream.Listen(a.eventCh)
+}
+
+func chartCandidateIndex(chosen *catalog.ChartInfo, list []catalog.ChartInfo) int {
+	if chosen == nil || len(list) == 0 {
+		return -1
+	}
+	for i := range list {
+		c := list[i]
+		if c.ChartName == chosen.ChartName && c.RepoName == chosen.RepoName && (c.RepoURL == chosen.RepoURL || chosen.RepoURL == "") {
+			return i
+		}
+	}
+	return -1
+}
+
+func (a App) dispatchInteractionRequest(ir stream.InteractionRequest) (tea.Model, tea.Cmd) {
+	switch ir.Kind {
+	case stream.KindOperationStep:
+		cm, err := model.NewConfirmModelFromStream(ir.QueryID, ir.TotalSteps, ir.Payload, ir.RespCh)
+		if err != nil {
+			return a, a.listenStream()
+		}
+		a.confirm = &cm
+		return a, a.listenStream()
+	case stream.KindChartSelect:
+		var p struct {
+			AppName    string               `json:"app_name"`
+			Candidates []catalog.ChartInfo `json:"candidates"`
+		}
+		if err := json.Unmarshal(ir.Payload, &p); err != nil {
+			return a, a.listenStream()
+		}
+		a.streamChartResp = ir.RespCh
+		a.streamChartCandidates = p.Candidates
+		m := model.NewChartSelectModel(ir.QueryID, p.AppName, p.Candidates)
+		a.chartSelectModel = &m
+		return a, tea.Batch(a.listenStream(), m.Init())
+	case stream.KindDeployConfirm:
+		var plan events.DeployPlan
+		if err := json.Unmarshal(ir.Payload, &plan); err != nil {
+			return a, a.listenStream()
+		}
+		a.deployConfirmStreamResp = ir.RespCh
+		m := model.NewDeployConfirmModel(ir.QueryID, plan, a.width, a.height)
+		a.deployConfirmModel = &m
+		return a, tea.Batch(a.listenStream(), m.Init())
+	default:
+		return a, a.listenStream()
+	}
+}
+
+func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
+	switch e := ev.(type) {
+	case stream.Legacy:
+		return a.routeLegacyTUIMsg(e.TUI)
+	case stream.InteractionRequest:
+		return a.dispatchInteractionRequest(e)
+	case stream.StreamErr:
+		err := e.Err
+		if err == nil {
+			err = fmt.Errorf("stream ended")
+		}
+		a.chat, _ = a.chat.Update(events.StreamErrEvent{QueryID: e.QueryID, Err: err})
+		a.running = false
+		a.input.SetEnabled(true)
+		return a, nil
+	default:
+		return a.routeNativeStream(ev)
+	}
+}
+
+func (a App) routeNativeStream(ev stream.Event) (tea.Model, tea.Cmd) {
+	switch e := ev.(type) {
+	case stream.Phase:
+		return a.routeLegacyTUIMsg(events.PhaseEvent{QueryID: e.QueryID, Phase: e.Phase})
+	case stream.AgentStart:
+		return a.routeLegacyTUIMsg(events.AgentStartEvent{QueryID: e.QueryID, AgentName: e.AgentName})
+	case stream.AgentDone:
+		return a.routeLegacyTUIMsg(events.AgentDoneEvent{
+			QueryID: e.QueryID, Duration: e.Duration, InTokens: e.InTokens, OutTokens: e.OutTokens,
+		})
+	case stream.ToolCall:
+		return a.routeLegacyTUIMsg(events.ToolCallEvent{QueryID: e.QueryID, ToolName: e.ToolName, Step: e.Step})
+	case stream.ToolDone:
+		return a.routeLegacyTUIMsg(events.ToolDoneEvent{
+			QueryID: e.QueryID, ToolName: e.ToolName, Step: e.Step, Elapsed: e.Elapsed,
+		})
+	case stream.RenderText:
+		return a.routeLegacyTUIMsg(events.RenderTextEvent{QueryID: e.QueryID, Text: e.Text})
+	case stream.RenderTable:
+		return a.routeLegacyTUIMsg(events.RenderTableEvent{QueryID: e.QueryID, Headers: e.Headers, Rows: e.Rows})
+	case stream.RenderCode:
+		return a.routeLegacyTUIMsg(events.RenderCodeEvent{QueryID: e.QueryID, Language: e.Language, Content: e.Content})
+	case stream.RenderKV:
+		return a.routeLegacyTUIMsg(events.RenderKVEvent{QueryID: e.QueryID, Pairs: e.Pairs})
+	case stream.RenderList:
+		return a.routeLegacyTUIMsg(events.RenderListEvent{QueryID: e.QueryID, Items: e.Items})
+	case stream.RenderDetail:
+		return a.routeLegacyTUIMsg(events.RenderDetailEvent{QueryID: e.QueryID, Detail: e.Detail})
+	case stream.Supervisor:
+		return a.routeLegacyTUIMsg(events.SupervisorEvent{
+			QueryID: e.QueryID, Reason: e.Reason, Decision: e.Decision, Detail: e.Detail,
+		})
+	case stream.StreamDone:
+		return a.routeLegacyTUIMsg(events.StreamDoneEvent{QueryID: e.QueryID, Result: e.Result})
+	case stream.WorkflowStep:
+		// surfaced as phase-style text until chat has a richer card type
+		return a.routeLegacyTUIMsg(events.RenderTextEvent{
+			QueryID: e.QueryID,
+			Text:    fmt.Sprintf("[workflow:%s] %s — %s", e.Status, e.Name, e.Detail),
+		})
+	default:
+		return a, a.listenStream()
+	}
+}
+
+func (a App) routeLegacyTUIMsg(te events.TUIEvent) (tea.Model, tea.Cmd) {
+	switch msg := te.(type) {
+	case events.AgentStartEvent,
+		events.AgentDoneEvent,
+		events.ToolCallEvent,
+		events.ToolDoneEvent,
+		events.RenderTextEvent,
+		events.RenderTableEvent,
+		events.RenderCodeEvent,
+		events.RenderKVEvent,
+		events.RenderListEvent,
+		events.RenderDetailEvent,
+		events.PhaseEvent,
+		events.SupervisorEvent:
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(msg)
+		return a, tea.Batch(a.listenStream(), chatCmd)
+
+	case events.ChartSelectRequestEvent:
+		a.deployRespCh = msg.RespCh
+		m := model.NewChartSelectModel(msg.QueryID, msg.AppName, msg.Candidates)
+		a.chartSelectModel = &m
+		return a, tea.Batch(a.listenStream(), m.Init())
+
+	case events.ManualChartInputRequestEvent:
+		m := model.NewManualChartInputModel(msg.QueryID)
+		a.manualInputModel = &m
+		return a, tea.Batch(a.listenStream(), m.Init())
+
+	case events.DeployConfirmRequestEvent:
+		a.confirmRespCh = msg.RespCh
+		m := model.NewDeployConfirmModel(msg.QueryID, msg.Plan, a.width, a.height)
+		a.deployConfirmModel = &m
+		return a, tea.Batch(a.listenStream(), m.Init())
+
+	case events.ConfirmRequestEvent:
+		cm := model.NewConfirmModel(msg)
+		a.confirm = &cm
+		return a, a.listenStream()
+
+	case events.StreamDoneEvent:
+		a.chat, _ = a.chat.Update(msg)
+		a.running = false
+		a.input.SetEnabled(true)
+		a.persistAssistantMessage()
+		return a, nil
+
+	case events.StreamErrEvent:
+		a.chat, _ = a.chat.Update(msg)
+		a.running = false
+		a.input.SetEnabled(true)
+		return a, nil
+
+	default:
+		return a, a.listenStream()
 	}
 }
 
@@ -129,78 +304,93 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	// TUI events from agents
-	case events.AgentStartEvent,
-		events.AgentDoneEvent,
-		events.ToolCallEvent,
-		events.ToolDoneEvent,
-		events.RenderTextEvent,
-		events.RenderTableEvent,
-		events.RenderCodeEvent,
-		events.RenderKVEvent,
-		events.RenderListEvent,
-		events.PhaseEvent,
-		events.SupervisorEvent:
-		var chatCmd tea.Cmd
-		a.chat, chatCmd = a.chat.Update(msg)
-		return a, tea.Batch(listenForEvents(a.eventCh), chatCmd)
-
-	case events.ChartSelectRequestEvent:
-		a.deployRespCh = msg.RespCh
-		m := model.NewChartSelectModel(msg.QueryID, msg.AppName, msg.Candidates)
-		a.chartSelectModel = &m
-		return a, tea.Batch(listenForEvents(a.eventCh), m.Init())
-
-	case events.ManualChartInputRequestEvent:
-		m := model.NewManualChartInputModel(msg.QueryID)
-		a.manualInputModel = &m
-		return a, tea.Batch(listenForEvents(a.eventCh), m.Init())
-
-	case events.DeployConfirmRequestEvent:
-		a.confirmRespCh = msg.RespCh
-		m := model.NewDeployConfirmModel(msg.QueryID, msg.Plan, a.width, a.height)
-		a.deployConfirmModel = &m
-		return a, tea.Batch(listenForEvents(a.eventCh), m.Init())
+	case stream.TeaMsg:
+		return a.dispatchStreamEvent(msg.Event)
 
 	case model.ChartSelectedMsg:
-		// 将用户选择（或取消）发回 Agent，解除 Agent 阻塞
+		if a.streamChartResp != nil {
+			if msg.ChartInfo == nil {
+				raw, _ := json.Marshal(stream.ChartSelectResponse{Cancelled: true})
+				select {
+				case a.streamChartResp <- raw:
+				default:
+				}
+				a.streamChartResp = nil
+				a.streamChartCandidates = nil
+				a.chartSelectModel = nil
+				return a, a.listenStream()
+			}
+			if msg.ChartInfo.Source == "manual" {
+				a.chartSelectModel = nil
+				m := model.NewManualChartInputModel(msg.QueryID)
+				a.manualInputModel = &m
+				return a, tea.Batch(a.listenStream(), m.Init())
+			}
+			idx := chartCandidateIndex(msg.ChartInfo, a.streamChartCandidates)
+			raw, err := json.Marshal(stream.ChartSelectResponse{CandidateIndex: idx})
+			if err == nil {
+				select {
+				case a.streamChartResp <- raw:
+				default:
+				}
+			}
+			a.streamChartResp = nil
+			a.streamChartCandidates = nil
+			a.chartSelectModel = nil
+			return a, a.listenStream()
+		}
 		if a.deployRespCh != nil {
 			a.deployRespCh <- msg.ChartInfo
 			a.deployRespCh = nil
 		}
 		a.chartSelectModel = nil
-		return a, listenForEvents(a.eventCh)
+		return a, a.listenStream()
 
 	case model.ManualChartInputDoneMsg:
+		if a.streamChartResp != nil {
+			var r stream.ChartSelectResponse
+			if msg.ChartInfo == nil {
+				r = stream.ChartSelectResponse{Cancelled: true}
+			} else {
+				r = stream.ChartSelectResponse{
+					UseManualChart:  true,
+					ManualRepoURL:   msg.ChartInfo.RepoURL,
+					ManualChartName: msg.ChartInfo.ChartName,
+				}
+			}
+			raw, err := json.Marshal(r)
+			if err == nil {
+				select {
+				case a.streamChartResp <- raw:
+				default:
+				}
+			}
+			a.streamChartResp = nil
+			a.streamChartCandidates = nil
+		}
 		a.manualInputModel = nil
-		return a, listenForEvents(a.eventCh)
+		return a, a.listenStream()
 
 	case model.DeployConfirmDoneMsg:
-		// 将用户决策发回 Agent，解除 Agent 阻塞
-		if a.confirmRespCh != nil {
+		if a.deployConfirmStreamResp != nil {
+			raw, err := json.Marshal(stream.DeployConfirmResponse{
+				Action:     msg.Decision.Action,
+				Values:     msg.Decision.Values,
+				Correction: msg.Decision.Correction,
+			})
+			if err == nil {
+				select {
+				case a.deployConfirmStreamResp <- raw:
+				default:
+				}
+			}
+			a.deployConfirmStreamResp = nil
+		} else if a.confirmRespCh != nil {
 			a.confirmRespCh <- msg.Decision
 			a.confirmRespCh = nil
 		}
 		a.deployConfirmModel = nil
-		return a, listenForEvents(a.eventCh)
-
-	case events.ConfirmRequestEvent:
-		cm := model.NewConfirmModel(msg)
-		a.confirm = &cm
-		return a, listenForEvents(a.eventCh)
-
-	case events.StreamDoneEvent:
-		a.chat, _ = a.chat.Update(msg)
-		a.running = false
-		a.input.SetEnabled(true)
-		a.persistAssistantMessage()
-		return a, nil
-
-	case events.StreamErrEvent:
-		a.chat, _ = a.chat.Update(msg)
-		a.running = false
-		a.input.SetEnabled(true)
-		return a, nil
+		return a, a.listenStream()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -215,7 +405,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case model.ConfirmDoneMsg:
 		a.confirm = nil
-		return a, listenForEvents(a.eventCh)
+		return a, a.listenStream()
 	}
 
 	// Route remaining messages (including unmatched KeyMsg) to sub-models
@@ -254,7 +444,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a App) handleShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
 	// 如果 deploy TUI 组件 active，不拦截任何方向键/快捷键，
 	// 让按键事件透传到子模型的 Update() 方法。
-	if a.chartSelectModel != nil || a.deployConfirmModel != nil || a.manualInputModel != nil {
+	if a.chartSelectModel != nil || a.deployConfirmModel != nil || a.manualInputModel != nil || a.confirm != nil {
 		return nil, false
 	}
 
@@ -347,7 +537,7 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 
 	a.querySeq++
 	queryID := fmt.Sprintf("q-%d", a.querySeq)
-	a.eventCh = make(chan events.TUIEvent, 64)
+	a.eventCh = make(chan stream.Event, 64)
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelFn = cancel
 
@@ -358,7 +548,7 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 			if r := recover(); r != nil {
 				err := fmt.Errorf("agent panic: %v", r)
 				select {
-				case eventCh <- events.StreamErrEvent{QueryID: queryID, Err: err}:
+				case eventCh <- stream.Legacy{TUI: events.StreamErrEvent{QueryID: queryID, Err: err}}:
 				default:
 				}
 			}
@@ -366,7 +556,7 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 		_ = routerAgent.HandleQueryStream(ctx, text, queryID, eventCh)
 	}()
 
-	return a, listenForEvents(a.eventCh)
+	return a, a.listenStream()
 }
 
 func (a *App) newSession() {

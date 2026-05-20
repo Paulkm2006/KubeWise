@@ -10,9 +10,9 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/operation"
 	"github.com/kubewise/kubewise/pkg/agent/query"
 	"github.com/kubewise/kubewise/pkg/agent/security"
+	"github.com/kubewise/kubewise/pkg/agent/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/agent/troubleshooting"
-	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
@@ -133,12 +133,10 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 // HandleQueryStream classifies the query, creates fresh sub-agents with event
 // channel support, routes to the appropriate sub-agent, and emits structured
 // render events followed by StreamDoneEvent on success.
-func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string, eventCh chan<- events.TUIEvent) error {
+func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string, eventCh chan<- stream.Event) error {
+	se := stream.NewEmitter(eventCh, queryID)
 	emit := func(e events.TUIEvent) {
-		select {
-		case eventCh <- e:
-		default:
-		}
+		_ = se.EmitLegacy(ctx, e)
 	}
 
 	// 1. Classify intent.
@@ -161,7 +159,8 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	emit(events.PhaseEvent{QueryID: queryID, Phase: phaseLabel})
 	switch intent.TaskType {
 	case types.TaskTypeQuery:
-		ag, agErr := query.New(a.k8sClient, a.llmClient, query.WithEventCh(eventCh, queryID), query.WithMaxSteps(a.maxSteps), query.WithSupervisorConfig(a.supervisorCfg))
+		bridge := newTUIChanBridge(ctx, eventCh, queryID)
+		ag, agErr := query.New(a.k8sClient, a.llmClient, query.WithEventCh(bridge, queryID), query.WithMaxSteps(a.maxSteps), query.WithSupervisorConfig(a.supervisorCfg))
 		if agErr != nil {
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
@@ -170,7 +169,8 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeTroubleshooting:
-		ag, agErr := troubleshooting.New(a.k8sClient, a.llmClient, troubleshooting.WithEventCh(eventCh, queryID), troubleshooting.WithMaxSteps(a.maxSteps), troubleshooting.WithSupervisorConfig(a.supervisorCfg))
+		bridge := newTUIChanBridge(ctx, eventCh, queryID)
+		ag, agErr := troubleshooting.New(a.k8sClient, a.llmClient, troubleshooting.WithEventCh(bridge, queryID), troubleshooting.WithMaxSteps(a.maxSteps), troubleshooting.WithSupervisorConfig(a.supervisorCfg))
 		if agErr != nil {
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
@@ -179,7 +179,8 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeSecurity:
-		ag, agErr := security.New(a.k8sClient, a.llmClient, security.WithEventCh(eventCh, queryID), security.WithMaxSteps(a.maxSteps), security.WithSupervisorConfig(a.supervisorCfg))
+		bridge := newTUIChanBridge(ctx, eventCh, queryID)
+		ag, agErr := security.New(a.k8sClient, a.llmClient, security.WithEventCh(bridge, queryID), security.WithMaxSteps(a.maxSteps), security.WithSupervisorConfig(a.supervisorCfg))
 		if agErr != nil {
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
@@ -193,13 +194,14 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		bridgeCtx, bridgeCancel := context.WithCancel(ctx)
 		defer bridgeCancel()
 
-		selectionHandler := &tuiChartSelectionHandler{
-			eventCh:   eventCh,
+		deployBridge := newTUIChanBridge(ctx, eventCh, queryID)
+		selectionHandler := &streamChartSelectionHandler{
+			emitter:   se,
 			queryID:   queryID,
 			bridgeCtx: bridgeCtx,
 		}
-		confirmHandler := &tuiDeployConfirmHandler{
-			eventCh:   eventCh,
+		confirmHandler := &streamDeployConfirmHandler{
+			emitter:   se,
 			queryID:   queryID,
 			bridgeCtx: bridgeCtx,
 		}
@@ -208,7 +210,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			a.llmClient,
 			a.helmClient,
 			a.k8sClient,
-			deploy.WithEventChannel(eventCh, queryID),
+			deploy.WithEventChannel(deployBridge, queryID),
 			deploy.WithSelectionHandler(selectionHandler),
 			deploy.WithConfirmHandler(confirmHandler),
 		)
@@ -218,9 +220,10 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	case types.TaskTypeOperation:
 		handler := operation.NewChannelConfirmationHandler()
 
-		// Bridge goroutine: forwards ConfirmRequest → ConfirmRequestEvent → ConfirmResponse.
+		// Bridge goroutine: forwards InteractionRequest → operation responses.
 		bridgeCtx, bridgeCancel := context.WithCancel(ctx)
 		defer bridgeCancel()
+		opBridge := newTUIChanBridge(ctx, eventCh, queryID)
 		go func() {
 			for {
 				select {
@@ -228,21 +231,31 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 					if !ok {
 						return
 					}
-					respCh := make(chan any, 1)
-					emit(events.ConfirmRequestEvent{
+					stepBytes, mErr := json.Marshal(req.Step)
+					if mErr != nil {
+						stepBytes = []byte("{}")
+					}
+					respCh := make(chan json.RawMessage, 1)
+					if err := se.Emit(ctx, stream.InteractionRequest{
 						QueryID:    queryID,
-						Step:       req.Step,
+						Kind:       stream.KindOperationStep,
+						Payload:    stepBytes,
 						TotalSteps: req.TotalSteps,
 						RespCh:     respCh,
-					})
+					}); err != nil {
+						return
+					}
 					select {
-					case resp := <-respCh:
-						if cr, ok := resp.(operation.ConfirmResponse); ok {
-							select {
-							case handler.Responses <- cr:
-							case <-bridgeCtx.Done():
-								return
-							}
+					case raw := <-respCh:
+						var cr stream.OperationConfirmResponse
+						_ = json.Unmarshal(raw, &cr)
+						select {
+						case handler.Responses <- operation.ConfirmResponse{
+							Confirmed:  cr.Confirmed,
+							Correction: cr.Correction,
+						}:
+						case <-bridgeCtx.Done():
+							return
 						}
 					case <-bridgeCtx.Done():
 						return
@@ -256,7 +269,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		opAgent, agErr := operation.New(
 			a.k8sClient, a.llmClient,
 			operation.WithConfirmationHandler(handler),
-			operation.WithEventCh(eventCh, queryID),
+			operation.WithEventCh(opBridge, queryID),
 			operation.WithMaxSteps(a.maxSteps),
 			operation.WithSupervisorConfig(a.supervisorCfg),
 		)
@@ -553,67 +566,4 @@ func (a *Agent) classifyIntent(ctx context.Context, userQuery string) (*types.In
 	}
 
 	return &intent, nil
-}
-
-// tuiChartSelectionHandler 通过 eventCh 将 Chart 选择请求转发给 TUI，
-// 阻塞等待用户在 TUI 中完成选择或取消。
-type tuiChartSelectionHandler struct {
-	eventCh   chan<- events.TUIEvent
-	queryID   string
-	bridgeCtx context.Context
-}
-
-func (h *tuiChartSelectionHandler) SelectChart(ctx context.Context, appName string, candidates []catalog.ChartInfo) (*catalog.ChartInfo, error) {
-	respCh := make(chan *catalog.ChartInfo, 1)
-
-	select {
-	case h.eventCh <- events.ChartSelectRequestEvent{
-		QueryID:    h.queryID,
-		AppName:    appName,
-		Candidates: candidates,
-		RespCh:     respCh,
-	}:
-	case <-h.bridgeCtx.Done():
-		return nil, h.bridgeCtx.Err()
-	}
-
-	select {
-	case result := <-respCh:
-		return result, nil
-	case <-h.bridgeCtx.Done():
-		return nil, h.bridgeCtx.Err()
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-// tuiDeployConfirmHandler 通过 eventCh 将 Deploy 确认请求转发给 TUI，
-// 阻塞等待用户在 TUI 中执行、编辑或取消。
-type tuiDeployConfirmHandler struct {
-	eventCh   chan<- events.TUIEvent
-	queryID   string
-	bridgeCtx context.Context
-}
-
-func (h *tuiDeployConfirmHandler) ConfirmDeploy(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error) {
-	respCh := make(chan events.DeployDecision, 1)
-
-	select {
-	case h.eventCh <- events.DeployConfirmRequestEvent{
-		QueryID: h.queryID,
-		Plan:    plan,
-		RespCh:  respCh,
-	}:
-	case <-h.bridgeCtx.Done():
-		return events.DeployDecision{Action: "cancel"}, h.bridgeCtx.Err()
-	}
-
-	select {
-	case result := <-respCh:
-		return result, nil
-	case <-h.bridgeCtx.Done():
-		return events.DeployDecision{Action: "cancel"}, h.bridgeCtx.Err()
-	case <-ctx.Done():
-		return events.DeployDecision{Action: "cancel"}, ctx.Err()
-	}
 }

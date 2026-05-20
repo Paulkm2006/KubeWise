@@ -2,6 +2,7 @@ package recovery
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/deploy/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/workflow"
 	helmtools "github.com/kubewise/kubewise/pkg/agent/deploy/workflow/helm"
+	"github.com/kubewise/kubewise/pkg/agent/troubleshooting"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
@@ -22,6 +24,7 @@ import (
 const (
 	maxRecoverSteps          = 20
 	maxRecoverDeployAttempts = 2
+	recoveryLoopRepeatsAbort = 4
 )
 
 // Action indicates the outcome of a recovery attempt.
@@ -150,11 +153,14 @@ Namespace: %s
 		{Role: "user", Content: fmt.Sprintf("请诊断并修复 %s 部署失败: %s", in.Chart.ChartName, in.DeployErr.Error())},
 	}, maxRecoveryToolOutput)
 
-	tools := r.Tools.GetFunctionDefinitions(recoveryToolNames)
+	tools := troubleshooting.RecoveryToolDefinitions(r.Tools)
 	tools = append(tools, submitReportFn, submitValuesFn)
 
 	deployAttempts := 0
 	currentValues := in.CurrentValues
+	lastToolBatchSig := ""
+	toolRepeatStreak := 0
+
 	r.logInfo("recovery loop started",
 		zap.String("app", in.AppName),
 		zap.String("chart", in.Chart.ChartName),
@@ -184,6 +190,22 @@ Namespace: %s
 			continue
 		}
 
+		sig := summarizeToolCallsForLoopDetect(resp.ToolCalls)
+		if sig != "" && sig == lastToolBatchSig {
+			toolRepeatStreak++
+			if toolRepeatStreak >= recoveryLoopRepeatsAbort {
+				r.logWarn("recovery repeated identical tool batches", zap.Int("steps", toolRepeatStreak))
+				return &Result{
+					Action:  ActionAbort,
+					Reason:  "诊断循环卡住",
+					Details: fmt.Sprintf("连续 %d 次模型发起了相同的工具调用组合，可能存在循环；诊断已中止。请换一种方式描述问题或手动检查集群。", toolRepeatStreak),
+				}, nil
+			}
+		} else if sig != "" {
+			lastToolBatchSig = sig
+			toolRepeatStreak = 1
+		}
+
 		recoveryCtx.AppendAssistant(llm.Message{Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls})
 
 		for _, funcCall := range resp.ToolCalls {
@@ -210,19 +232,19 @@ Namespace: %s
 	}, nil
 }
 
-var recoveryToolNames = []string{
-	"get_resource_by_gvr_and_name",
-	"get_custom_resource_by_gvr_and_name",
-	"list_resources_by_gvr",
-	"list_custom_resources_by_gvr",
-	"list_pods_in_namespace",
-	"get_resource_events",
-	"get_pod_logs",
-	"get_service_endpoints",
-	"get_node_status",
-	"list_persistent_volume_claims",
-	"find_pods_using_pvc",
-	"get_configmap_content",
+func summarizeToolCallsForLoopDetect(calls []llm.ToolCall) string {
+	if len(calls) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, c := range calls {
+		args, err := json.Marshal(c.Function.Arguments)
+		if err != nil {
+			args = []byte("{}")
+		}
+		fmt.Fprintf(&b, "%s:%s;", c.Function.Name, args)
+	}
+	return b.String()
 }
 
 var submitReportFn = llm.FunctionDefinition{

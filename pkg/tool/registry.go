@@ -70,8 +70,6 @@ func (r *Registry) GetTool(name string) (Tool, bool) {
 // GetAllFunctionDefinitions 获取所有工具的Function Definition列表
 func (r *Registry) GetAllFunctionDefinitions() []llm.FunctionDefinition {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	names := make([]string, 0, len(r.metadata))
 	for name := range r.metadata {
 		names = append(names, name)

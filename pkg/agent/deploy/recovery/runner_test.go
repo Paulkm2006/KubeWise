@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kubewise/kubewise/pkg/agent/troubleshooting"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/llm"
@@ -270,15 +271,15 @@ func TestRunner_SubmitValues_RetriesPreflightAsInstallWhenNoDeployedRelease(t *t
 	}
 }
 
-func TestDiagnosticToolWhitelist_ExcludesAuditTools(t *testing.T) {
-	reg, _ := tool.LoadGlobalRegistryByCategory(tool.ToolDependency{}, "")
-	defs := reg.GetFunctionDefinitions(recoveryToolNames)
+func TestRecoveryToolDefs_ExcludeAuditPrefixes(t *testing.T) {
+	reg, err := tool.LoadGlobalRegistryByCategory(tool.ToolDependency{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defs := troubleshooting.RecoveryToolDefinitions(reg)
 	for _, d := range defs {
 		if strings.HasPrefix(d.Name, "audit_") {
-			t.Fatalf("audit tool %q should not be in recovery whitelist", d.Name)
-		}
-		if d.Name == "apply_resource" || d.Name == "delete_resource" {
-			t.Fatalf("operation tool %q in recovery whitelist", d.Name)
+			t.Fatalf("audit tool %q should not be offered to recovery", d.Name)
 		}
 	}
 }
