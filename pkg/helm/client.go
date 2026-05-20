@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/chart"
 	"helm.sh/helm/v4/pkg/chart/loader"
@@ -15,8 +16,6 @@ import (
 	"helm.sh/helm/v4/pkg/kube"
 	ri "helm.sh/helm/v4/pkg/release"
 	repov1 "helm.sh/helm/v4/pkg/repo/v1"
-	"go.uber.org/zap"
-	"sigs.k8s.io/yaml"
 )
 
 // Release 表示一个 Helm release 的状态。
@@ -27,19 +26,6 @@ type Release struct {
 	Version   string
 	Status    string // "deployed", "failed", "pending-install" 等
 	Updated   time.Time
-}
-
-// InstallOptions 控制 helm install/upgrade 的行为。
-type InstallOptions struct {
-	ReleaseName string
-	RepoName    string
-	ChartName   string
-	RepoURL     string // Helm 仓库 URL，用于 LocateChart 下载
-	Namespace   string
-	Values      string        // override values YAML 字符串
-	CreateNS    bool          // --create-namespace
-	Wait        bool          // --wait
-	Timeout     time.Duration // --timeout
 }
 
 // Client 封装 Helm Go SDK 操作。
@@ -176,17 +162,7 @@ func (c *Client) InstallOrUpgrade(ctx context.Context, opts InstallOptions) (*Re
 		return nil, err
 	}
 
-	// 解析 override values
-	vals := map[string]interface{}{}
-	if opts.Values != "" {
-		if err := yaml.Unmarshal([]byte(opts.Values), &vals); err != nil {
-			c.logger().Error("parse override values failed", zap.Error(err))
-			return nil, fmt.Errorf("解析 override values 失败: %w", err)
-		}
-	}
-
-	// 下载并定位 chart 到本地缓存
-	cp, err := c.resolveChart(ctx, opts.RepoName, opts.RepoURL, opts.ChartName)
+	cp, vals, err := c.prepareChart(ctx, opts.ChartOptions)
 	if err != nil {
 		return nil, err
 	}
