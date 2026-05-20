@@ -136,6 +136,12 @@ type PhaseEvent struct {
 
 func (PhaseEvent) isTUIEvent() {}
 
+// PlanWarning is a validation or policy advisory shown during deploy review.
+type PlanWarning struct {
+	Severity string // "warn" | "error"
+	Message  string
+}
+
 // DeployPlan 包含部署计划的所有信息，用于 TUI 展示和用户确认。
 // 定义在 events 包中以避免 deploy 包与 tui 包之间的循环依赖。
 type DeployPlan struct {
@@ -145,6 +151,7 @@ type DeployPlan struct {
 	ReleaseName   string
 	Namespace     string
 	IsUpgrade     bool // true 表示升级已有 release
+	Warnings      []PlanWarning
 }
 
 // DeployDecision 表示用户在确认界面的决策。

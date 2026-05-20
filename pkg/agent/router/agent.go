@@ -29,6 +29,7 @@ type Agent struct {
 	securityAgent        *security.Agent
 	operationAgent       *operation.Agent
 	deployAgent          *deploy.Agent
+	helmClient           *helm.Client
 	log                  *zap.Logger
 }
 
@@ -40,6 +41,9 @@ func (a *Agent) SetLogger(l *zap.Logger) {
 	a.securityAgent.SetLogger(l)
 	a.operationAgent.SetLogger(l)
 	a.deployAgent.SetLogger(l)
+	if a.helmClient != nil {
+		a.helmClient.SetLogger(l)
+	}
 }
 
 func (a *Agent) logger() *zap.Logger {
@@ -77,6 +81,7 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client) (*Agent, error) {
 		securityAgent:        securityAgent,
 		operationAgent:       operationAgent,
 		deployAgent:          deployAgent,
+		helmClient:           helmClient,
 	}, nil
 }
 
@@ -90,6 +95,10 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 		a.logger().Error("intent classification failed", zap.Error(err))
 		return "", fmt.Errorf("意图分类失败: %w", err)
 	}
+	a.logger().Info("intent classified",
+		zap.String("task_type", string(intent.TaskType)),
+		zap.Float64("confidence", intent.Confidence),
+	)
 
 	if intent.Entities.Namespace != "" {
 	}
@@ -189,7 +198,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 
 		deployAgentWithEvents := deploy.New(
 			a.llmClient,
-			helm.New(""),
+			a.helmClient,
 			a.k8sClient,
 			deploy.WithEventChannel(eventCh, queryID),
 			deploy.WithSelectionHandler(selectionHandler),
@@ -245,7 +254,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			emit(events.StreamErrEvent{QueryID: queryID, Err: agErr})
 			return agErr
 		}
-			opAgent.SetLogger(a.log)
+		opAgent.SetLogger(a.log)
 		result, err = opAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	default:

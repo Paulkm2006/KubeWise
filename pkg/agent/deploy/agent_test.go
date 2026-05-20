@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kubewise/kubewise/pkg/agent/deploy/recovery"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/values"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/llm"
@@ -23,6 +25,8 @@ type mockHelmClient struct {
 	fetchDefaultValuesFunc func(ctx context.Context, repoName, repoURL, chartName string) (string, error)
 	installOrUpgradeFunc   func(ctx context.Context, opts helm.InstallOptions) (*helm.Release, error)
 	statusFunc             func(ctx context.Context, releaseName, namespace string) (*helm.Release, error)
+	listReleasesFunc       func(ctx context.Context) ([]helm.Release, error)
+	validateFunc           func(ctx context.Context, opts helm.RenderOptions) (*helm.ValidationResult, error)
 }
 
 func (m *mockHelmClient) AddRepo(ctx context.Context, name, repoURL string) error {
@@ -53,6 +57,20 @@ func (m *mockHelmClient) Status(ctx context.Context, releaseName, namespace stri
 	return nil, nil
 }
 
+func (m *mockHelmClient) ListReleases(ctx context.Context) ([]helm.Release, error) {
+	if m.listReleasesFunc != nil {
+		return m.listReleasesFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockHelmClient) Validate(ctx context.Context, opts helm.RenderOptions) (*helm.ValidationResult, error) {
+	if m.validateFunc != nil {
+		return m.validateFunc(ctx, opts)
+	}
+	return &helm.ValidationResult{}, nil
+}
+
 type mockLLMClient struct {
 	chatCompletionFunc func(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error)
 }
@@ -61,7 +79,20 @@ func (m *mockLLMClient) ChatCompletion(ctx context.Context, messages []llm.Messa
 	if m.chatCompletionFunc != nil {
 		return m.chatCompletionFunc(ctx, messages, functions)
 	}
-	return &llm.Message{Role: "assistant", Content: "replicas: 3"}, nil
+	return &llm.Message{
+		ToolCalls: []llm.ToolCall{{
+			ID: "mock-values", Type: "function",
+			Function: llm.FunctionCall{
+				Name: values.SubmitGeneratedValuesFnName,
+				Arguments: map[string]any{
+					"namespace":   "default",
+					"values_yaml": "replicas: 3",
+					"explanation": "mock values",
+					"risk_level":  "low",
+				},
+			},
+		}},
+	}, nil
 }
 
 type mockConfirmHandler struct {
@@ -240,8 +271,12 @@ func TestHandleQuery_EmitsAllPhaseAndToolEvents(t *testing.T) {
 		t.Logf("  event[%d]: %T", i, e)
 	}
 
-	if len(got) < 20 {
-		t.Fatalf("expected at least 20 events, got %d", len(got))
+	if len(got) < 22 {
+		t.Fatalf("expected at least 22 events, got %d", len(got))
+	}
+
+	if !hasToolEvent(got, "helm preflight") {
+		t.Fatal("expected helm preflight tool event")
 	}
 
 	idx := 0
@@ -364,7 +399,9 @@ func TestHandleQuery_EmitsAllPhaseAndToolEvents(t *testing.T) {
 	}
 	idx++
 
-	// [10] PhaseEvent: 等待用户确认
+	skipRenderEvents(got, &idx)
+
+	// PhaseEvent: 等待用户确认
 	pe, ok = got[idx].(events.PhaseEvent)
 	if !ok {
 		t.Fatalf("event[%d]: expected PhaseEvent, got %T", idx, got[idx])
@@ -400,17 +437,18 @@ func TestHandleQuery_EmitsAllPhaseAndToolEvents(t *testing.T) {
 	}
 	idx++
 
-	// [13] PhaseEvent: 执行部署
-	pe, ok = got[idx].(events.PhaseEvent)
-	if !ok {
-		t.Fatalf("event[%d]: expected PhaseEvent, got %T", idx, got[idx])
+	// skip to helm install/upgrade (indices vary due to preflight phase)
+	for idx < len(got) {
+		if tc, ok := got[idx].(events.ToolCallEvent); ok && tc.ToolName == "helm install/upgrade" {
+			break
+		}
+		idx++
 	}
-	if pe.Phase != "执行部署" {
-		t.Errorf("event[%d]: expected Phase '执行部署', got %q", idx, pe.Phase)
+	if idx >= len(got) {
+		t.Fatal("helm install/upgrade event not found")
 	}
-	idx++
 
-	// [14] ToolCallEvent: helm install/upgrade Step 6
+	// ToolCallEvent: helm install/upgrade Step 6
 	tc, ok = got[idx].(events.ToolCallEvent)
 	if !ok {
 		t.Fatalf("event[%d]: expected ToolCallEvent, got %T", idx, got[idx])
@@ -472,6 +510,94 @@ func TestHandleQuery_EmitsAllPhaseAndToolEvents(t *testing.T) {
 	}
 }
 
+func TestHandleQuery_InstallFailureDoesNotMarkInstallDone(t *testing.T) {
+	ch := make(chan events.TUIEvent, 50)
+	llmCalls := 0
+	agent := &Agent{
+		helmClient: &mockHelmClient{
+			installOrUpgradeFunc: func(ctx context.Context, opts helm.InstallOptions) (*helm.Release, error) {
+				return nil, fmt.Errorf("install failed")
+			},
+		},
+		llmClient: &mockLLMClient{
+			chatCompletionFunc: func(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error) {
+				llmCalls++
+				if llmCalls == 1 {
+					return (&mockLLMClient{}).ChatCompletion(ctx, messages, functions)
+				}
+				return &llm.Message{
+					ToolCalls: []llm.ToolCall{{
+						ID: "report", Type: "function",
+						Function: llm.FunctionCall{
+							Name:      "submit_report",
+							Arguments: map[string]any{"reason": "failed", "details": "install failed"},
+						},
+					}},
+				}, nil
+			},
+		},
+		confirmHandler:   &mockConfirmHandler{},
+		selectionHandler: &mockSelectionHandler{},
+		eventCh:          ch,
+		queryID:          "test-install-fail",
+	}
+
+	if _, err := agent.HandleQuery(context.Background(), "部署 nginx", types.Entities{AppName: "nginx"}); err != nil {
+		t.Fatalf("HandleQuery failed: %v", err)
+	}
+	close(ch)
+
+	for e := range ch {
+		if td, ok := e.(events.ToolDoneEvent); ok && td.ToolName == "helm install/upgrade" && td.Step == 6 {
+			t.Fatalf("failed helm install/upgrade should not emit ToolDoneEvent: %+v", td)
+		}
+	}
+}
+
+func TestHandleQuery_OwnershipConflictSkipsRecoveryLLM(t *testing.T) {
+	ownershipErr := fmt.Errorf(`unable to continue with install: CustomResourceDefinition "applications.argoproj.io" in namespace "" exists and cannot be imported into the current release: invalid ownership metadata; annotation validation error: key "meta.helm.sh/release-namespace" must equal "argocd-new": current value is "argocd"`)
+	llmCalls := 0
+	ch := make(chan events.TUIEvent, 50)
+	agent := &Agent{
+		helmClient: &mockHelmClient{
+			installOrUpgradeFunc: func(ctx context.Context, opts helm.InstallOptions) (*helm.Release, error) {
+				return nil, ownershipErr
+			},
+		},
+		llmClient: &mockLLMClient{
+			chatCompletionFunc: func(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error) {
+				llmCalls++
+				if llmCalls == 1 {
+					return (&mockLLMClient{}).ChatCompletion(ctx, messages, functions)
+				}
+				t.Fatalf("recovery LLM should not be called for deterministic ownership conflict")
+				return nil, nil
+			},
+		},
+		confirmHandler:   &mockConfirmHandler{},
+		selectionHandler: &mockSelectionHandler{},
+		eventCh:          ch,
+		queryID:          "test-ownership-conflict",
+	}
+
+	result, err := agent.HandleQuery(context.Background(), "部署 argocd", types.Entities{AppName: "argocd"})
+	if err != nil {
+		t.Fatalf("HandleQuery failed: %v", err)
+	}
+	if llmCalls != 1 {
+		t.Fatalf("expected only values-generation LLM call, got %d", llmCalls)
+	}
+	if !strings.Contains(result, "CRD") || !strings.Contains(result, "argocd") {
+		t.Fatalf("expected deterministic ownership report, got %q", result)
+	}
+	close(ch)
+	for e := range ch {
+		if rt, ok := e.(events.RenderTextEvent); ok && strings.Contains(rt.Text, "部署失败") {
+			t.Fatalf("final ownership report should be returned, not emitted directly: %q", rt.Text)
+		}
+	}
+}
+
 // ---- integration tests for NL correction path ----
 
 func TestHandleQuery_WithNLCorrection_EmitsStep5Events(t *testing.T) {
@@ -479,8 +605,8 @@ func TestHandleQuery_WithNLCorrection_EmitsStep5Events(t *testing.T) {
 	confirmCallCount := 0
 
 	agent := &Agent{
-		helmClient: &mockHelmClient{},
-		llmClient:  &mockLLMClient{},
+		helmClient:       &mockHelmClient{},
+		llmClient:        &mockLLMClient{},
 		selectionHandler: &mockSelectionHandler{},
 		confirmHandler: &mockConfirmHandler{
 			confirmDeployFunc: func(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error) {
@@ -519,11 +645,20 @@ func TestHandleQuery_WithNLCorrection_EmitsStep5Events(t *testing.T) {
 		t.Logf("  event[%d]: %T %+v", i, e, e)
 	}
 
-	if len(got) < 24 {
-		t.Fatalf("expected at least 24 events with NL correction, got %d", len(got))
+	if len(got) < 26 {
+		t.Fatalf("expected at least 26 events with NL correction, got %d", len(got))
 	}
 
-	idx := 13
+	idx := 0
+	for idx < len(got) {
+		if tc, ok := got[idx].(events.ToolCallEvent); ok && tc.ToolName == "LLM values regeneration" {
+			break
+		}
+		idx++
+	}
+	if idx >= len(got) {
+		t.Fatal("LLM values regeneration event not found")
+	}
 
 	// [13] ToolCallEvent: LLM values regeneration Step 5
 	tc, ok := got[idx].(events.ToolCallEvent)
@@ -551,7 +686,9 @@ func TestHandleQuery_WithNLCorrection_EmitsStep5Events(t *testing.T) {
 	}
 	idx++
 
-	// [15] ToolCallEvent: user confirm (second) Step 4
+	skipRenderEvents(got, &idx)
+
+	// user confirm (second) Step 4
 	tc, ok = got[idx].(events.ToolCallEvent)
 	if !ok {
 		t.Fatalf("event[%d]: expected ToolCallEvent, got %T", idx, got[idx])
@@ -582,8 +719,8 @@ func TestHandleQuery_WithNLCorrection_CancelAfterRegen(t *testing.T) {
 	confirmCallCount := 0
 
 	agent := &Agent{
-		helmClient: &mockHelmClient{},
-		llmClient:  &mockLLMClient{},
+		helmClient:       &mockHelmClient{},
+		llmClient:        &mockLLMClient{},
 		selectionHandler: &mockSelectionHandler{},
 		confirmHandler: &mockConfirmHandler{
 			confirmDeployFunc: func(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error) {
@@ -650,7 +787,41 @@ func TestHandleQuery_WithNLCorrection_CancelAfterRegen(t *testing.T) {
 	_ = confirmCallCount
 }
 
-// ---- recoverDeploy tests ----
+// ---- recovery tests ----
+
+func testRecoverDeploy(
+	agent *Agent,
+	ctx context.Context,
+	deployErr error,
+	query string,
+	correctionHistory []string,
+	chartInfo *catalog.ChartInfo,
+	defaultValues, currentValues, targetNS, appName string,
+) (*recovery.Result, error) {
+	runner := &recovery.Runner{
+		QueryID:      agent.queryID,
+		LLM:          agent.llmClient,
+		Helm:         agent.helmClient,
+		Tools:        agent.toolRegistry,
+		Workflow:     agent.workflowRunner(),
+		Confirm:      agent.confirmDeploy,
+		BuildReport:  agent.buildReport,
+		EmitPhase:    agent.emit,
+		EmitCritical: agent.emitCritical,
+		Log:          &recoveryLogger{agent: agent},
+		K8s:          agent.k8sClient,
+	}
+	return runner.Run(ctx, recovery.RunInput{
+		DeployErr:         deployErr,
+		Query:             query,
+		CorrectionHistory: correctionHistory,
+		Chart:             chartInfo,
+		DefaultValues:     defaultValues,
+		CurrentValues:     currentValues,
+		TargetNS:          targetNS,
+		AppName:           appName,
+	})
+}
 
 func TestRecoverDeploy_SubmitReport(t *testing.T) {
 	llmClient := &mockLLMClient{
@@ -674,9 +845,9 @@ func TestRecoverDeploy_SubmitReport(t *testing.T) {
 		toolRegistry: tool.NewRegistry(tool.ToolDependency{}),
 	}
 
-	result, err := agent.recoverDeploy(context.Background(),
+	result, err := testRecoverDeploy(agent, context.Background(),
 		fmt.Errorf("install timed out"),
-			"", nil,
+		"", nil,
 		&catalog.ChartInfo{ChartName: "nginx", RepoName: "nginx", RepoURL: "https://helm.nginx.com/stable"},
 		"replicas: 1\n", "replicas: 3\n", "default", "nginx",
 	)
@@ -684,7 +855,7 @@ func TestRecoverDeploy_SubmitReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Action != ActionAbort {
+	if result.Action != recovery.ActionAbort {
 		t.Fatalf("expected ActionAbort, got %v", result.Action)
 	}
 	if result.Reason != "镜像拉取失败" {
@@ -697,20 +868,78 @@ func TestRecoverDeploy_SubmitReport(t *testing.T) {
 
 func TestRecoverDeploy_NilRegistry(t *testing.T) {
 	agent := &Agent{}
-	result, err := agent.recoverDeploy(context.Background(),
+	result, err := testRecoverDeploy(agent, context.Background(),
 		fmt.Errorf("install timed out"),
-			"", nil,
-			&catalog.ChartInfo{ChartName: "nginx"},
+		"", nil,
+		&catalog.ChartInfo{ChartName: "nginx"},
 		"", "", "default", "nginx",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Action != ActionAbort {
+	if result.Action != recovery.ActionAbort {
 		t.Fatalf("expected ActionAbort, got %v", result.Action)
 	}
 	if !strings.Contains(result.Reason, "诊断工具不可用") {
 		t.Fatalf("expected reason about unavailable tools, got %q", result.Reason)
+	}
+}
+
+func skipRenderEvents(got []events.TUIEvent, idx *int) {
+	for *idx < len(got) {
+		if _, ok := got[*idx].(events.RenderTextEvent); ok {
+			*idx++
+			continue
+		}
+		break
+	}
+}
+
+func hasToolEvent(evts []events.TUIEvent, name string) bool {
+	for _, e := range evts {
+		if tc, ok := e.(events.ToolCallEvent); ok && tc.ToolName == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRecoverDeploy_SubmitValues_SuccessExits(t *testing.T) {
+	callCount := 0
+	llmClient := &mockLLMClient{
+		chatCompletionFunc: func(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error) {
+			callCount++
+			if callCount == 1 {
+				return &llm.Message{
+					ToolCalls: []llm.ToolCall{{
+						ID: "c1", Type: "function",
+						Function: llm.FunctionCall{
+							Name:      "submit_values",
+							Arguments: map[string]any{"yaml": "replicas: 2", "summary": "scale down"},
+						},
+					}},
+				}, nil
+			}
+			t.Fatal("LLM should not be called after successful recovery deploy")
+			return nil, nil
+		},
+	}
+	agent := &Agent{
+		llmClient:      llmClient,
+		helmClient:     &mockHelmClient{},
+		confirmHandler: &mockConfirmHandler{},
+		toolRegistry:   tool.NewRegistry(tool.ToolDependency{}),
+	}
+	result, err := testRecoverDeploy(agent, context.Background(),
+		fmt.Errorf("install failed"), "", nil,
+		&catalog.ChartInfo{ChartName: "nginx", RepoName: "nginx", RepoURL: "https://example.com"},
+		"replicas: 1\n", "replicas: 3\n", "default", "nginx",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Action != recovery.ActionRecovered {
+		t.Fatalf("expected ActionRecovered, got %v", result.Action)
 	}
 }
 
@@ -726,16 +955,16 @@ func TestRecoverDeploy_StepLimit(t *testing.T) {
 		toolRegistry: tool.NewRegistry(tool.ToolDependency{}),
 	}
 
-	result, err := agent.recoverDeploy(context.Background(),
+	result, err := testRecoverDeploy(agent, context.Background(),
 		fmt.Errorf("install timed out"),
-			"", nil,
-			&catalog.ChartInfo{ChartName: "nginx"},
-			"", "", "default", "nginx",
+		"", nil,
+		&catalog.ChartInfo{ChartName: "nginx"},
+		"", "", "default", "nginx",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Action != ActionAbort {
+	if result.Action != recovery.ActionAbort {
 		t.Fatalf("expected ActionAbort, got %v", result.Action)
 	}
 	if !strings.Contains(result.Reason, "最大步数") {

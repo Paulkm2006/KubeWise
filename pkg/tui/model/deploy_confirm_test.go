@@ -2,6 +2,7 @@ package model_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -219,5 +220,23 @@ func TestDeployConfirmFullPreviewMouseWheel(t *testing.T) {
 	viewAfter := updated.View()
 	if viewBefore == viewAfter {
 		t.Error("expected full preview to scroll on mouse wheel down, but view didn't change")
+	}
+}
+
+func TestDeployConfirm_RendersWarnings(t *testing.T) {
+	plan := events.DeployPlan{
+		ChartInfo:     &catalog.ChartInfo{RepoName: "r", ChartName: "c", Source: "s", DefaultNamespace: "ns"},
+		DefaultValues: "replicas: 1",
+		CustomValues:  "privileged: true",
+		ReleaseName:   "test",
+		Namespace:     "ns",
+		Warnings: []events.PlanWarning{
+			{Severity: "warn", Message: "hostNetwork: true"},
+		},
+	}
+	m := model.NewDeployConfirmModel("q-1", plan, 120, 40)
+	view := m.View()
+	if !strings.Contains(view, "策略与校验提示") || !strings.Contains(view, "hostNetwork") {
+		t.Fatalf("expected warnings in view, got:\n%s", view)
 	}
 }

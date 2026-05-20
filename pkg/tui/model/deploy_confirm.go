@@ -326,6 +326,21 @@ func (m DeployConfirmModel) View() string {
 	)
 	sb.WriteString(header + "\n\n")
 
+	if len(m.plan.Warnings) > 0 {
+		warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
+		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("策略与校验提示:") + "\n")
+		for _, w := range m.plan.Warnings {
+			line := "• " + w.Message
+			if w.Severity == "error" {
+				sb.WriteString(errStyle.Render(line) + "\n")
+			} else {
+				sb.WriteString(warnStyle.Render(line) + "\n")
+			}
+		}
+		sb.WriteString("\n")
+	}
+
 	switch m.mode {
 	case deployConfirmModeView:
 		// 左右双面板（焦点面板蓝色高亮边框）

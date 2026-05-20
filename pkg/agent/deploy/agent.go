@@ -4,10 +4,16 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/kubewise/kubewise/pkg/agent/deploy/plan"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/recovery"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/values"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/workflow"
+	helmtools "github.com/kubewise/kubewise/pkg/agent/deploy/workflow/helm"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
@@ -16,42 +22,36 @@ import (
 	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
 
-	// Load diagnostic tool definitions
 	_ "github.com/kubewise/kubewise/pkg/tools/v1/query"
 	_ "github.com/kubewise/kubewise/pkg/tools/v1/troubleshooting"
 )
 
-// --- internal interfaces (for testability) ---
+const toolUserConfirm = "user confirm"
 
-// helmClient 是 helm.Client 的最小接口抽象，用于 mock 测试。
+// helmClient is the minimal helm.Client interface for deploy and tests.
 type helmClient interface {
-	AddRepo(ctx context.Context, name, repoURL string) error
-	FetchDefaultValues(ctx context.Context, repoName, repoURL, chartName string) (string, error)
-	InstallOrUpgrade(ctx context.Context, opts helm.InstallOptions) (*helm.Release, error)
+	helmtools.Client
 	Status(ctx context.Context, releaseName, namespace string) (*helm.Release, error)
+	ListReleases(ctx context.Context) ([]helm.Release, error)
 }
 
-// llmClient 是 llm.Client 的最小接口抽象，用于 mock 测试。
+// llmClient is the minimal llm.Client interface for tests.
 type llmClient interface {
-	ChatCompletion(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error)
+	values.LLMClient
+	recovery.LLMClient
 }
 
-// chartSearcher 抽象 ArtifactHub 搜索，用于 mock 测试。
-type chartSearcher interface {
-	SearchCandidates(ctx context.Context, appName string) ([]catalog.ChartInfo, error)
-}
-
-// DeployConfirmationHandler 负责向用户展示部署计划并等待决策。
+// DeployConfirmationHandler presents a deploy plan and waits for user decision.
 type DeployConfirmationHandler interface {
 	ConfirmDeploy(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error)
 }
 
-// ChartSelectionHandler 负责向用户展示 Chart 候选列表并等待选择。
+// ChartSelectionHandler presents chart candidates for user selection.
 type ChartSelectionHandler interface {
 	SelectChart(ctx context.Context, appName string, candidates []catalog.ChartInfo) (*catalog.ChartInfo, error)
 }
 
-// Agent 是 Deploy Agent 的主体，实现六阶段部署流程。
+// Agent orchestrates the deploy pipeline.
 type Agent struct {
 	llmClient        llmClient
 	helmClient       helmClient
@@ -60,7 +60,8 @@ type Agent struct {
 	eventCh          chan<- events.TUIEvent
 	queryID          string
 	log              *zap.Logger
-	toolRegistry      *tool.Registry
+	toolRegistry     *tool.Registry
+	k8sClient        *k8s.Client
 }
 
 // SetLogger injects a logger for debug output.
@@ -73,20 +74,20 @@ func (a *Agent) logger() *zap.Logger {
 	return a.log
 }
 
-// Option 是 Agent 的函数式配置选项。
+// Option configures the Agent.
 type Option func(*Agent)
 
-// WithConfirmHandler 设置自定义确认处理器。
+// WithConfirmHandler sets a custom confirmation handler.
 func WithConfirmHandler(h DeployConfirmationHandler) Option {
 	return func(a *Agent) { a.confirmHandler = h }
 }
 
-// WithSelectionHandler 设置自定义 Chart 选择处理器。
+// WithSelectionHandler sets a custom chart selection handler.
 func WithSelectionHandler(h ChartSelectionHandler) Option {
 	return func(a *Agent) { a.selectionHandler = h }
 }
 
-// WithEventChannel 设置 TUI 事件通道。
+// WithEventChannel sets the TUI event channel.
 func WithEventChannel(ch chan<- events.TUIEvent, queryID string) Option {
 	return func(a *Agent) {
 		a.eventCh = ch
@@ -94,12 +95,11 @@ func WithEventChannel(ch chan<- events.TUIEvent, queryID string) Option {
 	}
 }
 
-// New 创建 Deploy Agent。
+// New creates a Deploy Agent.
 func New(llmClient *llm.Client, helmClient *helm.Client, k8sClient *k8s.Client, opts ...Option) *Agent {
 	toolDep := tool.ToolDependency{K8sClient: k8sClient}
 	registry, err := tool.LoadGlobalRegistryByCategory(toolDep, "")
 	if err != nil {
-		// Use empty registry on failure — diagnostics will skip tool calls
 		registry, _ = tool.LoadGlobalRegistryByCategory(tool.ToolDependency{}, "none")
 	}
 
@@ -107,6 +107,7 @@ func New(llmClient *llm.Client, helmClient *helm.Client, k8sClient *k8s.Client, 
 		llmClient:    llmClient,
 		helmClient:   helmClient,
 		toolRegistry: registry,
+		k8sClient:    k8sClient,
 	}
 	for _, opt := range opts {
 		opt(a)
@@ -114,191 +115,335 @@ func New(llmClient *llm.Client, helmClient *helm.Client, k8sClient *k8s.Client, 
 	return a
 }
 
-// HandleQuery 实现六阶段部署流程，每个阶段前后发送 PhaseEvent / ToolCallEvent / ToolDoneEvent
-// 用于 TUI progressCard 实时显示进度。
+func (a *Agent) workflowRunner() *workflow.Runner {
+	return &workflow.Runner{QueryID: a.queryID, Emit: a}
+}
+
+// HandleQuery runs the deploy pipeline: resolve → values → validate → review → preflight → apply → verify.
 func (a *Agent) HandleQuery(ctx context.Context, query string, entities types.Entities) (string, error) {
 	a.emit(events.AgentStartEvent{AgentName: "Deploy Agent", QueryID: a.queryID})
-	a.logger().Debug("handling deploy query", zap.String("query", query))
 	startTime := time.Now()
 	defer func() {
+		a.logInfo("deploy pipeline finished", zap.Duration("elapsed", time.Since(startTime)))
 		a.emit(events.AgentDoneEvent{QueryID: a.queryID, Duration: time.Since(startTime)})
 	}()
 
-	// Phase 1: 提取应用名称
 	appName := a.extractAppName(entities, query)
 	if appName == "" {
-		a.logger().Error("failed to extract app name from query", zap.String("query", query))
+		a.logWarn("could not extract app name from query", zap.String("query", query))
 		return "", fmt.Errorf("无法从查询中提取应用名称，请明确指定要部署的应用")
 	}
 
-	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: fmt.Sprintf("搜索 Chart: %s", appName)})
+	releaseName := plan.SanitizeReleaseName(appName)
+	wf := a.workflowRunner()
 
-	// Phase 2: 通过 ArtifactHub 搜索 Chart
+	a.logInfo("deploy pipeline started",
+		zap.String("app", appName),
+		zap.String("release", releaseName),
+		zap.String("query", query),
+	)
+
+	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: fmt.Sprintf("搜索 Chart: %s", appName)})
 	chartInfo, err := a.resolveChartFromArtifactHub(ctx, appName)
 	if err != nil {
+		a.logError("chart resolution failed", zap.String("app", appName), zap.Error(err))
 		return "", err
 	}
 	if chartInfo == nil {
+		a.logInfo("chart selection cancelled", zap.String("app", appName))
+		return "部署已取消", nil
+	}
+	a.logInfo("chart resolved",
+		zap.String("app", appName),
+		zap.String("repo", chartInfo.RepoName),
+		zap.String("chart", chartInfo.ChartName),
+		zap.String("source", chartInfo.Source),
+		zap.String("default_namespace", chartInfo.DefaultNamespace),
+	)
+
+	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "获取 Chart 默认配置"})
+	if err := helmtools.RepoAdd(ctx, wf, a.helmClient, helmtools.RepoAddInput{
+		RepoName: chartInfo.RepoName,
+		RepoURL:  chartInfo.RepoURL,
+	}); err != nil {
+		a.logError("helm repo add failed", zap.String("repo", chartInfo.RepoName), zap.Error(err))
+		return "", err
+	}
+	a.logDebug("helm repo ready", zap.String("repo", chartInfo.RepoName))
+
+	defaultValues, err := helmtools.ShowValues(ctx, wf, a.helmClient, helmtools.ShowValuesInput{
+		RepoName:  chartInfo.RepoName,
+		RepoURL:   chartInfo.RepoURL,
+		ChartName: chartInfo.ChartName,
+	})
+	if err != nil {
+		a.logError("fetch default values failed", zap.String("chart", chartInfo.ChartName), zap.Error(err))
+		return "", err
+	}
+	a.logDebug("default values fetched",
+		zap.String("chart", chartInfo.ChartName),
+		zap.Int("lines", countLines(defaultValues)),
+	)
+
+	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "生成配置建议"})
+	genResult, err := values.Generate(ctx, wf, a.llmClient, values.GenerateInput{
+		Query:         query,
+		Chart:         chartInfo,
+		DefaultValues: defaultValues,
+	})
+	if err != nil {
+		a.logError("values generation failed", zap.Error(err))
+		return "", fmt.Errorf("生成 values 失败: %w", err)
+	}
+	a.logInfo("values generated",
+		zap.String("namespace", genResult.Namespace),
+		zap.String("risk_level", genResult.RiskLevel),
+		zap.Int("override_lines", countLines(genResult.Values)),
+	)
+
+	if genResult.Explanation != "" {
+		a.emit(events.RenderTextEvent{QueryID: a.queryID, Text: genResult.Explanation})
+		if genResult.RiskLevel == "high" {
+			a.emit(events.RenderTextEvent{QueryID: a.queryID, Text: "⚠️ 配置风险等级: high，请仔细确认"})
+		}
+	}
+
+	deployPlan := a.buildPlan(appName, releaseName, chartInfo, defaultValues, genResult)
+	if err := a.validatePlan(ctx, &deployPlan, "initial"); err != nil {
+		return "", err
+	}
+
+	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "等待用户确认"})
+	a.logInfo("awaiting user confirmation",
+		zap.String("namespace", deployPlan.Namespace),
+		zap.String("release", deployPlan.ReleaseName),
+		zap.Bool("upgrade", deployPlan.IsUpgrade),
+		zap.Int("warnings", len(deployPlan.Warnings)),
+	)
+
+	finalValues, correctionHistory, err := a.reviewAndConfirm(ctx, wf, query, chartInfo, defaultValues, &deployPlan)
+	if err != nil {
+		return "", err
+	}
+	if finalValues == "" {
 		return "部署已取消", nil
 	}
 
-	// Phase 2.5: 检查是否已部署（先用 chart 默认 namespace）
-	existingRelease, _ := a.helmClient.Status(ctx, appName, chartInfo.DefaultNamespace)
-
-	// Phase 3: 获取默认 values — step 1 + step 2
-	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "获取 Chart 默认配置"})
-
-	// Step 1: helm repo add
-	a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: "helm repo add", Step: 1})
-	t0 := time.Now()
-	if err := a.helmClient.AddRepo(ctx, chartInfo.RepoName, chartInfo.RepoURL); err != nil {
-		a.logger().Error("helm repo add failed", zap.Error(err), zap.String("repo", chartInfo.RepoName))
-		return "", fmt.Errorf("添加 Helm 仓库失败: %w", err)
-	}
-	a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: "helm repo add", Step: 1, Elapsed: time.Since(t0)})
-
-	// Step 2: helm show values
-	a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: "helm show values", Step: 2})
-	t0 = time.Now()
-	defaultValues, err := a.helmClient.FetchDefaultValues(ctx, chartInfo.RepoName, chartInfo.RepoURL, chartInfo.ChartName)
-	if err != nil {
-		a.logger().Error("fetch default values failed", zap.Error(err), zap.String("chart", chartInfo.ChartName))
-		return "", fmt.Errorf("获取默认 values 失败: %w", err)
-	}
-	a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: "helm show values", Step: 2, Elapsed: time.Since(t0)})
-
-	// Phase 4: LLM 生成 override values + namespace — step 3
-	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "生成配置建议"})
-
-	a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: "LLM values generation", Step: 3})
-	t0 = time.Now()
-	genResult, err := generateValues(ctx, a.llmClient, query, chartInfo, defaultValues)
-	if err != nil {
-		a.logger().Error("llm values generation failed", zap.Error(err), zap.String("chart", chartInfo.ChartName))
-		return "", fmt.Errorf("生成 values 失败: %w", err)
-	}
-	a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: "LLM values generation", Step: 3, Elapsed: time.Since(t0)})
-
-	targetNS := genResult.namespace
-	customValues := genResult.values
-	a.logger().Info("llm recommended namespace",
-		zap.String("namespace", targetNS),
-		zap.String("chart", chartInfo.ChartName),
+	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "Helm 预检"})
+	a.logInfo("running helm preflight",
+		zap.String("release", deployPlan.ReleaseName),
+		zap.String("namespace", deployPlan.Namespace),
+		zap.Bool("upgrade", deployPlan.IsUpgrade),
 	)
-
-	// 如果需要安装 CRDs，自动添加
-	if chartInfo.InstallCRDs {
-		customValues = "installCRDs: true\n" + customValues
+	if err := helmtools.Preflight(ctx, wf, a.helmClient, deployPlan, 5); err != nil {
+		a.logError("helm preflight failed", zap.Error(err))
+		return "", err
 	}
+	a.logInfo("helm preflight passed")
 
-	// 如果 LLM 建议的 namespace 与 chart 默认不同，重新检查部署状态
-	if targetNS != chartInfo.DefaultNamespace {
-		existingRelease, _ = a.helmClient.Status(ctx, appName, targetNS)
-	}
-
-	// Phase 5: 人工审查 — 循环直到用户满意按 Y 执行
-	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "等待用户确认"})
-
-	plan := events.DeployPlan{
-		ChartInfo:     chartInfo,
-		DefaultValues: defaultValues,
-		CustomValues:  customValues,
-		ReleaseName:   appName,
-		Namespace:     targetNS,
-		IsUpgrade:     existingRelease != nil,
-	}
-
-	var finalValues string
-	var correctionHistory []string
-	for {
-		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: "user confirm", Step: 4})
-		t0 = time.Now()
-		decision, err := a.confirmDeploy(ctx, plan)
-		if err != nil {
-			return "", fmt.Errorf("确认部署失败: %w", err)
+	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "执行部署"})
+	a.logInfo("helm install/upgrade starting",
+		zap.String("release", releaseName),
+		zap.String("namespace", deployPlan.Namespace),
+	)
+	rel, err := helmtools.InstallUpgrade(ctx, wf, a.helmClient, helmtools.InstallInput{
+		ReleaseName: releaseName,
+		Chart:       chartInfo,
+		Namespace:   deployPlan.Namespace,
+		Values:      finalValues,
+	}, 6)
+	if err != nil {
+		a.logError("helm install/upgrade failed", zap.Error(err))
+		if triage := recovery.ClassifyError(err); triage.Deterministic {
+			a.logInfo("recovery classified deterministic error",
+				zap.String("class", string(triage.Class)),
+				zap.String("reason", triage.Reason),
+			)
+			return triage.Report, nil
 		}
-		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: "user confirm", Step: 4, Elapsed: time.Since(t0)})
+		return a.runRecovery(ctx, err, query, correctionHistory, chartInfo, defaultValues, finalValues, deployPlan.Namespace, appName)
+	}
+
+	a.logInfo("helm install/upgrade succeeded", zap.String("status", rel.Status))
+	return a.verifyAndReport(ctx, wf, rel, chartInfo, deployPlan.Namespace, releaseName)
+}
+
+func (a *Agent) buildPlan(appName, releaseName string, chart *catalog.ChartInfo, defaultValues string, gen *values.Result) plan.DeployPlan {
+	customValues := plan.ApplyCRDValues(chart, defaultValues, gen.Values)
+	p := plan.NewDeployPlan(appName, chart, defaultValues, customValues, gen.Namespace, false)
+	p.ReleaseName = releaseName
+	p.Warnings = append(p.Warnings, chartSelectionWarnings(appName, chart)...)
+	return p
+}
+
+func (a *Agent) validatePlan(ctx context.Context, p *plan.DeployPlan, stage string) error {
+	existingInTarget, _ := a.helmClient.Status(ctx, p.ReleaseName, p.Namespace)
+	p.IsUpgrade = existingInTarget != nil
+	if existingInTarget != nil {
+		a.logDebug("existing release in target namespace",
+			zap.String("release", p.ReleaseName),
+			zap.String("namespace", p.Namespace),
+			zap.String("status", existingInTarget.Status),
+		)
+	}
+
+	validation := plan.ValidateDeployPlan(*p)
+	validation.Merge(plan.CheckHelmReleaseConflicts(ctx, a.helmClient, *p))
+	p.Warnings = append(p.Warnings, validation.Warnings...)
+	a.logPlanValidation(stage, *p, validation)
+	if validation.HasBlockingErrors() {
+		return fmt.Errorf("部署计划校验失败: %s", strings.Join(validation.Errors, "; "))
+	}
+	return nil
+}
+
+func (a *Agent) reviewAndConfirm(
+	ctx context.Context,
+	wf *workflow.Runner,
+	query string,
+	chart *catalog.ChartInfo,
+	defaultValues string,
+	p *plan.DeployPlan,
+) (finalValues string, correctionHistory []string, err error) {
+	for {
+		var decision events.DeployDecision
+		confirmErr := wf.Run(ctx, workflow.Meta{Name: toolUserConfirm, Step: 4}, func(ctx context.Context) error {
+			var e error
+			decision, e = a.confirmDeploy(ctx, p.ToEventPlan())
+			return e
+		})
+		if confirmErr != nil {
+			return "", correctionHistory, fmt.Errorf("确认部署失败: %w", confirmErr)
+		}
 
 		if decision.Action == "cancel" {
-			return "部署已取消", nil
+			a.logInfo("deploy cancelled by user")
+			return "", correctionHistory, nil
 		}
 
-		// 用户直接按 Y 执行（无修正指令）
 		if decision.Correction == "" {
-			finalValues = decision.Values
-			break
+			p.CustomValues = decision.Values
+			a.logInfo("user confirmed deploy plan", zap.Int("values_lines", countLines(decision.Values)))
+			return decision.Values, correctionHistory, nil
 		}
 
-		// 用户按 C 或 E 修改了 values，重新生成
-		if decision.Correction != "" {
-			correctionHistory = append(correctionHistory, decision.Correction)
-		}
-		a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: "LLM values regeneration", Step: 5})
-		t0 = time.Now()
-		regenResult, err := regenerateValues(ctx, a.llmClient, query, chartInfo, defaultValues, decision.Values, decision.Correction)
+		a.logInfo("user requested values correction", zap.String("correction", decision.Correction))
+		correctionHistory = append(correctionHistory, decision.Correction)
+		regenResult, err := values.Regenerate(ctx, wf, a.llmClient, values.RegenerateInput{
+			Query:         query,
+			Chart:         chart,
+			DefaultValues: defaultValues,
+			CurrentValues: decision.Values,
+			Correction:    decision.Correction,
+		}, 5)
 		if err != nil {
-			a.logger().Error("llm values regeneration failed", zap.Error(err), zap.String("chart", chartInfo.ChartName))
-			return "", fmt.Errorf("重新生成 values 失败: %w", err)
+			a.logError("values regeneration failed", zap.Error(err))
+			return "", correctionHistory, fmt.Errorf("重新生成 values 失败: %w", err)
 		}
-		a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: "LLM values regeneration", Step: 5, Elapsed: time.Since(t0)})
-
-		plan.CustomValues = regenResult.values
-		if regenResult.namespace != targetNS {
-			a.logger().Info("namespace changed via NL correction",
-				zap.String("old", targetNS),
-				zap.String("new", regenResult.namespace),
-			)
-			targetNS = regenResult.namespace
-			plan.Namespace = targetNS
-		}
-	}
-
-	// Phase 6: 执行 helm install/upgrade — 失败时进入自由诊断修复循环
-	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "执行部署"})
-
-	a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: "helm install/upgrade", Step: 6})
-	t0 = time.Now()
-	rel, err := a.helmClient.InstallOrUpgrade(ctx, helm.InstallOptions{
-		ReleaseName: appName,
-		RepoName:    chartInfo.RepoName,
-		ChartName:   chartInfo.ChartName,
-		RepoURL:     chartInfo.RepoURL,
-		Namespace:   targetNS,
-		Values:      finalValues,
-		CreateNS:    true,
-		Wait:        true,
-		Timeout:     5 * time.Minute,
-	})
-	a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: "helm install/upgrade", Step: 6, Elapsed: time.Since(t0)})
-
-	if err != nil {
-		a.logger().Warn("helm install/upgrade failed, starting recovery loop",
-			zap.Error(err),
-			zap.String("release", appName),
+		a.logInfo("values regenerated",
+			zap.String("namespace", regenResult.Namespace),
+			zap.Int("override_lines", countLines(regenResult.Values)),
 		)
 
-		result, recErr := a.recoverDeploy(ctx, err, query, correctionHistory, chartInfo, defaultValues, finalValues, targetNS, appName)
-		if recErr != nil {
-			return "", fmt.Errorf("诊断修复过程出错: %w", recErr)
+		if regenResult.Explanation != "" {
+			a.emit(events.RenderTextEvent{QueryID: a.queryID, Text: regenResult.Explanation})
 		}
 
-		// recoverDeploy already emitted Render*Events to TUI via submit_report
-		// Return nil error so Router sends StreamDoneEvent (not StreamErrEvent)
-		return result.Details, nil
+		p.CustomValues = plan.ApplyCRDValues(chart, defaultValues, regenResult.Values)
+		if regenResult.Namespace != p.Namespace {
+			p.Namespace = plan.SanitizeNamespace(regenResult.Namespace)
+			if err := plan.ValidateNamespace(p.Namespace); err != nil {
+				return "", correctionHistory, err
+			}
+			existingInTarget, _ := a.helmClient.Status(ctx, p.ReleaseName, p.Namespace)
+			p.IsUpgrade = existingInTarget != nil
+		}
+
+		if err := a.validatePlan(ctx, p, "after_correction"); err != nil {
+			return "", correctionHistory, err
+		}
 	}
+}
 
-	// Phase 7: 验证部署状态 — step 7
+func (a *Agent) runRecovery(
+	ctx context.Context,
+	deployErr error,
+	query string,
+	correctionHistory []string,
+	chart *catalog.ChartInfo,
+	defaultValues, finalValues, namespace, appName string,
+) (string, error) {
+	a.logInfo("entering recovery loop", zap.String("app", appName))
+	runner := &recovery.Runner{
+		QueryID:      a.queryID,
+		LLM:          a.llmClient,
+		Helm:         a.helmClient,
+		Tools:        a.toolRegistry,
+		Workflow:     a.workflowRunner(),
+		K8s:          a.k8sClient,
+		Confirm:      a.confirmDeploy,
+		BuildReport:  a.buildReport,
+		EmitPhase:    a.emit,
+		EmitCritical: a.emitCritical,
+		Log:          &recoveryLogger{agent: a},
+	}
+	result, recErr := runner.Run(ctx, recovery.RunInput{
+		DeployErr:         deployErr,
+		Query:             query,
+		CorrectionHistory: correctionHistory,
+		Chart:             chart,
+		DefaultValues:     defaultValues,
+		CurrentValues:     finalValues,
+		TargetNS:          namespace,
+		AppName:           appName,
+	})
+	if recErr != nil {
+		a.logError("recovery loop error", zap.Error(recErr))
+		return "", fmt.Errorf("诊断修复过程出错: %w", recErr)
+	}
+	a.logInfo("recovery loop finished",
+		zap.Int("action", int(result.Action)),
+		zap.String("reason", result.Reason),
+	)
+	return result.Details, nil
+}
+
+func (a *Agent) verifyAndReport(
+	ctx context.Context,
+	wf *workflow.Runner,
+	rel *helm.Release,
+	chart *catalog.ChartInfo,
+	namespace, releaseName string,
+) (string, error) {
 	a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "验证部署状态"})
-
-	a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: "verify deployment", Step: 7})
-	t0 = time.Now()
-	report := a.buildReport(rel, chartInfo)
-	a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: "verify deployment", Step: 7, Elapsed: time.Since(t0)})
-
+	report, err := workflow.RunWithResult(wf, ctx, workflow.Meta{Name: helmtools.ToolVerifyDeploy, Step: 7}, func(ctx context.Context) (string, error) {
+		return a.buildReport(ctx, rel, chart, namespace, releaseName), nil
+	})
+	if err != nil {
+		return "", err
+	}
+	a.logInfo("deploy succeeded", zap.String("release", rel.Name), zap.String("namespace", rel.Namespace))
 	return report, nil
 }
 
-// extractAppName 从 entities 或 query 中提取应用名称。
+func (a *Agent) logPlanValidation(stage string, p plan.DeployPlan, validation plan.ValidationResult) {
+	fields := []zap.Field{
+		zap.String("stage", stage),
+		zap.String("namespace", p.Namespace),
+		zap.String("release", p.ReleaseName),
+		zap.Int("errors", len(validation.Errors)),
+		zap.Int("warnings", len(validation.Warnings)),
+	}
+	if len(validation.Errors) > 0 {
+		fields = append(fields, zap.Strings("error_details", validation.Errors))
+	}
+	if len(validation.Warnings) > 0 {
+		a.logWarn("deploy plan validation warnings", fields...)
+		return
+	}
+	a.logDebug("deploy plan validation ok", fields...)
+}
+
 func (a *Agent) extractAppName(entities types.Entities, query string) string {
 	if entities.AppName != "" {
 		return entities.AppName
@@ -306,46 +451,35 @@ func (a *Agent) extractAppName(entities types.Entities, query string) string {
 	if entities.ResourceName != "" {
 		return entities.ResourceName
 	}
+	return inferAppNameFromQuery(query)
+}
+
+func inferAppNameFromQuery(query string) string {
+	q := strings.ToLower(strings.TrimSpace(query))
+	for _, prefix := range []string{"部署", "安装", "deploy", "install"} {
+		if idx := strings.Index(q, prefix); idx >= 0 {
+			rest := strings.TrimSpace(q[idx+len(prefix):])
+			fields := strings.Fields(rest)
+			if len(fields) > 0 {
+				return strings.Trim(fields[0], "，,. ")
+			}
+		}
+	}
 	return ""
 }
 
-// resolveChartFromArtifactHub 通过 ArtifactHub 搜索 Chart，如果找到多个候选则通过 TUI 让用户选择。
-func (a *Agent) resolveChartFromArtifactHub(ctx context.Context, appName string) (*catalog.ChartInfo, error) {
-	ahResolver := catalog.NewArtifactHubResolver(nil)
-	candidates, err := ahResolver.SearchCandidates(ctx, appName)
-
-	if err != nil {
-		a.logger().Warn("artifacthub search failed, showing manual input", zap.Error(err), zap.String("app", appName))
-		candidates = nil
-	}
-
-	if a.selectionHandler == nil {
-		if len(candidates) == 0 {
-			return nil, fmt.Errorf("未找到应用 %q 的 Chart，请检查应用名称或手动指定 Chart 信息", appName)
-		}
-		// CLI 模式：自动选择第一个候选
-		c := candidates[0]
-		c.Source = "artifacthub"
-		a.logger().Info("auto-selected first candidate from ArtifactHub",
-			zap.String("app", appName),
-			zap.String("repo", c.RepoName),
-			zap.String("chart", c.ChartName),
-		)
-		return &c, nil
-	}
-
-	return a.selectionHandler.SelectChart(ctx, appName, candidates)
-}
-
-// confirmDeploy 调用确认处理器，如果未设置则返回默认执行决策。
-func (a *Agent) confirmDeploy(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error) {
+func (a *Agent) confirmDeploy(ctx context.Context, p events.DeployPlan) (events.DeployDecision, error) {
 	if a.confirmHandler == nil {
-		return events.DeployDecision{Action: "execute", Values: plan.CustomValues}, nil
+		return events.DeployDecision{Action: "execute", Values: p.CustomValues}, nil
 	}
-	return a.confirmHandler.ConfirmDeploy(ctx, plan)
+	return a.confirmHandler.ConfirmDeploy(ctx, p)
 }
 
-// emit 向 TUI 事件通道发送事件（非阻塞）。
+// Emit implements workflow.Emitter.
+func (a *Agent) Emit(e events.TUIEvent) {
+	a.emit(e)
+}
+
 func (a *Agent) emit(e events.TUIEvent) {
 	if a.eventCh == nil {
 		return
@@ -356,23 +490,87 @@ func (a *Agent) emit(e events.TUIEvent) {
 	}
 }
 
-// buildReport 构建部署完成后的报告文本。
-func (a *Agent) buildReport(rel *helm.Release, chartInfo *catalog.ChartInfo) string {
+func (a *Agent) emitCritical(e events.TUIEvent) {
+	if a.eventCh == nil {
+		return
+	}
+	a.eventCh <- e
+}
+
+func (a *Agent) buildReport(ctx context.Context, rel *helm.Release, chartInfo *catalog.ChartInfo, namespace, releaseName string) string {
 	if rel == nil {
 		return fmt.Sprintf("✅ %s 部署完成", chartInfo.ChartName)
 	}
-	return fmt.Sprintf(`✅ 部署成功
+	ns := rel.Namespace
+	if ns == "" {
+		ns = namespace
+	}
+	rn := rel.Name
+	if rn == "" {
+		rn = releaseName
+	}
+	verifyNote := a.verifyWorkloadNote(ctx, ns, rn)
+	return fmt.Sprintf(`✅ Helm 部署成功
 
 Release:   %s
 Namespace: %s
-Chart:     %s
+Chart:     %s (%s)
 Status:    %s
-
-提示：使用 kubectl get pods -n %s 查看 Pod 状态`,
-		rel.Name,
-		rel.Namespace,
+%s
+提示：kubectl get all -n %s`,
+		rn,
+		ns,
+		chartInfo.ChartName,
 		rel.Chart,
 		rel.Status,
-		rel.Namespace,
+		verifyNote,
+		ns,
 	)
 }
+
+func (a *Agent) verifyWorkloadNote(ctx context.Context, namespace, releaseName string) string {
+	if a.k8sClient == nil || namespace == "" {
+		return ""
+	}
+	pods, err := a.k8sClient.ListPods(ctx, namespace)
+	if err != nil {
+		a.logWarn("post-deploy pod check failed", zap.String("namespace", namespace), zap.Error(err))
+		return fmt.Sprintf("\n⚠️ 无法检查命名空间 %s 中的 Pod: %v\n", namespace, err)
+	}
+	if len(pods) == 0 {
+		a.logWarn("helm deployed but no pods in namespace",
+			zap.String("namespace", namespace),
+			zap.String("release", releaseName),
+		)
+		return fmt.Sprintf(`
+⚠️ 命名空间 %s 内没有 Pod。Helm 状态为 deployed 不代表主应用已运行。
+常见原因：选错了 Chart（例如 argocd-apps 不会安装 Argo CD 本体），或 values 为空未启用任何组件。
+请检查 Chart 选择，或执行 helm get manifest %s -n %s 查看实际创建的资源。
+`, namespace, releaseName, namespace)
+	}
+	running := 0
+	for _, p := range pods {
+		switch p.Status.Phase {
+		case "Running", "Pending":
+			running++
+		}
+	}
+	a.logInfo("post-deploy pod check",
+		zap.String("namespace", namespace),
+		zap.Int("pods", len(pods)),
+		zap.Int("active", running),
+	)
+	if running == 0 {
+		return fmt.Sprintf("\n⚠️ 命名空间 %s 有 %d 个 Pod，但无 Running/Pending 状态，请 kubectl describe pod -n %s\n", namespace, len(pods), namespace)
+	}
+	return fmt.Sprintf("\nPod: %d 个（%d Running/Pending）\n", len(pods), running)
+}
+
+type recoveryLogger struct {
+	agent *Agent
+}
+
+func (l *recoveryLogger) Info(msg string, fields ...zap.Field)  { l.agent.logInfo(msg, fields...) }
+func (l *recoveryLogger) Debug(msg string, fields ...zap.Field) { l.agent.logDebug(msg, fields...) }
+func (l *recoveryLogger) Warn(msg string, fields ...zap.Field)  { l.agent.logWarn(msg, fields...) }
+func (l *recoveryLogger) Error(msg string, fields ...zap.Field) { l.agent.logError(msg, fields...) }

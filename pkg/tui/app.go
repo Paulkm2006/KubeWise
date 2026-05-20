@@ -352,6 +352,15 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 	routerAgent := a.routerAgent
 	eventCh := a.eventCh
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err := fmt.Errorf("agent panic: %v", r)
+				select {
+				case eventCh <- events.StreamErrEvent{QueryID: queryID, Err: err}:
+				default:
+				}
+			}
+		}()
 		_ = routerAgent.HandleQueryStream(ctx, text, queryID, eventCh)
 	}()
 
