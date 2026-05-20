@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/pkg/agent/deploy/plan"
-	"github.com/kubewise/kubewise/pkg/agent/deploy/workflow"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/llm"
@@ -92,11 +91,10 @@ type RegenerateInput struct {
 }
 
 // Generate calls the LLM to produce override values.
-func Generate(ctx context.Context, r *workflow.Runner, llmClient LLMClient, in GenerateInput) (*Result, error) {
-	return workflow.RunWithResult(r, ctx, workflow.Meta{Name: ToolGenerate, Step: 3}, func(ctx context.Context) (*Result, error) {
-		truncated := helm.TruncateValues(in.DefaultValues, maxDefaultValuesLines)
-		extraNotes := buildChartNotes(in.Chart)
-		prompt := fmt.Sprintf(`用户意图：%s
+func Generate(ctx context.Context, llmClient LLMClient, in GenerateInput) (*Result, error) {
+	truncated := helm.TruncateValues(in.DefaultValues, maxDefaultValuesLines)
+	extraNotes := buildChartNotes(in.Chart)
+	prompt := fmt.Sprintf(`用户意图：%s
 应用：%s（%s）
 %s
 
@@ -104,17 +102,15 @@ func Generate(ctx context.Context, r *workflow.Runner, llmClient LLMClient, in G
 ---
 %s
 ---`,
-			in.Query, in.Chart.ChartName, in.Chart.Description, extraNotes, truncated,
-		)
-		return callValuesLLM(ctx, llmClient, valuesGenSystemPrompt, prompt, in.Chart)
-	})
+		in.Query, in.Chart.ChartName, in.Chart.Description, extraNotes, truncated,
+	)
+	return callValuesLLM(ctx, llmClient, valuesGenSystemPrompt, prompt, in.Chart)
 }
 
 // Regenerate re-generates values from a user correction.
-func Regenerate(ctx context.Context, r *workflow.Runner, llmClient LLMClient, in RegenerateInput, step int) (*Result, error) {
-	return workflow.RunWithResult(r, ctx, workflow.Meta{Name: ToolRegenerate, Step: step}, func(ctx context.Context) (*Result, error) {
-		truncated := helm.TruncateValues(in.DefaultValues, maxDefaultValuesLines)
-		prompt := fmt.Sprintf(`原始用户意图：%s
+func Regenerate(ctx context.Context, llmClient LLMClient, in RegenerateInput) (*Result, error) {
+	truncated := helm.TruncateValues(in.DefaultValues, maxDefaultValuesLines)
+	prompt := fmt.Sprintf(`原始用户意图：%s
 应用：%s（%s）
 
 当前 override values：
@@ -130,11 +126,10 @@ func Regenerate(ctx context.Context, r *workflow.Runner, llmClient LLMClient, in
 用户修正指令：%s
 
 根据修正指令更新配置。若修正涉及 namespace，在 submit_generated_values 中更新 namespace。`,
-			in.Query, in.Chart.ChartName, in.Chart.Description,
-			in.CurrentValues, truncated, in.Correction,
-		)
-		return callValuesLLM(ctx, llmClient, valuesGenSystemPrompt, prompt, in.Chart)
-	})
+		in.Query, in.Chart.ChartName, in.Chart.Description,
+		in.CurrentValues, truncated, in.Correction,
+	)
+	return callValuesLLM(ctx, llmClient, valuesGenSystemPrompt, prompt, in.Chart)
 }
 
 func callValuesLLM(ctx context.Context, llmClient LLMClient, systemPrompt, userPrompt string, chartInfo *catalog.ChartInfo) (*Result, error) {

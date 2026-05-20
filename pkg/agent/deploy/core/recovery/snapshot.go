@@ -9,7 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kubewise/kubewise/pkg/agent/deploy/plan"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"

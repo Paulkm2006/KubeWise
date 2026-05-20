@@ -5,25 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/pkg/agent/deploy/plan"
-	"github.com/kubewise/kubewise/pkg/agent/deploy/workflow"
-	helmtools "github.com/kubewise/kubewise/pkg/agent/deploy/workflow/helm"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/troubleshooting"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tool"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 )
 
 const (
 	maxRecoverSteps          = 20
-	maxRecoverDeployAttempts = 2
 	recoveryLoopRepeatsAbort = 4
 )
 
@@ -37,11 +32,12 @@ const (
 
 // Result carries the outcome of recovery.
 type Result struct {
-	Action  Action
-	Reason  string
-	Details string
-	YAML    string
-	Summary string
+	Action   Action
+	Reason   string
+	Details  string
+	YAML     string
+	Summary  string
+	Messages []llm.Message
 }
 
 // LLMClient is the minimal LLM interface for recovery.
@@ -49,23 +45,10 @@ type LLMClient interface {
 	ChatCompletion(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error)
 }
 
-// HelmClient performs install/status for recovery redeploy.
+// HelmClient reads release status for diagnostics snapshots.
 type HelmClient interface {
-	helmtools.Client
 	Status(ctx context.Context, releaseName, namespace string) (*helm.Release, error)
 }
-
-// ConfirmFunc presents a deploy plan and returns the user decision.
-type ConfirmFunc func(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error)
-
-// ReportFunc builds a post-deploy success report.
-type ReportFunc func(ctx context.Context, rel *helm.Release, chart *catalog.ChartInfo, namespace, releaseName string) string
-
-// CriticalEmitter sends blocking TUI events (code preview, text).
-type CriticalEmitter func(e events.TUIEvent)
-
-// PhaseEmitter sends phase progress events.
-type PhaseEmitter func(e events.TUIEvent)
 
 // Logger provides structured logging for recovery.
 type Logger interface {
@@ -77,22 +60,18 @@ type Logger interface {
 
 // Runner executes the recovery ReAct loop.
 type Runner struct {
-	QueryID      string
-	LLM          LLMClient
-	Helm         HelmClient
-	Tools        *tool.Registry
-	Workflow     *workflow.Runner
-	Confirm      ConfirmFunc
-	BuildReport  ReportFunc
-	EmitPhase    PhaseEmitter
-	EmitCritical CriticalEmitter
-	Log          Logger
-	K8s          *k8s.Client
+	QueryID string
+	LLM     LLMClient
+	Helm    HelmClient
+	Tools   *tool.Registry
+	Log     Logger
+	K8s     *k8s.Client
 }
 
 // RunInput is input for the recovery loop.
 type RunInput struct {
 	DeployErr         error
+	FailureErr        error
 	Query             string
 	CorrectionHistory []string
 	Chart             *catalog.ChartInfo
@@ -100,9 +79,10 @@ type RunInput struct {
 	CurrentValues     string
 	TargetNS          string
 	AppName           string
+	Messages          []llm.Message
 }
 
-// Run diagnoses and attempts to fix a failed deployment.
+// Run diagnoses and attempts to fix invalid Helm values.
 func (r *Runner) Run(ctx context.Context, in RunInput) (*Result, error) {
 	if r.Tools == nil {
 		return &Result{
@@ -112,16 +92,25 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (*Result, error) {
 		}, nil
 	}
 
-	snapshot := BuildDiagnosticsSnapshot(ctx, in.DeployErr, in.AppName, in.TargetNS, in.Chart, r.Helm, r.K8s)
+	failureErr := in.FailureErr
+	if failureErr == nil {
+		failureErr = in.DeployErr
+	}
+	if failureErr == nil {
+		failureErr = fmt.Errorf("Helm 预检失败")
+	}
+	snapshot := BuildDiagnosticsSnapshot(ctx, failureErr, in.AppName, in.TargetNS, in.Chart, r.Helm, r.K8s)
 	correctionText := formatCorrectionHistory(in.CorrectionHistory)
 
-	sysPrompt := fmt.Sprintf(`你是 Kubernetes 部署故障诊断与修复助手。
+	recoveryCtx := NewContext(in.Messages, maxRecoveryToolOutput)
+	if recoveryCtx.Len() == 0 {
+		sysPrompt := fmt.Sprintf(`你是 Kubernetes Helm values 修复助手。
 
-部署失败，请根据自动采集的快照和诊断工具分析根因并尝试修复。
+Helm 预检失败，请根据错误信息、当前 values 和必要的只读诊断信息修复 values。
 
 你可以：
 1. 调用诊断工具补充信息
-2. 调用 submit_values 提交修复后的 values（系统会校验、预检、用户确认后重新部署，最多 %d 次）
+2. 调用 submit_values 提交修复后的 values（外层状态机会先重新预检，通过后再交给用户确认）
 3. 调用 submit_report 结束诊断
 
 ## 用户需求
@@ -142,21 +131,28 @@ Namespace: %s
 ## 自动诊断快照
 %s
 
-修复成功后系统会自动结束诊断，无需再调用 submit_report。`,
-		maxRecoverDeployAttempts,
-		in.Query, in.Chart.ChartName, plan.SanitizeReleaseName(in.AppName), in.TargetNS,
-		in.DeployErr.Error(), in.CurrentValues, correctionText, snapshot,
-	)
+提交 values 后系统会重新进行 Helm 预检；如果预检仍失败，新的错误会作为下一轮上下文继续反馈给你。`,
+			in.Query, in.Chart.ChartName, plan.SanitizeReleaseName(in.AppName), in.TargetNS,
+			failureErr.Error(), in.CurrentValues, correctionText, snapshot,
+		)
 
-	recoveryCtx := NewContext([]llm.Message{
-		{Role: "system", Content: sysPrompt},
-		{Role: "user", Content: fmt.Sprintf("请诊断并修复 %s 部署失败: %s", in.Chart.ChartName, in.DeployErr.Error())},
-	}, maxRecoveryToolOutput)
+		recoveryCtx = NewContext([]llm.Message{
+			{Role: "system", Content: sysPrompt},
+			{Role: "user", Content: fmt.Sprintf("请修复 %s 的 Helm values，预检错误: %s", in.Chart.ChartName, failureErr.Error())},
+		}, maxRecoveryToolOutput)
+	} else {
+		recoveryCtx.AppendUser(fmt.Sprintf(`上次修复后的 Helm 预检仍未通过，请基于之前的诊断继续修复。
+
+最新预检错误:
+%s
+
+当前 override values:
+%s`, failureErr.Error(), in.CurrentValues))
+	}
 
 	tools := troubleshooting.RecoveryToolDefinitions(r.Tools)
 	tools = append(tools, submitReportFn, submitValuesFn)
 
-	deployAttempts := 0
 	currentValues := in.CurrentValues
 	lastToolBatchSig := ""
 	toolRepeatStreak := 0
@@ -165,7 +161,7 @@ Namespace: %s
 		zap.String("app", in.AppName),
 		zap.String("chart", in.Chart.ChartName),
 		zap.String("namespace", in.TargetNS),
-		zap.Error(in.DeployErr),
+		zap.Error(failureErr),
 	)
 
 	for step := 0; step < maxRecoverSteps; step++ {
@@ -173,9 +169,6 @@ Namespace: %s
 			return nil, ctx.Err()
 		}
 
-		if r.EmitPhase != nil {
-			r.EmitPhase(events.PhaseEvent{QueryID: r.QueryID, Phase: "诊断修复中"})
-		}
 		r.logDebug("recovery step", zap.Int("step", step+1), zap.Int("messages", recoveryCtx.Len()))
 
 		resp, err := r.LLM.ChatCompletion(ctx, recoveryCtx.Messages(), tools)
@@ -196,9 +189,10 @@ Namespace: %s
 			if toolRepeatStreak >= recoveryLoopRepeatsAbort {
 				r.logWarn("recovery repeated identical tool batches", zap.Int("steps", toolRepeatStreak))
 				return &Result{
-					Action:  ActionAbort,
-					Reason:  "诊断循环卡住",
-					Details: fmt.Sprintf("连续 %d 次模型发起了相同的工具调用组合，可能存在循环；诊断已中止。请换一种方式描述问题或手动检查集群。", toolRepeatStreak),
+					Action:   ActionAbort,
+					Reason:   "诊断循环卡住",
+					Details:  fmt.Sprintf("连续 %d 次模型发起了相同的工具调用组合，可能存在循环；诊断已中止。请换一种方式描述问题或手动检查集群。", toolRepeatStreak),
+					Messages: recoveryCtx.Messages(),
 				}, nil
 			}
 		} else if sig != "" {
@@ -212,12 +206,15 @@ Namespace: %s
 			r.logInfo("recovery tool call", zap.String("tool", funcCall.Function.Name), zap.Int("step", step+1))
 			toolResult, done, result, err := r.handleToolCall(
 				ctx, funcCall, in.Chart, in.DefaultValues, &currentValues,
-				in.TargetNS, in.AppName, &deployAttempts,
+				in.TargetNS, in.AppName,
 			)
 			if err != nil {
 				return nil, err
 			}
 			if done {
+				if result != nil {
+					result.Messages = recoveryCtx.Messages()
+				}
 				return result, nil
 			}
 			recoveryCtx.AppendToolResult(funcCall.ID, toolResult)
@@ -226,9 +223,10 @@ Namespace: %s
 
 	r.logWarn("recovery loop exhausted", zap.String("app", in.AppName))
 	return &Result{
-		Action:  ActionAbort,
-		Reason:  "诊断达到最大步数",
-		Details: fmt.Sprintf("诊断修复已达到最大步数（%d步），未能完成修复。请手动检查集群状态。", maxRecoverSteps),
+		Action:   ActionAbort,
+		Reason:   "诊断达到最大步数",
+		Details:  fmt.Sprintf("诊断修复已达到最大步数（%d步），未能完成修复。请手动检查集群状态。", maxRecoverSteps),
+		Messages: recoveryCtx.Messages(),
 	}, nil
 }
 
@@ -280,7 +278,6 @@ func (r *Runner) handleToolCall(
 	defaultValues string,
 	currentValues *string,
 	targetNS, appName string,
-	deployAttempts *int,
 ) (toolResult string, done bool, result *Result, err error) {
 	name := funcCall.Function.Name
 
@@ -292,7 +289,7 @@ func (r *Runner) handleToolCall(
 		return "", true, &Result{Action: ActionAbort, Reason: reason, Details: details}, nil
 
 	case "submit_values":
-		return r.handleSubmitValues(ctx, funcCall, chartInfo, defaultValues, currentValues, targetNS, appName, deployAttempts)
+		return r.handleSubmitValues(funcCall, chartInfo, defaultValues, currentValues, targetNS, appName)
 
 	default:
 		t, ok := r.Tools.GetTool(name)
@@ -313,33 +310,23 @@ func (r *Runner) handleToolCall(
 }
 
 func (r *Runner) runDiagnosticTool(ctx context.Context, name string, fn func(context.Context) (string, error)) (string, error) {
-	if r.Workflow == nil {
-		return fn(ctx)
-	}
-	return workflow.RunWithResult(r.Workflow, ctx, workflow.Meta{Name: name, Step: 0}, fn)
+	return fn(ctx)
 }
 
 func (r *Runner) handleSubmitValues(
-	ctx context.Context,
 	funcCall llm.ToolCall,
 	chartInfo *catalog.ChartInfo,
 	defaultValues string,
 	currentValues *string,
 	targetNS, appName string,
-	deployAttempts *int,
 ) (string, bool, *Result, error) {
-	if *deployAttempts >= maxRecoverDeployAttempts {
-		r.logWarn("recovery redeploy limit reached", zap.Int("max", maxRecoverDeployAttempts))
-		return fmt.Sprintf("已达到最大重新部署次数（%d次），请调用 submit_report 结束诊断", maxRecoverDeployAttempts), false, nil, nil
-	}
-
 	args := funcCall.Function.Arguments
 	yamlValues, _ := args["yaml"].(string)
 	summary, _ := args["summary"].(string)
-	r.logInfo("recovery submit_values", zap.Int("attempt", *deployAttempts+1))
+	r.logInfo("recovery submit_values")
 
 	releaseName := plan.SanitizeReleaseName(appName)
-	p := plan.NewDeployPlan(appName, chartInfo, defaultValues, yamlValues, targetNS, r.shouldUpgrade(ctx, releaseName, targetNS))
+	p := plan.NewDeployPlan(appName, chartInfo, defaultValues, yamlValues, targetNS, false)
 	p.ReleaseName = releaseName
 
 	validation := plan.ValidateDeployPlan(p)
@@ -349,70 +336,14 @@ func (r *Runner) handleSubmitValues(
 		return "values 校验失败: " + strings.Join(validation.Errors, "; "), false, nil, nil
 	}
 
-	if err := plan.RunRecoveryHelmPreflight(ctx, r.Helm, &p); err != nil {
-		r.logWarn("recovery helm preflight failed", zap.Error(err))
-		return "Helm 预检失败: " + err.Error(), false, nil, nil
-	}
-
-	if r.EmitCritical != nil {
-		r.EmitCritical(events.RenderCodeEvent{QueryID: r.QueryID, Language: "yaml", Content: yamlValues})
-		r.EmitCritical(events.RenderTextEvent{QueryID: r.QueryID, Text: summary})
-	}
-
-	decision, confirmErr := r.Confirm(ctx, p.ToEventPlan())
-	if confirmErr != nil {
-		return "", false, nil, confirmErr
-	}
-	if decision.Action == "cancel" {
-		r.logInfo("recovery redeploy cancelled by user")
-		return "", true, &Result{
-			Action:  ActionAbort,
-			Reason:  "用户取消了部署",
-			Details: "用户在修复确认中取消了部署。",
-		}, nil
-	}
-
-	*deployAttempts++
-	r.logInfo("recovery redeploy starting", zap.Int("attempt", *deployAttempts))
-	rel, installErr := r.Helm.InstallOrUpgrade(ctx, helm.InstallOptions{
-		ChartOptions: helm.ChartOptions{
-			ReleaseName: releaseName,
-			ChartName:   chartInfo.ChartName,
-			RepoName:    chartInfo.RepoName,
-			RepoURL:     chartInfo.RepoURL,
-			Namespace:   targetNS,
-			Values:      decision.Values,
-		},
-		CreateNS: true,
-		Wait:     true,
-		Timeout:  5 * time.Minute,
-	})
-	if installErr != nil {
-		r.logError("recovery redeploy failed", zap.Error(installErr), zap.Int("attempt", *deployAttempts))
-		return fmt.Sprintf("部署失败: %s", installErr.Error()), false, nil, nil
-	}
-
-	*currentValues = decision.Values
-	r.logInfo("recovery redeploy succeeded", zap.Int("attempt", *deployAttempts))
-	report := fmt.Sprintf("✅ %s 修复后部署成功", chartInfo.ChartName)
-	if r.BuildReport != nil {
-		report = r.BuildReport(ctx, rel, chartInfo, targetNS, plan.SanitizeReleaseName(appName))
-	}
+	*currentValues = yamlValues
 	return "", true, &Result{
 		Action:  ActionRecovered,
-		Reason:  "修复后部署成功",
-		Details: report,
-		YAML:    decision.Values,
+		Reason:  "已生成修复配置",
+		Details: summary,
+		YAML:    yamlValues,
 		Summary: summary,
 	}, nil
-}
-
-func (r *Runner) shouldUpgrade(ctx context.Context, releaseName, namespace string) bool {
-	if r.Helm == nil {
-		return false
-	}
-	rel, err := r.Helm.Status(ctx, releaseName, namespace)
-	return err == nil && rel != nil && rel.Status == "deployed"
 }
 
 func formatCorrectionHistory(history []string) string {

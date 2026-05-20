@@ -3,15 +3,11 @@ package deploy
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/pkg/agent/deploy/recovery"
-	"github.com/kubewise/kubewise/pkg/agent/deploy/values"
-	wfpkg "github.com/kubewise/kubewise/pkg/agent/deploy/workflow"
-	helmtools "github.com/kubewise/kubewise/pkg/agent/deploy/workflow/helm"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/core/report"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
@@ -23,19 +19,6 @@ import (
 	_ "github.com/kubewise/kubewise/pkg/tools/v1/query"
 	_ "github.com/kubewise/kubewise/pkg/tools/v1/troubleshooting"
 )
-
-// helmClient is the minimal helm.Client interface for deploy and tests.
-type helmClient interface {
-	helmtools.Client
-	Status(ctx context.Context, releaseName, namespace string) (*helm.Release, error)
-	ListReleases(ctx context.Context) ([]helm.Release, error)
-}
-
-// llmClient is the minimal llm.Client interface for tests.
-type llmClient interface {
-	values.LLMClient
-	recovery.LLMClient
-}
 
 // DeployConfirmationHandler presents a deploy plan and waits for user decision.
 type DeployConfirmationHandler interface {
@@ -49,8 +32,8 @@ type ChartSelectionHandler interface {
 
 // Agent orchestrates the deploy pipeline.
 type Agent struct {
-	llmClient        llmClient
-	helmClient       helmClient
+	llmClient        *llm.Client
+	helmClient       *helm.Client
 	confirmHandler   DeployConfirmationHandler
 	selectionHandler ChartSelectionHandler
 	eventCh          chan<- events.TUIEvent
@@ -111,75 +94,40 @@ func New(llmClient *llm.Client, helmClient *helm.Client, k8sClient *k8s.Client, 
 	return a
 }
 
-func (a *Agent) workflowRunner() *wfpkg.Runner {
-	return &wfpkg.Runner{QueryID: a.queryID, Emit: a}
-}
-
-// HandleQuery runs the deploy pipeline: resolve → values → validate → review → preflight → apply → verify.
+// HandleQuery runs the deploy pipeline.
 func (a *Agent) HandleQuery(ctx context.Context, query string, entities types.Entities) (string, error) {
 	a.emit(events.AgentStartEvent{AgentName: "Deploy Agent", QueryID: a.queryID})
 	startTime := time.Now()
 	defer func() {
-		a.logInfo("deploy pipeline finished", zap.Duration("elapsed", time.Since(startTime)))
+		a.logger().Info("deploy pipeline finished",
+			zap.String("component", "deploy"),
+			zap.String("query_id", a.queryID),
+			zap.Duration("elapsed", time.Since(startTime)),
+		)
 		a.emit(events.AgentDoneEvent{QueryID: a.queryID, Duration: time.Since(startTime)})
 	}()
 
 	return a.runDeployPipeline(ctx, query, entities)
 }
 
-func (a *Agent) runRecovery(
-	ctx context.Context,
-	deployErr error,
-	query string,
-	correctionHistory []string,
-	chart *catalog.ChartInfo,
-	defaultValues, finalValues, namespace, appName string,
-) (string, error) {
-	a.logInfo("entering recovery loop", zap.String("app", appName))
-	runner := &recovery.Runner{
-		QueryID:      a.queryID,
-		LLM:          a.llmClient,
-		Helm:         a.helmClient,
-		Tools:        a.toolRegistry,
-		Workflow:     a.workflowRunner(),
-		K8s:          a.k8sClient,
-		Confirm:      a.confirmDeploy,
-		BuildReport:  a.buildReport,
-		EmitPhase:    a.emit,
-		EmitCritical: a.emitCritical,
-		Log:          &recoveryLogger{agent: a},
-	}
-	result, recErr := runner.Run(ctx, recovery.RunInput{
-		DeployErr:         deployErr,
-		Query:             query,
-		CorrectionHistory: correctionHistory,
-		Chart:             chart,
-		DefaultValues:     defaultValues,
-		CurrentValues:     finalValues,
-		TargetNS:          namespace,
-		AppName:           appName,
-	})
-	if recErr != nil {
-		a.logError("recovery loop error", zap.Error(recErr))
-		return "", fmt.Errorf("诊断修复过程出错: %w", recErr)
-	}
-	a.logInfo("recovery loop finished",
-		zap.Int("action", int(result.Action)),
-		zap.String("reason", result.Reason),
-	)
-	return result.Details, nil
-}
-
-func (a *Agent) confirmDeploy(ctx context.Context, p events.DeployPlan) (events.DeployDecision, error) {
+// ConfirmDeploy implements state.ConfirmHandler.
+func (a *Agent) ConfirmDeploy(ctx context.Context, p events.DeployPlan) (events.DeployDecision, error) {
 	if a.confirmHandler == nil {
 		return events.DeployDecision{Action: "execute", Values: p.CustomValues}, nil
 	}
 	return a.confirmHandler.ConfirmDeploy(ctx, p)
 }
 
-// Emit implements workflow.Emitter.
-func (a *Agent) Emit(e events.TUIEvent) {
-	a.emit(e)
+// SelectChart implements state.SelectionHandler.
+func (a *Agent) SelectChart(ctx context.Context, appName string, candidates []catalog.ChartInfo) (*catalog.ChartInfo, error) {
+	if a.selectionHandler == nil {
+		return nil, nil
+	}
+	return a.selectionHandler.SelectChart(ctx, appName, candidates)
+}
+
+func (a *Agent) buildReport(ctx context.Context, rel *helm.Release, chartInfo *catalog.ChartInfo, namespace, releaseName string) string {
+	return report.SuccessMessage(ctx, rel, chartInfo, namespace, releaseName, a.k8sClient, a.logger())
 }
 
 func (a *Agent) emit(e events.TUIEvent) {
@@ -190,6 +138,11 @@ func (a *Agent) emit(e events.TUIEvent) {
 	case a.eventCh <- e:
 	default:
 	}
+}
+
+// Emit sends a non-blocking TUI event.
+func (a *Agent) Emit(e events.TUIEvent) {
+	a.emit(e)
 }
 
 func (a *Agent) emitCritical(e events.TUIEvent) {
@@ -203,7 +156,15 @@ type recoveryLogger struct {
 	agent *Agent
 }
 
-func (l *recoveryLogger) Info(msg string, fields ...zap.Field)  { l.agent.logInfo(msg, fields...) }
-func (l *recoveryLogger) Debug(msg string, fields ...zap.Field) { l.agent.logDebug(msg, fields...) }
-func (l *recoveryLogger) Warn(msg string, fields ...zap.Field)  { l.agent.logWarn(msg, fields...) }
-func (l *recoveryLogger) Error(msg string, fields ...zap.Field) { l.agent.logError(msg, fields...) }
+func (l *recoveryLogger) Info(msg string, fields ...zap.Field) {
+	l.agent.logger().Info(msg, append([]zap.Field{zap.String("component", "deploy")}, fields...)...)
+}
+func (l *recoveryLogger) Debug(msg string, fields ...zap.Field) {
+	l.agent.logger().Debug(msg, append([]zap.Field{zap.String("component", "deploy")}, fields...)...)
+}
+func (l *recoveryLogger) Warn(msg string, fields ...zap.Field) {
+	l.agent.logger().Warn(msg, append([]zap.Field{zap.String("component", "deploy")}, fields...)...)
+}
+func (l *recoveryLogger) Error(msg string, fields ...zap.Field) {
+	l.agent.logger().Error(msg, append([]zap.Field{zap.String("component", "deploy")}, fields...)...)
+}

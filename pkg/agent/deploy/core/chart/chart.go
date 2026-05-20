@@ -9,7 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/pkg/agent/deploy/plan"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/catalog"
 )
 

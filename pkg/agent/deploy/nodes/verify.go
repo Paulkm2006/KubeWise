@@ -3,24 +3,28 @@ package nodes
 import (
 	"context"
 
-	"github.com/kubewise/kubewise/pkg/agent/deploy/workflow"
-	helmtools "github.com/kubewise/kubewise/pkg/agent/deploy/workflow/helm"
-	"github.com/kubewise/kubewise/pkg/catalog"
-	"github.com/kubewise/kubewise/pkg/helm"
+	"go.uber.org/zap"
+
+	"github.com/kubewise/kubewise/pkg/agent/deploy/core/report"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
 	"github.com/kubewise/kubewise/pkg/tui/events"
 )
 
-// VerifyDeployedRelease emits the verification phase and runs the report builder inside a workflow tool envelope.
-func VerifyDeployedRelease(
-	ctx context.Context,
-	wf *workflow.Runner,
-	queryID string,
-	emit func(events.TUIEvent),
-	rel *helm.Release,
-	chart *catalog.ChartInfo,
-	namespace, releaseName string,
-	buildReport func(context.Context) (string, error),
-) (string, error) {
-	emit(events.PhaseEvent{QueryID: queryID, Phase: "验证部署状态"})
-	return workflow.RunWithResult(wf, ctx, workflow.Meta{Name: helmtools.ToolVerifyDeploy, Step: 7}, buildReport)
+const toolVerifyDeploy = "verify deployment"
+
+// VerifyRelease emits verification phase and builds the success report.
+func VerifyRelease(st *state.State) error {
+	st.Emit(events.PhaseEvent{QueryID: st.QueryID, Phase: "验证部署状态"})
+	reportText, err := state.RunToolWithResult(st, st.Ctx, toolVerifyDeploy, 7, func(ctx context.Context) (string, error) {
+		if st.BuildReport != nil {
+			return st.BuildReport(ctx, st.Release, st.Chart, st.Plan.Namespace, st.ReleaseName), nil
+		}
+		return report.SuccessMessage(ctx, st.Release, st.Chart, st.Plan.Namespace, st.ReleaseName, st.K8s, st.Log), nil
+	})
+	if err != nil {
+		return err
+	}
+	st.LogInfo("deploy succeeded", zap.String("release", st.Release.Name), zap.String("namespace", st.Release.Namespace))
+	st.Done(reportText)
+	return nil
 }

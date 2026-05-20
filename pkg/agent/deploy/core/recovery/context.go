@@ -35,6 +35,10 @@ func (c *Context) AppendAssistant(msg llm.Message) {
 	c.messages = append(c.messages, msg)
 }
 
+func (c *Context) AppendUser(content string) {
+	c.messages = append(c.messages, llm.Message{Role: "user", Content: content})
+}
+
 func (c *Context) AppendToolResult(toolCallID, content string) {
 	c.messages = append(c.messages, llm.Message{
 		Role:       "tool",
