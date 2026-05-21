@@ -6,6 +6,7 @@ import (
 
 	"go.uber.org/zap"
 
+	chartcore "github.com/kubewise/kubewise/pkg/agent/deploy/core/chart"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
 	"github.com/kubewise/kubewise/pkg/tui/events"
@@ -24,7 +25,7 @@ func validatePlan(st *state.State, stage string) error {
 
 	validation := plan.ValidateDeployPlan(st.Plan)
 	validation.Merge(plan.CheckHelmReleaseConflicts(st.Ctx, st.Helm, st.Plan))
-	st.Plan.Warnings = append(st.Plan.Warnings, validation.Warnings...)
+	st.Plan.Warnings = append(chartcore.SelectionWarnings(st.Plan.AppName, st.Plan.Chart), validation.Warnings...)
 	logPlanValidation(st, stage, validation)
 	if validation.HasBlockingErrors() {
 		return fmt.Errorf("部署计划校验失败: %s", strings.Join(validation.Errors, "; "))
