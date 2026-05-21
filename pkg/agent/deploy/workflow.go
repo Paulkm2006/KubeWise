@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/nodes"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
@@ -13,7 +14,9 @@ func RunPipeline(st *state.State) (string, error) {
 	for !st.Phase.Terminal() {
 		fn, ok := nodes.Dispatch(st.Phase)
 		if !ok {
-			return "", st.Err
+			err := fmt.Errorf("unhandled deploy phase: %s", st.Phase.String())
+			st.Fail(err)
+			return "", err
 		}
 		if err := fn(st); err != nil {
 			st.Fail(err)
