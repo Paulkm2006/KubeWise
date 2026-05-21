@@ -36,8 +36,10 @@ func NewDeleteResourceTool(k8sClient *k8s.Client) *DeleteResourceTool {
 	return &DeleteResourceTool{k8sClient: k8sClient}
 }
 
-func (t *DeleteResourceTool) Name() string        { return "delete_resource" }
-func (t *DeleteResourceTool) Description() string { return "Delete a Kubernetes resource by GVR and name" }
+func (t *DeleteResourceTool) Name() string { return "delete_resource" }
+func (t *DeleteResourceTool) Description() string {
+	return "Delete a Kubernetes resource by GVR and name"
+}
 func (t *DeleteResourceTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",

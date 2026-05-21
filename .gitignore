@@ -33,3 +33,7 @@ go.work.sum
 .superpowers
 .claude
 .worktrees
+
+config.yaml
+kubewise.log
+.kube

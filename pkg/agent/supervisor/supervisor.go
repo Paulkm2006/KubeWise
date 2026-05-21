@@ -233,9 +233,9 @@ Return JSON only: {"decision": "continue"|"reset"|"abort", "extra_steps": <int>,
 	content = strings.TrimSpace(content)
 
 	var evalResp struct {
-		Decision   string `json:"decision"`
-		ExtraSteps int    `json:"extra_steps"`
-		Hint       string `json:"hint"`
+		Decision    string `json:"decision"`
+		ExtraSteps  int    `json:"extra_steps"`
+		Hint        string `json:"hint"`
 		Explanation string `json:"explanation"`
 	}
 	if err := json.Unmarshal([]byte(content), &evalResp); err != nil {

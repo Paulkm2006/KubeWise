@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 func (h *Handler) ChatStream(c *echo.Context) error {
@@ -27,20 +27,20 @@ func (h *Handler) ChatStream(c *echo.Context) error {
 	defer cancel()
 
 	queryID := fmt.Sprintf("q-%s", uuid.New().String()[:8])
-	eventCh := make(chan events.TUIEvent, 64)
+	eventCh := make(chan stream.Event, 64)
 
 	go func() {
 		defer close(eventCh)
 		_ = h.querier.HandleQueryStream(ctx, query, queryID, eventCh)
 	}()
 
-	defer h.cleanupPendingConfirms(queryID)
+	defer h.cleanupPendingInteractions(queryID)
 
 	for ev := range eventCh {
 		if ctx.Err() != nil {
 			break
 		}
-		if err := h.bridgeEvent(sse, ev); err != nil {
+		if err := h.bridgeStreamEvent(sse, ev); err != nil {
 			break
 		}
 	}
@@ -48,72 +48,66 @@ func (h *Handler) ChatStream(c *echo.Context) error {
 	return nil
 }
 
-func (h *Handler) bridgeEvent(sse *SSEWriter, ev events.TUIEvent) error {
+func (h *Handler) bridgeStreamEvent(sse *SSEWriter, ev stream.Event) error {
 	switch e := ev.(type) {
-	case events.PhaseEvent:
+	case stream.InteractionRequest:
+		return h.handleStreamInteractionSSE(sse, e)
+
+	case stream.Phase:
 		return sse.WriteEvent("phase", PhaseData{QueryID: e.QueryID, Phase: e.Phase})
 
-	case events.AgentStartEvent:
+	case stream.AgentStart:
 		return sse.WriteEvent("agent_start", AgentStartData{QueryID: e.QueryID, AgentName: e.AgentName})
 
-	case events.AgentDoneEvent:
+	case stream.AgentDone:
 		return sse.WriteEvent("agent_done", AgentDoneData{
 			QueryID: e.QueryID, Duration: e.Duration,
 			InTokens: e.InTokens, OutTokens: e.OutTokens,
 		})
 
-	case events.ToolCallEvent:
+	case stream.ToolCall:
 		return sse.WriteEvent("tool_call", ToolCallData{
 			QueryID: e.QueryID, ToolName: e.ToolName, Step: e.Step,
 		})
 
-	case events.ToolDoneEvent:
+	case stream.ToolDone:
 		return sse.WriteEvent("tool_done", ToolDoneData{
 			QueryID: e.QueryID, ToolName: e.ToolName, Step: e.Step, Elapsed: e.Elapsed,
 		})
 
-	case events.RenderTextEvent:
+	case stream.ToolFail:
+		return sse.WriteEvent("tool_fail", ToolFailData{
+			QueryID: e.QueryID, ToolName: e.ToolName, Step: e.Step, Elapsed: e.Elapsed, Error: e.Err,
+		})
+
+	case stream.RenderText:
 		return sse.WriteEvent("render_text", RenderTextData{QueryID: e.QueryID, Text: e.Text})
 
-	case events.RenderTableEvent:
+	case stream.RenderTable:
 		return sse.WriteEvent("render_table", RenderTableData{
 			QueryID: e.QueryID, Headers: e.Headers, Rows: e.Rows,
 		})
 
-	case events.RenderCodeEvent:
+	case stream.RenderCode:
 		return sse.WriteEvent("render_code", RenderCodeData{
 			QueryID: e.QueryID, Language: e.Language, Content: e.Content,
 		})
 
-	case events.RenderKVEvent:
+	case stream.RenderKV:
 		pairs := make([]KVPair, len(e.Pairs))
 		for i, p := range e.Pairs {
 			pairs[i] = KVPair{Key: p.Key, Value: p.Value}
 		}
 		return sse.WriteEvent("render_kv", RenderKVData{QueryID: e.QueryID, Pairs: pairs})
 
-	case events.RenderListEvent:
+	case stream.RenderList:
 		items := make([]ListItem, len(e.Items))
 		for i, it := range e.Items {
 			items[i] = ListItem{Status: it.Status, Text: it.Text}
 		}
 		return sse.WriteEvent("render_list", RenderListData{QueryID: e.QueryID, Items: items})
 
-	case events.ConfirmRequestEvent:
-		return h.handleConfirmRequestSSE(sse, e)
-
-	case events.StreamDoneEvent:
-		return sse.WriteEvent("stream_done", StreamDoneData{QueryID: e.QueryID, Result: e.Result})
-
-	case events.StreamErrEvent:
-		return sse.WriteEvent("stream_err", StreamErrData{QueryID: e.QueryID, Error: e.Err.Error()})
-
-	case events.SupervisorEvent:
-		return sse.WriteEvent("supervisor", SupervisorData{
-			QueryID: e.QueryID, Reason: e.Reason, Decision: e.Decision, Detail: e.Detail,
-		})
-
-	case events.RenderDetailEvent:
+	case stream.RenderDetail:
 		d := e.Detail
 		data := RenderDetailData{
 			QueryID: e.QueryID,
@@ -140,29 +134,44 @@ func (h *Handler) bridgeEvent(sse *SSEWriter, ev events.TUIEvent) error {
 		}
 		return sse.WriteEvent("render_detail", data)
 
+	case stream.Supervisor:
+		return sse.WriteEvent("supervisor", SupervisorData{
+			QueryID: e.QueryID, Reason: e.Reason, Decision: e.Decision, Detail: e.Detail,
+		})
+
+	case stream.StreamDone:
+		return sse.WriteEvent("stream_done", StreamDoneData{QueryID: e.QueryID, Result: e.Result})
+
+	case stream.StreamErr:
+		msg := ""
+		if e.Err != nil {
+			msg = e.Err.Error()
+		}
+		return sse.WriteEvent("stream_err", StreamErrData{QueryID: e.QueryID, Error: msg})
+
 	default:
-		return nil
+		return sse.WriteEvent("unknown_stream_event", UnknownStreamEventData{EventType: fmt.Sprintf("%T", ev)})
 	}
 }
 
-func (h *Handler) handleConfirmRequestSSE(sse *SSEWriter, ev events.ConfirmRequestEvent) error {
-	confirmID := uuid.New().String()
-
+func (h *Handler) handleStreamInteractionSSE(sse *SSEWriter, e stream.InteractionRequest) error {
+	interactionID := uuid.New().String()
 	h.mu.Lock()
-	h.pendingConfirms[confirmID] = &pendingConfirm{queryID: ev.QueryID, respCh: ev.RespCh}
+	h.pendingInteractions[interactionID] = &pendingInteraction{queryID: e.QueryID, respCh: e.RespCh}
 	h.mu.Unlock()
 
-	stepJSON, err := json.Marshal(ev.Step)
-	if err != nil {
-		stepJSON = []byte("{}")
+	payload := json.RawMessage(e.Payload)
+	if len(payload) == 0 {
+		payload = json.RawMessage("{}")
+	}
+	data := InteractionRequestData{
+		InteractionID: interactionID,
+		QueryID:       e.QueryID,
+		Kind:          string(e.Kind),
+		Payload:       payload,
+		TotalSteps:    e.TotalSteps,
 	}
 
-	data := ConfirmRequestData{
-		ConfirmID:  confirmID,
-		QueryID:    ev.QueryID,
-		Step:       stepJSON,
-		TotalSteps: ev.TotalSteps,
-	}
-
-	return sse.WriteEvent("confirm_request", data)
+	return sse.WriteEvent("interaction_request", data)
 }
+

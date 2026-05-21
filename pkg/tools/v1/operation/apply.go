@@ -36,8 +36,10 @@ func NewApplyResourceTool(k8sClient *k8s.Client) *ApplyResourceTool {
 	return &ApplyResourceTool{k8sClient: k8sClient}
 }
 
-func (t *ApplyResourceTool) Name() string        { return "apply_resource" }
-func (t *ApplyResourceTool) Description() string { return "Apply a Kubernetes resource from YAML content via Server-Side Apply" }
+func (t *ApplyResourceTool) Name() string { return "apply_resource" }
+func (t *ApplyResourceTool) Description() string {
+	return "Apply a Kubernetes resource from YAML content via Server-Side Apply"
+}
 func (t *ApplyResourceTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",

@@ -2,17 +2,28 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"go.uber.org/zap"
 )
 
 // Client LLM客户端，封装openai-go SDK
 type Client struct {
 	client openai.Client
 	config Config
+	log    *zap.Logger
+}
+
+// SetLogger injects a logger for debug output.
+func (c *Client) SetLogger(l *zap.Logger) { c.log = l }
+
+func (c *Client) logger() *zap.Logger {
+	if c.log == nil {
+		return zap.NewNop()
+	}
+	return c.log
 }
 
 // NewClient 创建新的LLM客户端
@@ -34,32 +45,24 @@ func NewClient(config Config) (*Client, error) {
 
 	client := openai.NewClient(opts...)
 
-	return &Client{
+	c := &Client{
 		client: client,
 		config: config,
-	}, nil
+		log:    zap.NewNop(),
+	}
+	c.logger().Debug("llm client initialized", zap.String("model", config.Model))
+	return c, nil
 }
 
 // ChatCompletion 聊天补全接口，支持工具调用
 func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functions []FunctionDefinition) (*Message, error) {
-	// 转换消息格式到openai格式
 	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
 	for i, msg := range messages {
-		switch msg.Role {
-		case "user":
-			openaiMessages[i] = openai.UserMessage(msg.Content)
-		case "assistant":
-			openaiMessages[i] = openai.AssistantMessage(msg.Content)
-		case "system":
-			openaiMessages[i] = openai.SystemMessage(msg.Content)
-		case "developer":
-			openaiMessages[i] = openai.DeveloperMessage(msg.Content)
-		case "tool", "function":
-			// 工具返回消息
-			openaiMessages[i] = openai.ToolMessage(msg.Content, msg.ToolCallID)
-		default:
-			return nil, fmt.Errorf("unsupported message role: %s", msg.Role)
+		param, err := messageToOpenAIParam(msg)
+		if err != nil {
+			return nil, fmt.Errorf("message[%d]: %w", i, err)
 		}
+		openaiMessages[i] = param
 	}
 
 	// 构建请求参数
@@ -88,9 +91,23 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		reqOpts = append(reqOpts, option.WithJSONSet("tools", tools))
 	}
 
-	// 调用OpenAI API
+	toolNames := make([]string, 0, len(functions))
+	for _, fn := range functions {
+		toolNames = append(toolNames, fn.Name)
+	}
+	c.logger().Debug("chat completion request",
+		zap.String("model", string(params.Model)),
+		zap.Int("messages", len(messages)),
+		zap.Strings("tools", toolNames),
+	)
 	resp, err := c.client.Chat.Completions.New(ctx, params, reqOpts...)
 	if err != nil {
+		c.logger().Error("chat completion failed",
+			zap.Error(err),
+			zap.String("model", string(params.Model)),
+			zap.Int("messages", len(messages)),
+			zap.String("message_summary", summarizeMessages(messages)),
+		)
 		return nil, fmt.Errorf("chat completion failed: %w", err)
 	}
 
@@ -114,54 +131,28 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		}
 	}
 
-	// 检查是否有工具调用（通过原始JSON解析）
-	var rawResp map[string]any
-	respJSON, err := json.Marshal(resp)
-	if err == nil {
-		if err := json.Unmarshal(respJSON, &rawResp); err == nil {
-			if choices, ok := rawResp["choices"].([]any); ok && len(choices) > 0 {
-				if choice, ok := choices[0].(map[string]any); ok {
-					if message, ok := choice["message"].(map[string]any); ok {
-						// 处理工具调用
-						if toolCallsRaw, ok := message["tool_calls"].([]any); ok && len(toolCallsRaw) > 0 {
-							result.ToolCalls = make([]ToolCall, len(toolCallsRaw))
-							for j, tcRaw := range toolCallsRaw {
-								if tc, ok := tcRaw.(map[string]any); ok {
-									functionRaw, _ := tc["function"].(map[string]any)
-									if functionRaw == nil {
-										continue
-									}
+	result.ToolCalls = toolCallsFromCompletionMessage(choice.Message)
 
-									name, _ := functionRaw["name"].(string)
-									argsStr, _ := functionRaw["arguments"].(string)
-
-									var args map[string]any
-									if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
-										args = map[string]any{
-											"raw_arguments": argsStr,
-										}
-									}
-
-									id, _ := tc["id"].(string)
-									typeStr, _ := tc["type"].(string)
-
-									result.ToolCalls[j] = ToolCall{
-										ID:   id,
-										Type: typeStr,
-										Function: FunctionCall{
-											Name:      name,
-											Arguments: args,
-										},
-									}
-								}
-							}
-
-						}
-					}
-				}
-			}
-		}
+	fields := []zap.Field{
+		zap.String("model", string(params.Model)),
+		zap.Int("content_len", len(result.Content)),
+		zap.Int("tool_calls", len(result.ToolCalls)),
 	}
+	if len(result.ToolCalls) > 0 {
+		names := make([]string, 0, len(result.ToolCalls))
+		for _, tc := range result.ToolCalls {
+			names = append(names, tc.Function.Name)
+		}
+		fields = append(fields, zap.Strings("tool_call_names", names))
+	}
+	if result.Usage != nil {
+		fields = append(fields,
+			zap.Int("prompt_tokens", result.Usage.PromptTokens),
+			zap.Int("completion_tokens", result.Usage.CompletionTokens),
+			zap.Int("total_tokens", result.Usage.TotalTokens),
+		)
+	}
+	c.logger().Info("chat completion response", fields...)
 
 	return result, nil
 }

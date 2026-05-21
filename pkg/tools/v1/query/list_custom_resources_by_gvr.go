@@ -119,9 +119,9 @@ func (t *ListCustomResourcesByGvrTool) Execute(ctx context.Context, args map[str
 			continue
 		}
 
-		name := metadata["name"].(string)
-		ns := metadata["namespace"].(string)
-		creationTimestamp := metadata["creationTimestamp"].(string)
+		name := mapString(metadata, "name")
+		ns := mapString(metadata, "namespace")
+		creationTimestamp := mapString(metadata, "creationTimestamp")
 
 		result.WriteString(fmt.Sprintf("%s\t%s\t%s\n", name, ns, creationTimestamp))
 	}

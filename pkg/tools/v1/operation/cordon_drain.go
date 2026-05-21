@@ -35,8 +35,10 @@ func NewCordonDrainNodeTool(k8sClient *k8s.Client) *CordonDrainNodeTool {
 	return &CordonDrainNodeTool{k8sClient: k8sClient}
 }
 
-func (t *CordonDrainNodeTool) Name() string        { return "cordon_drain_node" }
-func (t *CordonDrainNodeTool) Description() string { return "Cordon, uncordon, or drain a Kubernetes node" }
+func (t *CordonDrainNodeTool) Name() string { return "cordon_drain_node" }
+func (t *CordonDrainNodeTool) Description() string {
+	return "Cordon, uncordon, or drain a Kubernetes node"
+}
 func (t *CordonDrainNodeTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",

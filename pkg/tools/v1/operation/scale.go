@@ -35,8 +35,10 @@ func NewScaleResourceTool(k8sClient *k8s.Client) *ScaleResourceTool {
 	return &ScaleResourceTool{k8sClient: k8sClient}
 }
 
-func (t *ScaleResourceTool) Name() string        { return "scale_resource" }
-func (t *ScaleResourceTool) Description() string { return "Scale a Deployment or StatefulSet to the specified number of replicas" }
+func (t *ScaleResourceTool) Name() string { return "scale_resource" }
+func (t *ScaleResourceTool) Description() string {
+	return "Scale a Deployment or StatefulSet to the specified number of replicas"
+}
 func (t *ScaleResourceTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",

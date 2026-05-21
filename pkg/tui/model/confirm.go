@@ -1,13 +1,14 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kubewise/kubewise/pkg/agent/operation"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
@@ -21,38 +22,49 @@ const (
 // ConfirmDoneMsg is sent when the modal has received an answer and closed.
 type ConfirmDoneMsg struct{}
 
-// ConfirmModel renders a modal overlay for operation step approval.
+// ConfirmModel renders a modal overlay for operation step approval (operation_step interaction).
 type ConfirmModel struct {
-	event     events.ConfirmRequestEvent
-	step      operation.OperationStep
-	mode      confirmMode
-	editInput textinput.Model
-	width     int
+	step       operation.OperationStep
+	queryID    string
+	totalSteps int
+	mode       confirmMode
+	editInput  textinput.Model
+	width      int
+	respCh     chan<- json.RawMessage
 }
 
-// NewConfirmModel creates a ConfirmModel from a ConfirmRequestEvent.
-func NewConfirmModel(ev events.ConfirmRequestEvent) ConfirmModel {
-	step, _ := ev.Step.(operation.OperationStep)
+// NewConfirmModel builds a confirm modal from stream.InteractionRequest (kind operation_step).
+func NewConfirmModel(queryID string, totalSteps int, stepJSON []byte, respCh chan<- json.RawMessage) (ConfirmModel, error) {
+	var step operation.OperationStep
+	if err := json.Unmarshal(stepJSON, &step); err != nil {
+		return ConfirmModel{}, err
+	}
 	ti := textinput.New()
 	ti.Placeholder = "Describe your correction..."
 	ti.CharLimit = 512
 	ti.Width = 54 // fits inside ModalStyle width=60 with padding
 	return ConfirmModel{
-		event:     ev,
-		step:      step,
-		mode:      confirmModeChoice,
-		editInput: ti,
-		width:     60,
-	}
+		queryID:    queryID,
+		totalSteps: totalSteps,
+		step:       step,
+		mode:       confirmModeChoice,
+		editInput:  ti,
+		width:      60,
+		respCh:     respCh,
+	}, nil
 }
 
-// respond sends the confirmation response (non-blocking) and returns a Cmd
-// that emits ConfirmDoneMsg to signal the parent to close the modal.
 func (m ConfirmModel) respond(confirmed bool, correction string) tea.Cmd {
 	return func() tea.Msg {
-		select {
-		case m.event.RespCh <- operation.ConfirmResponse{Confirmed: confirmed, Correction: correction}:
-		default:
+		raw, err := json.Marshal(stream.OperationConfirmResponse{
+			Confirmed:  confirmed,
+			Correction: correction,
+		})
+		if err == nil {
+			select {
+			case m.respCh <- raw:
+			default:
+			}
 		}
 		return ConfirmDoneMsg{}
 	}
@@ -91,7 +103,6 @@ func (m ConfirmModel) Update(msg tea.Msg) (ConfirmModel, tea.Cmd) {
 			return m, cmd
 		}
 	}
-	// Forward non-key messages to editInput when in edit mode
 	if m.mode == confirmModeEdit {
 		var cmd tea.Cmd
 		m.editInput, cmd = m.editInput.Update(msg)
@@ -102,8 +113,12 @@ func (m ConfirmModel) Update(msg tea.Msg) (ConfirmModel, tea.Cmd) {
 
 // View renders the confirm modal overlay.
 func (m ConfirmModel) View() string {
+	total := m.totalSteps
+	if total == 0 {
+		total = 1
+	}
 	title := styles.ModalTitleStyle.Render(
-		fmt.Sprintf("步骤 %d/%d：%s", m.step.StepIndex, m.event.TotalSteps, m.step.OperationType),
+		fmt.Sprintf("步骤 %d/%d：%s", m.step.StepIndex, total, m.step.OperationType),
 	)
 	resource := fmt.Sprintf("  资源：%s/%s", m.step.ResourceKind, m.step.ResourceName)
 	if m.step.Namespace != "" {
@@ -123,4 +138,6 @@ func (m ConfirmModel) View() string {
 }
 
 // QueryID returns the query ID this confirm modal is responding to.
-func (m ConfirmModel) QueryID() string { return m.event.QueryID }
+func (m ConfirmModel) QueryID() string {
+	return m.queryID
+}

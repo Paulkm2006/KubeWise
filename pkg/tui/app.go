@@ -2,13 +2,17 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
+	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tui/events"
@@ -31,11 +35,19 @@ type App struct {
 	input   model.InputModel
 	confirm *model.ConfirmModel // nil when no modal is shown
 
+	// Deploy TUI 组件（同一时刻最多一个 active）
+	chartSelectModel   *model.ChartSelectModel
+	manualInputModel   *model.ManualChartInputModel
+	deployConfirmModel *model.DeployConfirmModel
+	deployConfirmStreamResp chan<- json.RawMessage // deploy_confirm InteractionRequest
+	streamChartResp         chan<- json.RawMessage // chart_select InteractionRequest
+	streamChartCandidates  []catalog.ChartInfo
+
 	sessions []*session.Session
 	active   *session.Session
 	store    *session.Store
 
-	eventCh  chan events.TUIEvent
+	eventCh  chan stream.Event
 	cancelFn context.CancelFunc
 	running  bool
 	querySeq int
@@ -49,7 +61,7 @@ type App struct {
 }
 
 // NewApp creates the App, loading recent sessions from disk.
-func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) (*App, error) {
+func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSteps int, supervisorCfg supervisor.Config) (*App, error) {
 	store, err := session.NewStore()
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
@@ -66,6 +78,7 @@ func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervis
 	if err != nil {
 		return nil, err
 	}
+	routerAgent.SetLogger(log)
 
 	return &App{
 		sidebar:     model.NewSidebarModel(),
@@ -83,10 +96,108 @@ func (a App) Init() tea.Cmd {
 	return a.input.Init()
 }
 
-// listenForEvents returns a Cmd that blocks until an event arrives on ch.
-func listenForEvents(ch <-chan events.TUIEvent) tea.Cmd {
-	return func() tea.Msg {
-		return <-ch
+// listenStream waits for one stream.Event from agents.
+func (a App) listenStream() tea.Cmd {
+	return stream.Listen(a.eventCh)
+}
+
+func chartCandidateIndex(chosen *catalog.ChartInfo, list []catalog.ChartInfo) int {
+	if chosen == nil || len(list) == 0 {
+		return -1
+	}
+	for i := range list {
+		c := list[i]
+		if c.ChartName == chosen.ChartName && c.RepoName == chosen.RepoName && (c.RepoURL == chosen.RepoURL || chosen.RepoURL == "") {
+			return i
+		}
+	}
+	return -1
+}
+
+func (a App) dispatchInteractionRequest(ir stream.InteractionRequest) (tea.Model, tea.Cmd) {
+	switch ir.Kind {
+	case stream.KindOperationStep:
+		cm, err := model.NewConfirmModel(ir.QueryID, ir.TotalSteps, ir.Payload, ir.RespCh)
+		if err != nil {
+			return a, a.listenStream()
+		}
+		a.confirm = &cm
+		return a, a.listenStream()
+	case stream.KindChartSelect:
+		var p struct {
+			AppName    string               `json:"app_name"`
+			Candidates []catalog.ChartInfo `json:"candidates"`
+		}
+		if err := json.Unmarshal(ir.Payload, &p); err != nil {
+			return a, a.listenStream()
+		}
+		a.streamChartResp = ir.RespCh
+		a.streamChartCandidates = p.Candidates
+		m := model.NewChartSelectModel(ir.QueryID, p.AppName, p.Candidates)
+		a.chartSelectModel = &m
+		return a, tea.Batch(a.listenStream(), m.Init())
+	case stream.KindDeployConfirm:
+		var plan events.DeployPlan
+		if err := json.Unmarshal(ir.Payload, &plan); err != nil {
+			return a, a.listenStream()
+		}
+		a.deployConfirmStreamResp = ir.RespCh
+		m := model.NewDeployConfirmModel(ir.QueryID, plan, a.width, a.height)
+		a.deployConfirmModel = &m
+		return a, tea.Batch(a.listenStream(), m.Init())
+	default:
+		return a, a.listenStream()
+	}
+}
+
+func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
+	switch e := ev.(type) {
+	case stream.InteractionRequest:
+		return a.dispatchInteractionRequest(e)
+	case stream.StreamDone:
+		a.chat, _ = a.chat.Update(events.StreamDoneEvent{QueryID: e.QueryID, Result: e.Result})
+		a.running = false
+		a.input.SetEnabled(true)
+		a.persistAssistantMessage()
+		return a, nil
+	case stream.StreamErr:
+		err := e.Err
+		if err == nil {
+			err = fmt.Errorf("stream ended")
+		}
+		a.chat, _ = a.chat.Update(events.StreamErrEvent{QueryID: e.QueryID, Err: err})
+		a.running = false
+		a.input.SetEnabled(true)
+		return a, nil
+	default:
+		if te, ok := ToTUI(ev); ok {
+			return a.routeChatEvent(te)
+		}
+		return a, a.listenStream()
+	}
+}
+
+// routeChatEvent forwards progress/render TUI events to ChatModel.
+func (a App) routeChatEvent(te events.TUIEvent) (tea.Model, tea.Cmd) {
+	switch msg := te.(type) {
+	case events.AgentStartEvent,
+		events.AgentDoneEvent,
+		events.ToolCallEvent,
+		events.ToolDoneEvent,
+		events.ToolFailEvent,
+		events.RenderTextEvent,
+		events.RenderTableEvent,
+		events.RenderCodeEvent,
+		events.RenderKVEvent,
+		events.RenderListEvent,
+		events.RenderDetailEvent,
+		events.PhaseEvent,
+		events.SupervisorEvent:
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(msg)
+		return a, tea.Batch(a.listenStream(), chatCmd)
+	default:
+		return a, a.listenStream()
 	}
 }
 
@@ -119,39 +230,86 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	// TUI events from agents
-	case events.AgentStartEvent,
-		events.AgentDoneEvent,
-		events.ToolCallEvent,
-		events.ToolDoneEvent,
-		events.RenderTextEvent,
-		events.RenderTableEvent,
-		events.RenderCodeEvent,
-		events.RenderKVEvent,
-		events.RenderListEvent,
-		events.PhaseEvent,
-			events.SupervisorEvent:
-		var chatCmd tea.Cmd
-		a.chat, chatCmd = a.chat.Update(msg)
-		return a, tea.Batch(listenForEvents(a.eventCh), chatCmd)
+	case stream.TeaMsg:
+		return a.dispatchStreamEvent(msg.Event)
 
-	case events.ConfirmRequestEvent:
-		cm := model.NewConfirmModel(msg)
-		a.confirm = &cm
-		return a, listenForEvents(a.eventCh)
+	case model.ChartSelectedMsg:
+		if a.streamChartResp != nil {
+			if msg.ChartInfo == nil {
+				raw, _ := json.Marshal(stream.ChartSelectResponse{Cancelled: true})
+				select {
+				case a.streamChartResp <- raw:
+				default:
+				}
+				a.streamChartResp = nil
+				a.streamChartCandidates = nil
+				a.chartSelectModel = nil
+				return a, a.listenStream()
+			}
+			if msg.ChartInfo.Source == "manual" {
+				a.chartSelectModel = nil
+				m := model.NewManualChartInputModel(msg.QueryID)
+				a.manualInputModel = &m
+				return a, tea.Batch(a.listenStream(), m.Init())
+			}
+			idx := chartCandidateIndex(msg.ChartInfo, a.streamChartCandidates)
+			raw, err := json.Marshal(stream.ChartSelectResponse{CandidateIndex: idx})
+			if err == nil {
+				select {
+				case a.streamChartResp <- raw:
+				default:
+				}
+			}
+			a.streamChartResp = nil
+			a.streamChartCandidates = nil
+			a.chartSelectModel = nil
+			return a, a.listenStream()
+		}
+		a.chartSelectModel = nil
+		return a, a.listenStream()
 
-	case events.StreamDoneEvent:
-		a.chat, _ = a.chat.Update(msg)
-		a.running = false
-		a.input.SetEnabled(true)
-		a.persistAssistantMessage()
-		return a, nil
+	case model.ManualChartInputDoneMsg:
+		if a.streamChartResp != nil {
+			var r stream.ChartSelectResponse
+			if msg.ChartInfo == nil {
+				r = stream.ChartSelectResponse{Cancelled: true}
+			} else {
+				r = stream.ChartSelectResponse{
+					UseManualChart:  true,
+					ManualRepoURL:   msg.ChartInfo.RepoURL,
+					ManualChartName: msg.ChartInfo.ChartName,
+				}
+			}
+			raw, err := json.Marshal(r)
+			if err == nil {
+				select {
+				case a.streamChartResp <- raw:
+				default:
+				}
+			}
+			a.streamChartResp = nil
+			a.streamChartCandidates = nil
+		}
+		a.manualInputModel = nil
+		return a, a.listenStream()
 
-	case events.StreamErrEvent:
-		a.chat, _ = a.chat.Update(msg)
-		a.running = false
-		a.input.SetEnabled(true)
-		return a, nil
+	case model.DeployConfirmDoneMsg:
+		if a.deployConfirmStreamResp != nil {
+			raw, err := json.Marshal(stream.DeployConfirmResponse{
+				Action:     msg.Decision.Action,
+				Values:     msg.Decision.Values,
+				Correction: msg.Decision.Correction,
+			})
+			if err == nil {
+				select {
+				case a.deployConfirmStreamResp <- raw:
+				default:
+				}
+			}
+			a.deployConfirmStreamResp = nil
+		}
+		a.deployConfirmModel = nil
+		return a, a.listenStream()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -166,11 +324,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case model.ConfirmDoneMsg:
 		a.confirm = nil
-		return a, listenForEvents(a.eventCh)
+		return a, a.listenStream()
 	}
 
 	// Route remaining messages (including unmatched KeyMsg) to sub-models
 	var cmd tea.Cmd
+	if a.deployConfirmModel != nil {
+		updated, dcCmd := a.deployConfirmModel.Update(msg)
+		*a.deployConfirmModel = updated
+		return a, dcCmd
+	}
+	if a.chartSelectModel != nil {
+		updated, csCmd := a.chartSelectModel.Update(msg)
+		*a.chartSelectModel = updated
+		return a, csCmd
+	}
+	if a.manualInputModel != nil {
+		updated, miCmd := a.manualInputModel.Update(msg)
+		*a.manualInputModel = updated
+		return a, miCmd
+	}
 	if a.confirm != nil {
 		*a.confirm, cmd = a.confirm.Update(msg)
 		return a, cmd
@@ -188,6 +361,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // the key was handled, (nil, false) otherwise so the key can be forwarded to
 // the focused sub-model.
 func (a App) handleShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
+	// 如果 deploy TUI 组件 active，不拦截任何方向键/快捷键，
+	// 让按键事件透传到子模型的 Update() 方法。
+	if a.chartSelectModel != nil || a.deployConfirmModel != nil || a.manualInputModel != nil || a.confirm != nil {
+		return nil, false
+	}
+
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		if a.running {
@@ -277,17 +456,26 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 
 	a.querySeq++
 	queryID := fmt.Sprintf("q-%d", a.querySeq)
-	a.eventCh = make(chan events.TUIEvent, 64)
+	a.eventCh = make(chan stream.Event, 64)
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelFn = cancel
 
 	routerAgent := a.routerAgent
 	eventCh := a.eventCh
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err := fmt.Errorf("agent panic: %v", r)
+				select {
+				case eventCh <- stream.StreamErr{QueryID: queryID, Err: err}:
+				default:
+				}
+			}
+		}()
 		_ = routerAgent.HandleQueryStream(ctx, text, queryID, eventCh)
 	}()
 
-	return a, listenForEvents(a.eventCh)
+	return a, a.listenStream()
 }
 
 func (a *App) newSession() {
@@ -360,6 +548,16 @@ func (a *App) doLayout() {
 
 // View renders the full TUI.
 func (a App) View() string {
+	// Deploy TUI 组件优先级最高（覆盖主界面）
+	if a.deployConfirmModel != nil {
+		return a.deployConfirmModel.View()
+	}
+	if a.chartSelectModel != nil {
+		return a.chartSelectModel.View()
+	}
+	if a.manualInputModel != nil {
+		return a.manualInputModel.View()
+	}
 	if a.confirm != nil {
 		return a.confirm.View()
 	}
@@ -374,8 +572,8 @@ func (a App) View() string {
 }
 
 // Run starts the bubbletea program.
-func Run(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) error {
-	app, err := NewApp(k8sClient, llmClient, maxSteps, supervisorCfg)
+func Run(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSteps int, supervisorCfg supervisor.Config) error {
+	app, err := NewApp(k8sClient, llmClient, log, maxSteps, supervisorCfg)
 	if err != nil {
 		return err
 	}

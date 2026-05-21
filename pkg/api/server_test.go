@@ -11,20 +11,20 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/session"
 )
 
 type mockStreamQuerier struct {
 	handleQuery       func(string) (string, error)
-	handleQueryStream func(ctx context.Context, query, queryID string, eventCh chan<- events.TUIEvent) error
+	handleQueryStream func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error
 }
 
 func (m *mockStreamQuerier) HandleQuery(q string) (string, error) {
 	return m.handleQuery(q)
 }
 
-func (m *mockStreamQuerier) HandleQueryStream(ctx context.Context, query, queryID string, eventCh chan<- events.TUIEvent) error {
+func (m *mockStreamQuerier) HandleQueryStream(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
 	return m.handleQueryStream(ctx, query, queryID, eventCh)
 }
 
@@ -39,7 +39,7 @@ func setupEcho(h *Handler) *echo.Echo {
 	v1 := e.Group("/api/v1")
 	v1.POST("/chat", h.ChatSync)
 	v1.GET("/chat/stream", h.ChatStream)
-	v1.POST("/chat/confirm", h.ChatConfirm)
+	v1.POST("/chat/interaction", h.ChatInteraction)
 	v1.GET("/sessions", h.ListSessions)
 	v1.POST("/sessions", h.CreateSession)
 	v1.GET("/sessions/:id", h.GetSession)
@@ -104,10 +104,10 @@ func TestChatSyncEmptyQuery(t *testing.T) {
 
 func TestChatStreamSSE(t *testing.T) {
 	q := &mockStreamQuerier{
-		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- events.TUIEvent) error {
-			eventCh <- events.PhaseEvent{QueryID: queryID, Phase: "thinking"}
-			eventCh <- events.RenderTextEvent{QueryID: queryID, Text: "hello"}
-			eventCh <- events.StreamDoneEvent{QueryID: queryID, Result: "hello"}
+		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
+			eventCh <- stream.Phase{QueryID: queryID, Phase: "thinking"}
+			eventCh <- stream.RenderText{QueryID: queryID, Text: "hello"}
+			eventCh <- stream.StreamDone{QueryID: queryID, Result: "hello"}
 			return nil
 		},
 	}
@@ -146,25 +146,28 @@ func TestChatStreamNoQuery(t *testing.T) {
 }
 
 func TestConfirmFlow(t *testing.T) {
-	respCh := make(chan any, 1)
 	q := &mockStreamQuerier{
-		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- events.TUIEvent) error {
-			eventCh <- events.ConfirmRequestEvent{
-				QueryID: queryID, Step: map[string]string{"op": "scale"},
-				TotalSteps: 1, RespCh: respCh,
+		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
+			stepJSON := json.RawMessage(`{"operation_type":"scale"}`)
+			respCh := make(chan json.RawMessage, 1)
+			eventCh <- stream.InteractionRequest{
+				QueryID: queryID, Kind: stream.KindOperationStep,
+				Payload: stepJSON, TotalSteps: 1, RespCh: respCh,
 			}
 			select {
 			case <-respCh:
 			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(5 * time.Second):
+				return context.DeadlineExceeded
 			}
-			eventCh <- events.StreamDoneEvent{QueryID: queryID, Result: "done"}
+			eventCh <- stream.StreamDone{QueryID: queryID, Result: "done"}
 			return nil
 		},
 	}
 	h := NewHandlerWithDeps(q, newTestStore(t))
 	e := setupEcho(h)
 
-	// Start stream in background
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?query=scale", nil)
 	done := make(chan struct{})
@@ -173,51 +176,126 @@ func TestConfirmFlow(t *testing.T) {
 		e.ServeHTTP(rec, req)
 	}()
 
-	// Wait for confirm_request
-	var confirmID string
+	var interactionID string
 	deadline := time.After(5 * time.Second)
 	for {
 		select {
 		case <-deadline:
-			t.Fatal("timed out waiting for confirm_request")
+			t.Fatal("timed out waiting for interaction_request")
 		case <-done:
-			t.Fatal("stream ended before confirm_request")
+			t.Fatal("stream ended before interaction_request")
 		default:
 		}
 		body := rec.Body.String()
-		if strings.Contains(body, "event: confirm_request") {
+		if strings.Contains(body, "event: interaction_request") {
 			for _, line := range strings.Split(body, "\n") {
 				if strings.HasPrefix(line, "data: ") {
-					var data ConfirmRequestData
-					if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &data) == nil && data.ConfirmID != "" {
-						confirmID = data.ConfirmID
+					var data InteractionRequestData
+					if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &data) == nil && data.InteractionID != "" {
+						interactionID = data.InteractionID
 					}
 				}
 			}
-			if confirmID != "" {
+			if interactionID != "" {
 				break
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// POST confirmation
-	confirmBody := `{"confirm_id":"` + confirmID + `","confirmed":true}`
-	cReq := httptest.NewRequest(http.MethodPost, "/api/v1/chat/confirm", strings.NewReader(confirmBody))
+	ans := `{"interaction_id":"` + interactionID + `","payload":{"confirmed":true}}`
+	cReq := httptest.NewRequest(http.MethodPost, "/api/v1/chat/interaction", strings.NewReader(ans))
 	cReq.Header.Set("Content-Type", "application/json")
 	cRec := httptest.NewRecorder()
 	e.ServeHTTP(cRec, cReq)
 
 	if cRec.Code != http.StatusOK {
-		t.Fatalf("confirm: expected 200, got %d: %s", cRec.Code, cRec.Body.String())
+		t.Fatalf("interaction: expected 200, got %d: %s", cRec.Code, cRec.Body.String())
 	}
 }
 
-func TestConfirmNotFound(t *testing.T) {
+func TestInteractionOperationStepFlow(t *testing.T) {
+	q := &mockStreamQuerier{
+		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
+			stepJSON := json.RawMessage(`{"step_index":1,"operation_type":"restart","resource_kind":"Deployment","resource_name":"demo","description":"bounce"}`)
+			respCh := make(chan json.RawMessage, 1)
+			eventCh <- stream.InteractionRequest{
+				QueryID:    queryID,
+				Kind:       stream.KindOperationStep,
+				Payload:    stepJSON,
+				TotalSteps: 3,
+				RespCh:     respCh,
+			}
+			select {
+			case <-respCh:
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(5 * time.Second):
+				return context.DeadlineExceeded
+			}
+			eventCh <- stream.StreamDone{QueryID: queryID, Result: "done"}
+			return nil
+		},
+	}
+	h := NewHandlerWithDeps(q, newTestStore(t))
+	e := setupEcho(h)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?query=op", nil)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e.ServeHTTP(rec, req)
+	}()
+
+	var interactionID string
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for interaction_request")
+		case <-done:
+			t.Fatal("stream ended before interaction_request")
+		default:
+		}
+		body := rec.Body.String()
+		if strings.Contains(body, "event: interaction_request") {
+			for _, line := range strings.Split(body, "\n") {
+				if strings.HasPrefix(line, "data: ") {
+					var data InteractionRequestData
+					if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &data) == nil && data.InteractionID != "" && data.Kind == string(stream.KindOperationStep) {
+						interactionID = data.InteractionID
+					}
+				}
+			}
+			if interactionID != "" {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	ans := `{"interaction_id":"` + interactionID + `","payload":{"confirmed":true}}`
+	cReq := httptest.NewRequest(http.MethodPost, "/api/v1/chat/interaction", strings.NewReader(ans))
+	cReq.Header.Set("Content-Type", "application/json")
+	cRec := httptest.NewRecorder()
+	e.ServeHTTP(cRec, cReq)
+	if cRec.Code != http.StatusOK {
+		t.Fatalf("interaction: expected 200, got %d: %s", cRec.Code, cRec.Body.String())
+	}
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream did not complete")
+	}
+}
+
+func TestInteractionNotFound(t *testing.T) {
 	h := NewHandlerWithDeps(&mockStreamQuerier{}, newTestStore(t))
 	e := setupEcho(h)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat/confirm", strings.NewReader(`{"confirm_id":"bad","confirmed":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat/interaction", strings.NewReader(`{"interaction_id":"bad","payload":{}}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
@@ -298,16 +376,16 @@ func TestDeleteSessionNotFound(t *testing.T) {
 
 func TestSSEAllEventTypes(t *testing.T) {
 	q := &mockStreamQuerier{
-		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- events.TUIEvent) error {
-			eventCh <- events.AgentStartEvent{QueryID: queryID, AgentName: "query"}
-			eventCh <- events.ToolCallEvent{QueryID: queryID, ToolName: "list_pods", Step: 1}
-			eventCh <- events.ToolDoneEvent{QueryID: queryID, ToolName: "list_pods", Step: 1, Elapsed: time.Second}
-			eventCh <- events.RenderTableEvent{QueryID: queryID, Headers: []string{"Name"}, Rows: [][]string{{"pod-1"}}}
-			eventCh <- events.RenderCodeEvent{QueryID: queryID, Language: "yaml", Content: "apiVersion: v1"}
-			eventCh <- events.RenderKVEvent{QueryID: queryID, Pairs: []events.KVPair{{Key: "k", Value: "v"}}}
-			eventCh <- events.RenderListEvent{QueryID: queryID, Items: []events.ListItem{{Status: "ok", Text: "t"}}}
-			eventCh <- events.SupervisorEvent{QueryID: queryID, Reason: "loop", Decision: "continue", Detail: "d"}
-			eventCh <- events.StreamDoneEvent{QueryID: queryID, Result: "done"}
+		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
+			eventCh <- stream.AgentStart{QueryID: queryID, AgentName: "query"}
+			eventCh <- stream.ToolCall{QueryID: queryID, ToolName: "list_pods", Step: 1}
+			eventCh <- stream.ToolDone{QueryID: queryID, ToolName: "list_pods", Step: 1, Elapsed: time.Second}
+			eventCh <- stream.RenderTable{QueryID: queryID, Headers: []string{"Name"}, Rows: [][]string{{"pod-1"}}}
+			eventCh <- stream.RenderCode{QueryID: queryID, Language: "yaml", Content: "apiVersion: v1"}
+			eventCh <- stream.RenderKV{QueryID: queryID, Pairs: []stream.KVPair{{Key: "k", Value: "v"}}}
+			eventCh <- stream.RenderList{QueryID: queryID, Items: []stream.ListItem{{Status: "ok", Text: "t"}}}
+			eventCh <- stream.Supervisor{QueryID: queryID, Reason: "loop", Decision: "continue", Detail: "d"}
+			eventCh <- stream.StreamDone{QueryID: queryID, Result: "done"}
 			return nil
 		},
 	}
@@ -330,20 +408,20 @@ func TestSSEAllEventTypes(t *testing.T) {
 	}
 }
 
-func TestCleanupPendingConfirms(t *testing.T) {
-	ch := make(chan any, 1)
+func TestCleanupPendingInteractions(t *testing.T) {
+	jch := make(chan json.RawMessage, 1)
 	h := &Handler{
-		pendingConfirms: map[string]*pendingConfirm{
-			"a": {queryID: "q1", respCh: ch},
-			"b": {queryID: "q2", respCh: ch},
-			"c": {queryID: "q1", respCh: ch},
+		pendingInteractions: map[string]*pendingInteraction{
+			"a": {queryID: "q1", respCh: jch},
+			"b": {queryID: "q2", respCh: jch},
+			"c": {queryID: "q1", respCh: jch},
 		},
 	}
-	h.cleanupPendingConfirms("q1")
-	if len(h.pendingConfirms) != 1 {
-		t.Fatalf("expected 1, got %d", len(h.pendingConfirms))
+	h.cleanupPendingInteractions("q1")
+	if len(h.pendingInteractions) != 1 {
+		t.Fatalf("expected 1 pending interaction, got %d", len(h.pendingInteractions))
 	}
-	if _, ok := h.pendingConfirms["b"]; !ok {
-		t.Fatal("expected 'b' to remain")
+	if _, ok := h.pendingInteractions["b"]; !ok {
+		t.Fatal("expected interaction 'b' to remain")
 	}
 }

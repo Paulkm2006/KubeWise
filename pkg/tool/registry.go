@@ -2,6 +2,7 @@ package tool
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/kubewise/kubewise/pkg/llm"
@@ -69,12 +70,32 @@ func (r *Registry) GetTool(name string) (Tool, bool) {
 // GetAllFunctionDefinitions 获取所有工具的Function Definition列表
 func (r *Registry) GetAllFunctionDefinitions() []llm.FunctionDefinition {
 	r.mu.RLock()
+	names := make([]string, 0, len(r.metadata))
+	for name := range r.metadata {
+		names = append(names, name)
+	}
+	r.mu.RUnlock()
+	return r.GetFunctionDefinitions(names)
+}
+
+// GetFunctionDefinitions returns definitions for the given tool names in sorted order.
+func (r *Registry) GetFunctionDefinitions(names []string) []llm.FunctionDefinition {
+	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var defs []llm.FunctionDefinition
-	for _, meta := range r.metadata {
-		defs = append(defs, meta.ToFunctionDefinition())
+	allowed := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		allowed[n] = struct{}{}
 	}
+	var defs []llm.FunctionDefinition
+	for name, meta := range r.metadata {
+		if _, ok := allowed[name]; ok {
+			defs = append(defs, meta.ToFunctionDefinition())
+		}
+	}
+	sort.Slice(defs, func(i, j int) bool {
+		return defs[i].Name < defs[j].Name
+	})
 	return defs
 }
 

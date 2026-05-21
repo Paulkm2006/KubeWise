@@ -8,13 +8,13 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/api"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/log"
 	"github.com/kubewise/kubewise/pkg/tui"
 )
 
@@ -54,6 +54,7 @@ var chatCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("初始化K8s客户端失败: %w", err)
 		}
+		k8sClient.SetLogger(logger)
 
 		// 初始化LLM客户端
 		llmConfig := llm.Config{
@@ -65,12 +66,14 @@ var chatCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("初始化LLM客户端失败: %w", err)
 		}
+		llmClient.SetLogger(logger)
 
 		// 初始化路由Agent
 		routerAgent, err := router.New(k8sClient, llmClient, viper.GetInt("agent.max_steps"), getSupervisorConfig())
 		if err != nil {
 			return fmt.Errorf("初始化路由Agent失败: %w", err)
 		}
+		routerAgent.SetLogger(logger)
 
 		// 处理查询
 		fmt.Println("\n处理中...")
@@ -102,6 +105,7 @@ var tuiCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("初始化K8s客户端失败: %w", err)
 		}
+		k8sClient.SetLogger(logger)
 
 		llmConfig := llm.Config{
 			Model:   viper.GetString("llm.model"),
@@ -112,8 +116,9 @@ var tuiCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("初始化LLM客户端失败: %w", err)
 		}
+		llmClient.SetLogger(logger)
 
-		return tui.Run(k8sClient, llmClient, viper.GetInt("agent.max_steps"), getSupervisorConfig())
+		return tui.Run(k8sClient, llmClient, logger, viper.GetInt("agent.max_steps"), getSupervisorConfig())
 	},
 }
 
@@ -154,7 +159,11 @@ var serveCmd = &cobra.Command{
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	err := rootCmd.Execute()
+	if logger != nil {
+		_ = logger.Sync()
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
 		os.Exit(1)
 	}
@@ -171,6 +180,9 @@ func init() {
 	rootCmd.PersistentFlags().StringP("model", "m", "glm-5.1", "LLM模型名称")
 	rootCmd.PersistentFlags().StringP("api-key", "a", "", "LLM API Key")
 	rootCmd.PersistentFlags().StringP("api-base", "b", "", "LLM API Base URL")
+	rootCmd.PersistentFlags().String("log-level", "info", "日志级别: debug / info / warn / error")
+	rootCmd.PersistentFlags().String("log-file", "stderr", "日志文件路径 (stderr 或文件路径)")
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "启用详细日志（默认 debug，写入 kubewise.log，不干扰 TUI）")
 	rootCmd.PersistentFlags().Int("max-steps", 20, "Agent最大工具调用轮次")
 	rootCmd.PersistentFlags().Bool("no-supervisor", false, "禁用supervisor自动干预")
 
@@ -178,6 +190,9 @@ func init() {
 	viper.BindPFlag("llm.model", rootCmd.PersistentFlags().Lookup("model"))
 	viper.BindPFlag("llm.api_key", rootCmd.PersistentFlags().Lookup("api-key"))
 	viper.BindPFlag("llm.api_base", rootCmd.PersistentFlags().Lookup("api-base"))
+	viper.BindPFlag("log.level", rootCmd.PersistentFlags().Lookup("log-level"))
+	viper.BindPFlag("log.file", rootCmd.PersistentFlags().Lookup("log-file"))
+	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 	viper.BindPFlag("agent.max_steps", rootCmd.PersistentFlags().Lookup("max-steps"))
 
 	serveCmd.Flags().String("addr", ":8080", "API server listen address")
@@ -218,18 +233,23 @@ func initConfig() {
 }
 
 func initLogger() {
-	config := zap.NewProductionConfig()
-	config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
-	config.OutputPaths = []string{"stderr"}
-	config.ErrorOutputPaths = []string{"stderr"}
+	levelFlag := rootCmd.PersistentFlags().Lookup("log-level")
+	levelChanged := levelFlag != nil && levelFlag.Changed
+	fileFlag := rootCmd.PersistentFlags().Lookup("log-file")
+	fileChanged := fileFlag != nil && fileFlag.Changed
 
 	var err error
-	logger, err = config.Build()
+	logger, err = log.New(log.Options{
+		Verbose:          viper.GetBool("verbose"),
+		Level:            viper.GetString("log.level"),
+		File:             viper.GetString("log.file"),
+		LevelFlagChanged: levelChanged,
+		FileFlagChanged:  fileChanged,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "初始化日志失败: %v\n", err)
 		os.Exit(1)
 	}
-	defer logger.Sync()
 }
 
 // getSupervisorConfig builds a supervisor.Config from Viper, respecting the --no-supervisor flag.

@@ -85,7 +85,9 @@ paths:
                   - `render_code`: Code block result (YAML/JSON)
                   - `render_kv`: Key-value pairs result
                   - `render_list`: Status list result
-                  - `confirm_request`: Operation step needs confirmation
+                  - `interaction_request`: Human-in-the-loop (operation confirm, chart select, deploy confirm)
+                  - `tool_fail`: Tool failed (includes error message)
+                  - `render_detail`: Structured resource detail
                   - `stream_done`: Query completed successfully
                   - `stream_err`: Query failed with error
                   - `supervisor`: Supervisor intervention event
@@ -96,21 +98,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/v1/chat/confirm:
+  /api/v1/chat/interaction:
     post:
-      summary: Confirm operation step
+      summary: Answer human-in-the-loop interaction
       description: |
-        Respond to a `confirm_request` SSE event. The agent is blocked until this endpoint is called.
-      operationId: chatConfirm
+        Respond to an `interaction_request` SSE event. The agent is blocked until this endpoint is called.
+        Payload shape depends on `kind` in the SSE event (e.g. `operation_step`, `chart_select`, `deploy_confirm`).
+      operationId: chatInteraction
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ConfirmRequest"
+              $ref: "#/components/schemas/InteractionAnswerRequest"
       responses:
         "200":
-          description: Confirmation accepted
+          description: Response accepted
           content:
             application/json:
               schema:
@@ -126,13 +129,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: confirm_id not found or already responded
+          description: interaction_id not found or already responded
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Agent no longer waiting for confirmation
+          description: Agent no longer waiting for interaction
           content:
             application/json:
               schema:
@@ -248,21 +251,17 @@ components:
         result:
           type: string
 
-    ConfirmRequest:
+    InteractionAnswerRequest:
       type: object
       required:
-        - confirm_id
-        - confirmed
+        - interaction_id
       properties:
-        confirm_id:
+        interaction_id:
           type: string
-          description: ID from the confirm_request SSE event
-        confirmed:
-          type: boolean
-          description: true to execute the step, false to skip
-        correction:
-          type: string
-          description: Optional correction instructions (when confirmed is false)
+          description: ID from the interaction_request SSE event
+        payload:
+          type: object
+          description: Kind-specific JSON body (e.g. confirmed/correction for operation_step)
 
     CreateSessionRequest:
       type: object

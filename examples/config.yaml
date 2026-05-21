@@ -16,6 +16,13 @@ llm:
   # DeepSeek: https://api.deepseek.com/v1
   api_base: "https://open.bigmodel.cn/api/paas/v4/"
 
+# 日志配置（需配合 -v 命令行选项启用，不传 -v 则不输出任何日志）
+log:
+  # 日志级别: debug / info / warn / error（-v 模式默认 debug）
+  level: "info"
+  # 日志文件路径（-v 模式默认 ./kubewise.log）
+  file: "stderr"
+
 # Agent相关配置
 agent:
   # 最大工具调用轮次，默认20。复杂查询可能需要更多轮次

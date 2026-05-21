@@ -14,7 +14,7 @@ type Message struct {
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 	// Usage is populated on assistant messages returned by ChatCompletion; ignored on input.
-	Usage      *Usage     `json:"usage,omitempty"`
+	Usage *Usage `json:"usage,omitempty"`
 }
 
 // ToolCall 工具调用结构体

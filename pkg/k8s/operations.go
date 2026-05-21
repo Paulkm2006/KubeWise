@@ -107,8 +107,8 @@ func gvrFromUnstructured(obj *unstructured.Unstructured) schema.GroupVersionReso
 	gvk := obj.GroupVersionKind()
 	resource := strings.ToLower(gvk.Kind) + "s"
 	return schema.GroupVersionResource{
-		Group:   gvk.Group,
-		Version: gvk.Version,
+		Group:    gvk.Group,
+		Version:  gvk.Version,
 		Resource: resource,
 	}
 }

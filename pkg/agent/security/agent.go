@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tool"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
 
 	// 加载安全审计工具，触发init函数注册
@@ -22,8 +24,8 @@ const DefaultMaxSteps = 20
 // Option is a functional option for Agent.
 type Option func(*Agent)
 
-// WithEventCh sets an event channel and query ID on the agent.
-func WithEventCh(ch chan<- events.TUIEvent, queryID string) Option {
+// WithEventChannel sets the stream event channel and query ID on the agent.
+func WithEventChannel(ch chan<- stream.Event, queryID string) Option {
 	return func(a *Agent) {
 		a.eventCh = ch
 		a.queryID = queryID
@@ -48,17 +50,28 @@ func WithSupervisorConfig(cfg supervisor.Config) Option {
 
 // Agent 安全审计Agent
 type Agent struct {
-	k8sClient    *k8s.Client
-	llmClient    *llm.Client
-	toolRegistry *tool.Registry
-	eventCh      chan<- events.TUIEvent
-	queryID      string
-	maxSteps     int
+	k8sClient     *k8s.Client
+	llmClient     *llm.Client
+	toolRegistry  *tool.Registry
+	eventCh       chan<- stream.Event
+	queryID       string
+	log           *zap.Logger
+	maxSteps      int
 	supervisorCfg supervisor.Config
 }
 
+// SetLogger injects a logger for debug output.
+func (a *Agent) SetLogger(l *zap.Logger) { a.log = l }
+
+func (a *Agent) logger() *zap.Logger {
+	if a.log == nil {
+		return zap.NewNop()
+	}
+	return a.log
+}
+
 // emit sends an event to the event channel if one is set.
-func (a *Agent) emit(e events.TUIEvent) {
+func (a *Agent) emit(e stream.Event) {
 	if a.eventCh == nil {
 		return
 	}
@@ -78,10 +91,10 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, 
 		return nil, fmt.Errorf("加载工具注册中心失败: %w", err)
 	}
 	a := &Agent{
-		k8sClient:    k8sClient,
-		llmClient:    llmClient,
-		toolRegistry: registry,
-		maxSteps:     DefaultMaxSteps,
+		k8sClient:     k8sClient,
+		llmClient:     llmClient,
+		toolRegistry:  registry,
+		maxSteps:      DefaultMaxSteps,
 		supervisorCfg: supervisor.DefaultConfig(),
 	}
 	for _, opt := range opts {
@@ -117,9 +130,10 @@ func (a *Agent) buildSystemPrompt() string {
 func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (string, error) {
 	start := time.Now()
 	var inTokens, outTokens int
-	a.emit(events.AgentStartEvent{AgentName: "Security Agent", QueryID: a.queryID})
+	a.emit(stream.AgentStart{AgentName: "Security Agent", QueryID: a.queryID})
+	a.logger().Debug("handling security query", zap.String("query", userQuery))
 	defer func() {
-		a.emit(events.AgentDoneEvent{
+		a.emit(stream.AgentDone{
 			QueryID:   a.queryID,
 			Duration:  time.Since(start),
 			InTokens:  inTokens,
@@ -146,7 +160,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 outer:
 	for iterationsRemaining > 0 {
 		for step := range iterationsRemaining {
-			a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: "thinking"})
+			a.emit(stream.Phase{QueryID: a.queryID, Phase: "thinking"})
 			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
 			if err != nil {
 				return "", fmt.Errorf("LLM调用失败: %w", err)
@@ -175,11 +189,11 @@ outer:
 					})
 					continue
 				}
-				a.emit(events.PhaseEvent{QueryID: a.queryID, Phase: fmt.Sprintf("running tool: %s", funcCall.Name)})
+				a.emit(stream.Phase{QueryID: a.queryID, Phase: fmt.Sprintf("running tool: %s", funcCall.Name)})
 				toolStart := time.Now()
-				a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: step + 1})
+				a.emit(stream.ToolCall{QueryID: a.queryID, ToolName: funcCall.Name, Step: step + 1})
 				result, err := t.Execute(ctx, funcCall.Arguments)
-				a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: step + 1})
+				a.emit(stream.ToolDone{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: step + 1})
 				if err != nil {
 					result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用工具。", err)
 				}
@@ -193,7 +207,7 @@ outer:
 
 			// Supervisor: cheap loop check after tool execution
 			if triggered, loopResult := sv.CheckLoop(ctx, step, resp.ToolCalls, messages); triggered {
-				a.emit(events.SupervisorEvent{
+				a.emit(stream.Supervisor{
 					QueryID:  a.queryID,
 					Reason:   "loop detected",
 					Decision: string(loopResult.Decision),
@@ -219,7 +233,7 @@ outer:
 		if err != nil {
 			return "", fmt.Errorf("超过最大调用轮次（%d），无法完成安全审计，可通过 --max-steps 参数或 agent.max_steps 配置项调大", a.maxSteps)
 		}
-		a.emit(events.SupervisorEvent{
+		a.emit(stream.Supervisor{
 			QueryID:  a.queryID,
 			Reason:   "max steps reached",
 			Decision: string(result.Decision),

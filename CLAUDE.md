@@ -2,80 +2,77 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Common Commands
+## Build & Test
 
-Use these make commands for common development tasks:
 ```bash
-# Build binary for current platform
-make build
-
-# Build binaries for all platforms (Linux, Windows, macOS)
-make build-all
-
-# Install binary to /usr/local/bin
-make install
-
-# Run all tests
-make test
-
-# Run linter (golangci-lint)
-make lint
-
-# Format code with go fmt
-make fmt
-
-# Clean up compiled binaries
-make clean
-
-# Download and tidy dependencies
-make deps
+go build -o kubewise ./cmd        # build binary
+go test ./...                     # run all tests
+go test -run TestX ./pkg/...      # run a single test
+go vet ./...                      # vet
 ```
 
-## High-Level Architecture
+No Makefile — all operations use `go` directly.
 
-KubeWise is a Kubernetes intelligent operation and maintenance Agent system that integrates LLM natural language understanding with Kubernetes API capabilities.
+## Architecture
 
-### Core Flow
-1. **CLI Entry Point** (`cmd/main.go`): Uses Cobra for command line parsing, Viper for configuration loading (supports config file, environment variables, CLI flags). Initializes K8s client and LLM client on startup.
-2. **Router Agent** (`pkg/agent/router/agent.go`): First layer that classifies user query intent into one of four types:
-   - `query`: Information retrieval requests
-   - `operation`: Resource modification requests (in development)
-   - `troubleshooting`: Issue diagnosis requests (in development)
-   - `security`: Security audit requests (in development)
-   Extracts key entities (namespace, resource name, resource type) from queries and routes to the appropriate specialized agent.
-3. **Query Agent** (`pkg/agent/query/agent.go`): Handles all information retrieval queries. Supports up to 5 rounds of tool calling to gather necessary information:
-   - Uses dynamic tool registry to load available K8s query tools
-   - Automatically parses multiple tool call formats (OpenAI, GLM, Ark, etc.)
-   - Returns tool call errors to the LLM for parameter correction
-   - Generates natural language responses once sufficient information is gathered
+KubeWise is a multi-agent Kubernetes operations system with a TUI. The flow is:
 
-### Key Components
-- **K8s Client** (`pkg/k8s/client.go`): Wraps the official Kubernetes Go client, provides unified access to cluster resources.
-- **LLM Client** (`pkg/llm/client.go`): Generic client compatible with all OpenAI API-compatible LLM providers (GLM, Qwen, DeepSeek, etc.).
-- **Tool Registry** (`pkg/tool/registry.go`): Dynamic tool registration system:
-  - Tools are registered via `RegisterGlobal()` in their package `init()` functions
-  - Automatically discovered and loaded at runtime with dependency injection
-  - Supports dynamic generation of LLM function definitions
-- **Tool Interface** (`pkg/tools/interface.go`): All tools implement this common interface:
-  - `Name()`: Returns unique snake_case identifier for the tool
-  - `Description()`: Returns human-readable function description
-  - `Parameters()`: Returns JSON Schema for tool parameters
-  - `Execute()`: Runs the tool with provided arguments
+```
+User input (CLI or TUI) → Router Agent → Sub-agent → Tool Registry → K8s (client-go)
+```
 
-### Tool Organization
-Query tools are located in `pkg/tools/v1/query/`, each as a separate file:
-- `list_persistent_volumes.go`: List all PVs in the cluster
-- `find_pods_using_pvc.go`: Find pods using a specific PVC
-- `list_pods_in_namespace.go`: List pods in a namespace
-- `get_pod_resource_usage.go`: Get resource configuration for a specific pod
-- `list_namespaces.go`: List all namespaces
-- `list_configmaps_in_namespace.go`: List ConfigMaps in a namespace
-- `get_configmap_content.go`: Get content of a specific ConfigMap
-- `list_custom_resources_by_gvr.go`: List custom resources by GVR
-- `get_custom_resource_by_gvr_and_name.go`: Get specific custom resource by GVR and name
+**Router Agent** (`pkg/agent/router/agent.go`) uses LLM to classify user intent into one of 5 task types: query, operation, troubleshooting, security, deploy. It then routes to the corresponding sub-agent. For TUI mode, `HandleQueryStream` creates **fresh sub-agent instances** on each request (so event channels don't bleed across queries), and uses bridge goroutines to convert synchronous confirm/select handlers into TUI event channel messages.
 
-## Key Conventions
-- **Tool Naming**: Use snake_case for tool names (e.g., `list_persistent_volumes`)
-- **Configuration**: Configuration is loaded via Viper, with priority: CLI flags > environment variables (prefix `KUBEWISE_`) > config file (`~/.kubewise.yaml`)
-- **Error Handling**: Tool call errors are returned to the LLM for correction instead of failing immediately, allowing for self-healing of parameter issues
-- **LLM Compatibility**: The query agent supports multiple tool call response formats out of the box, with automatic parsing and normalization
+**5 Sub-agents**, each in its own package under `pkg/agent/`:
+- `query` — ReAct loop (up to 10 tool call rounds) for cross-resource queries
+- `operation` — LLM plan → user confirm → execute, with natural-language correction loop
+- `troubleshooting` — systematic info gathering → root cause → fix suggestions
+- `security` — 4-dimension audit (RBAC, Pod security, network policies, image security)
+- `deploy` — 7-phase Helm deployment pipeline (see below)
+
+**Tools** follow a global registration pattern: each tool file calls `tool.RegisterGlobal()` in `init()`, providing a `ToolMetadata` with a factory function. Agents load only the tools they need via `tool.LoadGlobalRegistryByCategory(dep, category)`. Tool categories: `""` (read/query), `"operation"` (write).
+
+**TUI** (`pkg/tui/`) is bubbletea-based. The `App` model composes sidebar, chat, input, confirm, and deploy sub-models. Agents communicate with the TUI exclusively via `events.TUIEvent` sealed interface sent through a buffered channel. Key sub-models: `ChatModel` (messages + progress cards), `ConfirmModel` (operation approval), `DeployConfirmModel` (deploy plan review), `ChartSelectModel` (ArtifactHub picker).
+
+**Sessions** are persisted as JSON to `~/.kubewise/sessions/` via `pkg/tui/session/store.go`.
+
+## Deploy Pipeline (7 Phases)
+
+The deploy agent (`pkg/agent/deploy/`) implements a 7-phase pipeline, emitting `PhaseEvent` / `ToolCallEvent` / `ToolDoneEvent` at each step for the TUI progress card:
+
+1. Extract app name from entities/query
+2. Resolve Chart via `ChainResolver` (builtin → local catalog)
+3. `helm repo add` + `helm show values` to get defaults
+4. LLM generates override values based on user intent
+5. User confirmation (execute / natural-language correction loop / cancel)
+6. `helm install/upgrade` via Helm v4 Go SDK
+7. Verify release status and build report
+
+If Phase 2 finds nothing, the agent falls through to ArtifactHub search + TUI selection.
+
+## Chart Catalog Resolution
+
+`pkg/catalog/` implements a **chain-of-responsibility** pattern:
+
+1. `BuiltinCatalogResolver` — embedded `builtin_data.yaml` (alias → ChartInfo lookup)
+2. `LocalCatalogResolver` — `~/.kubewise/catalog.yaml` (same format, user-extensible)
+3. `ArtifactHubResolver` — invoked explicitly by the deploy agent when chain returns nil, delegates to TUI for interactive selection
+
+`ChartResolver.Resolve()` returns `(nil, nil)` to signal "not found, try next" vs `(nil, err)` for hard errors.
+
+## Key Dependencies
+
+- **Helm v4** SDK (`helm.sh/helm/v4`) — not v3. Uses `pkg/action` for install/upgrade, `pkg/loader` for chart loading
+- **client-go** v0.36 — both `kubernetes.Clientset` (typed) and `dynamic.Interface` (arbitrary GVR)
+- **openai-go v3** — all LLM calls go through this, configured for OpenAI-compatible APIs (DeepSeek, GLM, Qwen, etc.)
+- **bubbletea** — TUI framework with `tea.Model` / `tea.Cmd` / `tea.Msg` pattern
+
+## Config & Secrets
+
+- Config: Viper reads `~/.kubewise.yaml` (or `--config` flag), with env var override via `KUBEWISE_` prefix
+- **Never commit** `.kube/config`, `config.yaml` with real API keys, or `.env` files — these are `.gitignore`'d
+- Dev cluster: use kind as described in `docs/how-to-dev.md` — the `.kube/` directory contains dev cluster configs
+
+## Go Module
+
+Module path is `github.com/kubewise/kubewise`, Go 1.26. Internal packages under `pkg/` are not importable externally.

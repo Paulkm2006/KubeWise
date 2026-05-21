@@ -7,11 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tool"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
 
 	// Trigger init() registration of all read tools
@@ -49,8 +51,8 @@ func WithConfirmationHandler(h ConfirmationHandler) Option {
 	return func(a *Agent) { a.confirmHandler = h }
 }
 
-// WithEventCh injects a TUI event channel and query ID for streaming events.
-func WithEventCh(ch chan<- events.TUIEvent, queryID string) Option {
+// WithEventChannel injects the stream event channel and query ID for streaming events.
+func WithEventChannel(ch chan<- stream.Event, queryID string) Option {
 	return func(a *Agent) {
 		a.eventCh = ch
 		a.queryID = queryID
@@ -88,12 +90,23 @@ type Agent struct {
 	readRegistry   *tool.Registry
 	writeRegistry  writeRegistryI
 	confirmHandler ConfirmationHandler
-	eventCh        chan<- events.TUIEvent
+	eventCh        chan<- stream.Event
 	queryID        string
 	maxSteps       int
 	supervisorCfg  supervisor.Config
 	inTokens       int
 	outTokens      int
+	log            *zap.Logger
+}
+
+// SetLogger injects a logger for debug output.
+func (a *Agent) SetLogger(l *zap.Logger) { a.log = l }
+
+func (a *Agent) logger() *zap.Logger {
+	if a.log == nil {
+		return zap.NewNop()
+	}
+	return a.log
 }
 
 // New creates a new Agent. Defaults to StdinConfirmationHandler.
@@ -125,8 +138,8 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, 
 	return a, nil
 }
 
-// emit sends a TUIEvent non-blocking. It is a no-op when eventCh is nil.
-func (a *Agent) emit(e events.TUIEvent) {
+// emit sends a stream event non-blocking. It is a no-op when eventCh is nil.
+func (a *Agent) emit(e stream.Event) {
 	if a.eventCh == nil {
 		return
 	}
@@ -149,9 +162,10 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	a.inTokens = 0
 	a.outTokens = 0
 	start := time.Now()
-	a.emit(events.AgentStartEvent{AgentName: "Operation Agent", QueryID: a.queryID})
+	a.emit(stream.AgentStart{AgentName: "Operation Agent", QueryID: a.queryID})
+	a.logger().Debug("handling operation query", zap.String("query", userQuery))
 	defer func() {
-		a.emit(events.AgentDoneEvent{
+		a.emit(stream.AgentDone{
 			QueryID:   a.queryID,
 			Duration:  time.Since(start),
 			InTokens:  a.inTokens,
@@ -261,9 +275,9 @@ outer:
 				}
 
 				toolStart := time.Now()
-				a.emit(events.ToolCallEvent{QueryID: a.queryID, ToolName: funcCall.Name, Step: round + 1})
+				a.emit(stream.ToolCall{QueryID: a.queryID, ToolName: funcCall.Name, Step: round + 1})
 				result, toolErr := t.Execute(ctx, funcCall.Arguments)
-				a.emit(events.ToolDoneEvent{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: round + 1})
+				a.emit(stream.ToolDone{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: round + 1})
 				if toolErr != nil {
 					result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用。", toolErr)
 				}
@@ -281,7 +295,7 @@ outer:
 
 			// Supervisor: cheap loop check after tool execution
 			if triggered, loopResult := sv.CheckLoop(ctx, round, resp.ToolCalls, messages); triggered {
-				a.emit(events.SupervisorEvent{
+				a.emit(stream.Supervisor{
 					QueryID:  a.queryID,
 					Reason:   "loop detected",
 					Decision: string(loopResult.Decision),
@@ -313,7 +327,7 @@ outer:
 		if err != nil {
 			return nil, fmt.Errorf("超过最大规划轮次（%d），无法生成操作计划，可通过 --max-steps 参数或 agent.max_steps 配置项调大", a.maxSteps)
 		}
-		a.emit(events.SupervisorEvent{
+		a.emit(stream.Supervisor{
 			QueryID:  a.queryID,
 			Reason:   "max steps reached",
 			Decision: string(evalResult.Decision),

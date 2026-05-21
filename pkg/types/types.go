@@ -9,10 +9,11 @@ import (
 type TaskType string
 
 const (
-	TaskTypeOperation      TaskType = "operation"      // 操作类
-	TaskTypeQuery          TaskType = "query"          // 查询类
+	TaskTypeOperation       TaskType = "operation"       // 操作类
+	TaskTypeQuery           TaskType = "query"           // 查询类
 	TaskTypeTroubleshooting TaskType = "troubleshooting" // 故障排查类
-	TaskTypeSecurity       TaskType = "security"       // 安全审计类
+	TaskTypeSecurity        TaskType = "security"        // 安全审计类
+	TaskTypeDeploy          TaskType = "deploy"          // 应用部署类（Helm）
 )
 
 // StringSlice 自定义类型，兼容字符串和字符串数组的JSON解析

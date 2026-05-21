@@ -3,8 +3,8 @@ package model
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kubewise/kubewise/pkg/tui/styles"
 )
 

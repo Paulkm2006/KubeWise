@@ -12,10 +12,10 @@ type ChatRequest struct {
 	QueryID string `json:"query_id,omitempty"`
 }
 
-type ConfirmRequest struct {
-	ConfirmID  string `json:"confirm_id"`
-	Confirmed  bool   `json:"confirmed"`
-	Correction string `json:"correction,omitempty"`
+// InteractionAnswerRequest is the body for POST /api/v1/chat/interaction.
+type InteractionAnswerRequest struct {
+	InteractionID string          `json:"interaction_id"`
+	Payload       json.RawMessage `json:"payload"`
 }
 
 type CreateSessionRequest struct {
@@ -97,6 +97,14 @@ type ToolDoneData struct {
 	Elapsed  time.Duration `json:"elapsed"`
 }
 
+type ToolFailData struct {
+	QueryID  string        `json:"query_id"`
+	ToolName string        `json:"tool_name"`
+	Step     int           `json:"step"`
+	Elapsed  time.Duration `json:"elapsed"`
+	Error    string        `json:"error"`
+}
+
 type RenderTextData struct {
 	QueryID string `json:"query_id"`
 	Text    string `json:"text"`
@@ -134,11 +142,17 @@ type ListItem struct {
 	Text   string `json:"text"`
 }
 
-type ConfirmRequestData struct {
-	ConfirmID  string          `json:"confirm_id"`
-	QueryID    string          `json:"query_id"`
-	Step       json.RawMessage `json:"step"`
-	TotalSteps int             `json:"total_steps"`
+// InteractionRequestData is emitted as SSE event interaction_request.
+type InteractionRequestData struct {
+	InteractionID string          `json:"interaction_id"`
+	QueryID       string          `json:"query_id"`
+	Kind          string          `json:"kind"`
+	Payload       json.RawMessage `json:"payload"`
+	TotalSteps    int             `json:"total_steps,omitempty"`
+}
+
+type UnknownStreamEventData struct {
+	EventType string `json:"event_type"`
 }
 
 type StreamDoneData struct {
@@ -164,15 +178,15 @@ type RenderDetailData struct {
 }
 
 type ResourceDetailData struct {
-	Kind       string               `json:"kind"`
-	Name       string               `json:"name"`
-	Namespace  string               `json:"namespace"`
-	Status     map[string]string    `json:"status"`
-	Containers []ContainerInfoData  `json:"containers,omitempty"`
-	Conditions []ConditionInfoData  `json:"conditions,omitempty"`
-	Events     []EventInfoData      `json:"events,omitempty"`
-	RecentLogs string               `json:"recent_logs,omitempty"`
-	Labels     map[string]string    `json:"labels,omitempty"`
+	Kind       string              `json:"kind"`
+	Name       string              `json:"name"`
+	Namespace  string              `json:"namespace"`
+	Status     map[string]string   `json:"status"`
+	Containers []ContainerInfoData `json:"containers,omitempty"`
+	Conditions []ConditionInfoData `json:"conditions,omitempty"`
+	Events     []EventInfoData     `json:"events,omitempty"`
+	RecentLogs string              `json:"recent_logs,omitempty"`
+	Labels     map[string]string   `json:"labels,omitempty"`
 }
 
 type ContainerInfoData struct {
