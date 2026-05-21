@@ -67,7 +67,9 @@ func (h *streamChartSelectionHandler) SelectChart(ctx context.Context, appName s
 		idx := r.CandidateIndex
 		if idx >= 0 && idx < len(candidates) {
 			c := candidates[idx]
-			c.Source = "artifacthub"
+			if c.Source == "" {
+				c.Source = "artifacthub"
+			}
 			return &c, nil
 		}
 		return nil, fmt.Errorf("invalid chart selection index")
