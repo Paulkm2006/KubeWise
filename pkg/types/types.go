@@ -44,7 +44,7 @@ func (s *StringSlice) UnmarshalJSON(data []byte) error {
 
 // Entities 提取的关键实体
 type Entities struct {
-	Namespace    string      `json:"namespace,omitempty"`
+	Namespace    StringSlice `json:"namespace,omitempty"`
 	ResourceName string      `json:"resource_name,omitempty"`
 	ResourceType StringSlice `json:"resource_type,omitempty"`
 	AppName      string      `json:"app_name,omitempty"`

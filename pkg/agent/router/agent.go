@@ -107,7 +107,7 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 		zap.Float64("confidence", intent.Confidence),
 	)
 
-	if intent.Entities.Namespace != "" {
+	if len(intent.Entities.Namespace) > 0 {
 	}
 	if intent.Entities.ResourceName != "" && len(intent.Entities.ResourceType) > 0 {
 	}

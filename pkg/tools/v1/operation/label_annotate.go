@@ -96,8 +96,11 @@ func (t *LabelAnnotateResourceTool) Execute(ctx context.Context, args map[string
 	return fmt.Sprintf("Successfully updated labels/annotations on %s/%s", resource, name), nil
 }
 
-// toStringMap converts a map[string]any to map[string]string, skipping non-string values.
+// toStringMap converts a map[string]any or map[string]string to map[string]string.
 func toStringMap(raw any) map[string]string {
+	if m, ok := raw.(map[string]string); ok {
+		return m
+	}
 	m, ok := raw.(map[string]any)
 	if !ok {
 		return nil

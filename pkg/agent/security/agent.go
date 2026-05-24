@@ -144,8 +144,8 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	functions := a.toolRegistry.GetAllFunctionDefinitions()
 
 	userMsg := userQuery
-	if entities.Namespace != "" {
-		userMsg = fmt.Sprintf("%s\n\n（目标命名空间：%s）", userQuery, entities.Namespace)
+	if len(entities.Namespace) > 0 {
+		userMsg = fmt.Sprintf("%s\\n\\n（目标命名空间：%s）", userQuery, entities.Namespace[0])
 	}
 
 	messages := []llm.Message{
