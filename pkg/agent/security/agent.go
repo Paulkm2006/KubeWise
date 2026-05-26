@@ -60,6 +60,12 @@ type Agent struct {
 	supervisorCfg supervisor.Config
 }
 
+// SetEventChannel sets the event channel and query ID for streaming progress.
+func (a *Agent) SetEventChannel(eventCh chan<- stream.Event, queryID string) {
+	a.eventCh = eventCh
+	a.queryID = queryID
+}
+
 // SetLogger injects a logger for debug output.
 func (a *Agent) SetLogger(l *zap.Logger) { a.log = l }
 

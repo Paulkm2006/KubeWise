@@ -69,6 +69,12 @@ func (a *Agent) logger() *zap.Logger {
 	return a.log
 }
 
+// SetEventChannel sets the event channel and query ID for streaming progress.
+func (a *Agent) SetEventChannel(eventCh chan<- stream.Event, queryID string) {
+	a.eventCh = eventCh
+	a.queryID = queryID
+}
+
 // emit sends an event to the event channel if one is set.
 func (a *Agent) emit(e stream.Event) {
 	if a.eventCh == nil {

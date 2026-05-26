@@ -44,6 +44,22 @@ type Agent struct {
 	k8sClient        *k8s.Client
 }
 
+// SetEventChannel sets the event channel and query ID for streaming progress.
+func (a *Agent) SetEventChannel(eventCh chan<- stream.Event, queryID string) {
+	a.eventCh = eventCh
+	a.queryID = queryID
+}
+
+// SetSelectionHandler sets the chart selection handler.
+func (a *Agent) SetSelectionHandler(h ChartSelectionHandler) {
+	a.selectionHandler = h
+}
+
+// SetConfirmHandler sets the deploy confirmation handler.
+func (a *Agent) SetConfirmHandler(h DeployConfirmationHandler) {
+	a.confirmHandler = h
+}
+
 // SetLogger injects a logger for debug output.
 func (a *Agent) SetLogger(l *zap.Logger) { a.log = l }
 

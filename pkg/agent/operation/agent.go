@@ -99,6 +99,17 @@ type Agent struct {
 	log            *zap.Logger
 }
 
+// SetEventChannel sets the event channel and query ID for streaming progress.
+func (a *Agent) SetEventChannel(eventCh chan<- stream.Event, queryID string) {
+	a.eventCh = eventCh
+	a.queryID = queryID
+}
+
+// SetConfirmationHandler sets the confirmation handler for this agent.
+func (a *Agent) SetConfirmationHandler(h ConfirmationHandler) {
+	a.confirmHandler = h
+}
+
 // SetLogger injects a logger for debug output.
 func (a *Agent) SetLogger(l *zap.Logger) { a.log = l }
 

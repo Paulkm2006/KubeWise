@@ -158,31 +158,19 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	emit(stream.Phase{QueryID: queryID, Phase: phaseLabel})
 	switch intent.TaskType {
 	case types.TaskTypeQuery:
-		ag, agErr := query.New(a.k8sClient, a.llmClient, query.WithEventChannel(eventCh, queryID), query.WithMaxSteps(a.maxSteps), query.WithSupervisorConfig(a.supervisorCfg))
-		if agErr != nil {
-			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
-			return agErr
-		}
-		ag.SetLogger(a.log)
-		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
+		a.queryAgent.SetEventChannel(eventCh, queryID)
+		a.queryAgent.SetLogger(a.log)
+		result, err = a.queryAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeTroubleshooting:
-		ag, agErr := troubleshooting.New(a.k8sClient, a.llmClient, troubleshooting.WithEventChannel(eventCh, queryID), troubleshooting.WithMaxSteps(a.maxSteps), troubleshooting.WithSupervisorConfig(a.supervisorCfg))
-		if agErr != nil {
-			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
-			return agErr
-		}
-		ag.SetLogger(a.log)
-		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
+		a.troubleshootingAgent.SetEventChannel(eventCh, queryID)
+		a.troubleshootingAgent.SetLogger(a.log)
+		result, err = a.troubleshootingAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeSecurity:
-		ag, agErr := security.New(a.k8sClient, a.llmClient, security.WithEventChannel(eventCh, queryID), security.WithMaxSteps(a.maxSteps), security.WithSupervisorConfig(a.supervisorCfg))
-		if agErr != nil {
-			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
-			return agErr
-		}
-		ag.SetLogger(a.log)
-		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
+		a.securityAgent.SetEventChannel(eventCh, queryID)
+		a.securityAgent.SetLogger(a.log)
+		result, err = a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeDeploy:
 		// Bridge goroutine: 将 Deploy Agent 的同步 ConfirmHandler / SelectionHandler
@@ -201,16 +189,11 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			bridgeCtx: bridgeCtx,
 		}
 
-		deployAgentWithEvents := deploy.New(
-			a.llmClient,
-			a.helmClient,
-			a.k8sClient,
-			deploy.WithEventChannel(eventCh, queryID),
-			deploy.WithSelectionHandler(selectionHandler),
-			deploy.WithConfirmHandler(confirmHandler),
-		)
-		deployAgentWithEvents.SetLogger(a.log)
-		result, err = deployAgentWithEvents.HandleQuery(ctx, userQuery, intent.Entities)
+		a.deployAgent.SetEventChannel(eventCh, queryID)
+		a.deployAgent.SetSelectionHandler(selectionHandler)
+		a.deployAgent.SetConfirmHandler(confirmHandler)
+		a.deployAgent.SetLogger(a.log)
+		result, err = a.deployAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeOperation:
 		handler := operation.NewChannelConfirmationHandler()
@@ -260,19 +243,10 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			}
 		}()
 
-		opAgent, agErr := operation.New(
-			a.k8sClient, a.llmClient,
-			operation.WithConfirmationHandler(handler),
-			operation.WithEventChannel(eventCh, queryID),
-			operation.WithMaxSteps(a.maxSteps),
-			operation.WithSupervisorConfig(a.supervisorCfg),
-		)
-		if agErr != nil {
-			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
-			return agErr
-		}
-		opAgent.SetLogger(a.log)
-		result, err = opAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		a.operationAgent.SetConfirmationHandler(handler)
+		a.operationAgent.SetEventChannel(eventCh, queryID)
+		a.operationAgent.SetLogger(a.log)
+		result, err = a.operationAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	default:
 		a.logger().Error("unsupported task type", zap.String("task_type", string(intent.TaskType)))
