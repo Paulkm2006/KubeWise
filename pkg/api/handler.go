@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/kubewise/kubewise/pkg/agent/router"
 	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/agent/supervisor"
-	"github.com/kubewise/kubewise/pkg/k8s"
-	"github.com/kubewise/kubewise/pkg/llm"
+	appsession "github.com/kubewise/kubewise/pkg/session"
 	"github.com/kubewise/kubewise/pkg/tui/session"
 )
 
@@ -32,11 +29,8 @@ type Handler struct {
 }
 
 // NewHandler creates a Handler with real K8s/LLM clients.
-func NewHandler(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) (*Handler, error) {
-	routerAgent, err := router.New(k8sClient, llmClient, maxSteps, supervisorCfg)
-	if err != nil {
-		return nil, err
-	}
+func NewHandler(sess *appsession.Session) (*Handler, error) {
+	routerAgent := sess.Router
 	store, err := session.NewStore()
 	if err != nil {
 		return nil, err

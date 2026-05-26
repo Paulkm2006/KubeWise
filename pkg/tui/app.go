@@ -11,11 +11,9 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/agent/router"
 	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/catalog"
-	"github.com/kubewise/kubewise/pkg/k8s"
-	"github.com/kubewise/kubewise/pkg/llm"
 	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
+	appsession "github.com/kubewise/kubewise/pkg/session"
 	"github.com/kubewise/kubewise/pkg/tui/model"
 	"github.com/kubewise/kubewise/pkg/tui/session"
 	tuistyles "github.com/kubewise/kubewise/pkg/tui/styles"
@@ -61,7 +59,7 @@ type App struct {
 }
 
 // NewApp creates the App, loading recent sessions from disk.
-func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSteps int, supervisorCfg supervisor.Config) (*App, error) {
+func NewApp(sess *appsession.Session, log *zap.Logger) (*App, error) {
 	store, err := session.NewStore()
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
@@ -74,7 +72,7 @@ func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSt
 
 	activeSession := session.New()
 
-	routerAgent, err := router.New(k8sClient, llmClient, maxSteps, supervisorCfg)
+	routerAgent := sess.Router
 	if err != nil {
 		return nil, err
 	}
@@ -546,8 +544,8 @@ func (a App) View() string {
 }
 
 // Run starts the bubbletea program.
-func Run(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSteps int, supervisorCfg supervisor.Config) error {
-	app, err := NewApp(k8sClient, llmClient, log, maxSteps, supervisorCfg)
+func Run(sess *appsession.Session, log *zap.Logger) error {
+	app, err := NewApp(sess, log)
 	if err != nil {
 		return err
 	}
