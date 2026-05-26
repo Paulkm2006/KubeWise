@@ -16,10 +16,6 @@ type Client struct {
 	client openai.Client
 	config Config
 	log    *zap.Logger
-
-	// OnChunk 可选的流式回调。设置后在 ChatCompletion 内部每次收到 token delta 时调用，
-	// 不影响 ChatCompletion 的阻塞语义——外部调用者看到的仍然是完整响应。
-	OnChunk func(StreamChunk)
 }
 
 // SetLogger injects a logger for debug output.
@@ -69,9 +65,9 @@ type toolCallAccum struct {
 }
 
 // ChatCompletion 聊天补全接口，支持工具调用。
-// 内部始终使用流式 API 实现，若 c.OnChunk 已设置则在每个 token delta 时回调，
+// 内部始终使用流式 API 实现，若 onChunk 已设置则在每个 token delta 时回调，
 // 对外仍表现为阻塞返回完整 *Message 的同步接口。
-func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functions []FunctionDefinition) (*Message, error) {
+func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functions []FunctionDefinition, onChunk func(StreamChunk)) (*Message, error) {
 	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
 	for i, msg := range messages {
 		param, err := messageToOpenAIParam(msg)
@@ -125,7 +121,6 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 	accum := make(map[int64]*toolCallAccum)
 	var toolOrder []int64
 	result := &Message{Role: "assistant"}
-	onChunk := c.OnChunk // 局部快照，避免并发读
 	var finalized bool    // 是否已通过 finish_reason 确定 content + tool_calls
 
 	for s.Next() {

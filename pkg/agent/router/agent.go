@@ -540,7 +540,7 @@ func (a *Agent) classifyIntent(ctx context.Context, userQuery string) (*types.In
 		{Role: "user", Content: userQuery},
 	}
 
-	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil)
+	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil, nil)
 	if err != nil {
 		return nil, err
 	}

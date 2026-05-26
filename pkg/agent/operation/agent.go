@@ -238,7 +238,7 @@ func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([
 outer:
 	for iterationsRemaining > 0 {
 		for round := range iterationsRemaining {
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, nil)
 			if err != nil {
 				return nil, fmt.Errorf("LLM 调用失败: %w", err)
 			}
@@ -423,7 +423,7 @@ func (a *Agent) replan(ctx context.Context, original OperationStep, correction s
 		{Role: "user", Content: fmt.Sprintf("原始操作步骤：\n%s\n\n用户修正指令：%s", string(originalJSON), correction)},
 	}
 
-	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil)
+	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil, nil)
 	if err != nil {
 		return OperationStep{}, err
 	}

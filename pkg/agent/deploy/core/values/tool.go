@@ -63,7 +63,7 @@ const valuesGenSystemPrompt = `你是 Helm values 配置专家。
 
 // LLMClient is the minimal LLM interface for values generation.
 type LLMClient interface {
-	ChatCompletion(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error)
+	ChatCompletion(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition, onChunk func(llm.StreamChunk)) (*llm.Message, error)
 }
 
 // Result holds structured LLM output for values generation.
@@ -138,7 +138,7 @@ func callValuesLLM(ctx context.Context, llmClient LLMClient, systemPrompt, userP
 		{Role: "user", Content: userPrompt},
 	}
 
-	resp, err := llmClient.ChatCompletion(ctx, messages, []llm.FunctionDefinition{submitGeneratedValuesFn})
+	resp, err := llmClient.ChatCompletion(ctx, messages, []llm.FunctionDefinition{submitGeneratedValuesFn}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("LLM values 生成失败: %w", err)
 	}

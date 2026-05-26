@@ -161,7 +161,7 @@ outer:
 	for iterationsRemaining > 0 {
 		for step := range iterationsRemaining {
 			a.emit(stream.Phase{QueryID: a.queryID, Phase: "thinking"})
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, nil)
 			if err != nil {
 				return "", fmt.Errorf("LLM调用失败: %w", err)
 			}

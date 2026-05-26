@@ -164,15 +164,13 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 outer:
 	for iterationsRemaining > 0 {
 		for step := range iterationsRemaining {
-			// 调用LLM（内部使用流式 API，OnChunk 回调将 token delta 发出）
+			// 调用LLM（内部使用流式 API，onChunk 回调将 token delta 发出）
 			a.emit(stream.Phase{QueryID: a.queryID, Phase: "thinking"})
-			a.llmClient.OnChunk = func(chunk llm.StreamChunk) {
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, func(chunk llm.StreamChunk) {
 				if chunk.Content != "" {
 					a.emit(stream.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
 				}
-			}
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
-			a.llmClient.OnChunk = nil
+			})
 			if err != nil {
 				return "", fmt.Errorf("LLM调用失败: %w", err)
 			}
