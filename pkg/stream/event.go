@@ -108,6 +108,14 @@ type RenderDetail struct {
 
 func (RenderDetail) isStreamEvent() {}
 
+// LLMTextDelta carries a piece of streaming LLM output text for live display.
+type LLMTextDelta struct {
+	QueryID string
+	Delta   string
+}
+
+func (LLMTextDelta) isStreamEvent() {}
+
 type Supervisor struct {
 	QueryID  string
 	Reason   string

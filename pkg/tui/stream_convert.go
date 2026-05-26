@@ -43,6 +43,8 @@ func ToTUI(ev stream.Event) (events.TUIEvent, bool) {
 		return events.SupervisorEvent{
 			QueryID: e.QueryID, Reason: e.Reason, Decision: e.Decision, Detail: e.Detail,
 		}, true
+	case stream.LLMTextDelta:
+		return events.LLMTextDeltaEvent{QueryID: e.QueryID, Delta: e.Delta}, true
 	default:
 		return nil, false
 	}

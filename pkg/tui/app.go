@@ -192,6 +192,7 @@ func (a App) routeChatEvent(te events.TUIEvent) (tea.Model, tea.Cmd) {
 		events.RenderListEvent,
 		events.RenderDetailEvent,
 		events.PhaseEvent,
+		events.LLMTextDeltaEvent,
 		events.SupervisorEvent:
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(msg)

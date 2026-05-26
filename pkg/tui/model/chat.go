@@ -75,6 +75,8 @@ type ChatModel struct {
 	phaseStart   time.Time
 	spinning     bool
 	scrollOffset int // 0 = pinned to bottom; >0 = number of lines scrolled up
+	streamingText strings.Builder
+	streamingID   string
 }
 
 // NewChatModel creates an empty ChatModel sized to the given terminal dimensions.
@@ -333,6 +335,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			}
 		}
 
+			m.flushStreamingText(ev.QueryID)
 	case events.ToolCallEvent:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			c.tools = append(c.tools, toolLine{name: ev.ToolName, step: ev.Step})
@@ -363,6 +366,13 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 
 	case events.RenderTextEvent:
 		m.addPending(ev.QueryID, session.Block{Type: "text"}, m.renderer.RenderText(ev.Text))
+
+		case events.LLMTextDeltaEvent:
+			if m.streamingID != ev.QueryID {
+				m.streamingID = ev.QueryID
+				m.streamingText.Reset()
+			}
+			m.streamingText.WriteString(ev.Delta)
 
 	case events.RenderTableEvent:
 		rendered := m.renderer.RenderTable(ev.Headers, ev.Rows)
@@ -399,6 +409,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		m.addPending(ev.QueryID, session.Block{Type: "detail", Payload: payload}, rendered)
 
 	case events.StreamDoneEvent:
+			m.flushStreamingText(ev.QueryID)
 		p := m.pending[ev.QueryID]
 		var lines []string
 		var blocks []session.Block
@@ -445,6 +456,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
 
+			m.flushStreamingText(ev.QueryID)
 	case events.PhaseEvent:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			now := time.Now()
@@ -547,6 +559,11 @@ func (m ChatModel) View() string {
 		sb.WriteString("\n")
 	}
 
+	// Render live streaming LLM text
+	if m.streamingText.Len() > 0 {
+		sb.WriteString(m.renderer.RenderText(m.streamingText.String()))
+	}
+
 	for _, card := range m.cards {
 		sb.WriteString(m.renderCard(card))
 		sb.WriteString("\n")
@@ -646,4 +663,17 @@ func (m ChatModel) Phase() string {
 // IsSpinning reports whether the spinner is currently active.
 func (m ChatModel) IsSpinning() bool {
 	return m.spinning
+}
+
+// flushStreamingText flushes accumulated LLM text deltas into a pending text block.
+func (m *ChatModel) flushStreamingText(queryID string) {
+	if m.streamingText.Len() == 0 {
+		return
+	}
+	text := m.streamingText.String()
+	m.streamingText.Reset()
+	if text == "" {
+		return
+	}
+	m.addPending(queryID, session.Block{Type: "text"}, m.renderer.RenderText(text))
 }

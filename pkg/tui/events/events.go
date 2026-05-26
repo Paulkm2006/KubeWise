@@ -165,6 +165,14 @@ type StreamErrEvent struct {
 
 func (StreamErrEvent) isTUIEvent() {}
 
+// LLMTextDeltaEvent carries a piece of streaming LLM output text for live display.
+type LLMTextDeltaEvent struct {
+	QueryID string
+	Delta   string
+}
+
+func (LLMTextDeltaEvent) isTUIEvent() {}
+
 // PhaseEvent carries a human-readable phase label for the thinking indicator.
 type PhaseEvent struct {
 	QueryID string
