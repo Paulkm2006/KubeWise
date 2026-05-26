@@ -15,7 +15,7 @@ import (
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 	"github.com/kubewise/kubewise/pkg/tui/model"
 	"github.com/kubewise/kubewise/pkg/tui/session"
 	tuistyles "github.com/kubewise/kubewise/pkg/tui/styles"
@@ -137,7 +137,7 @@ func (a App) dispatchInteractionRequest(ir stream.InteractionRequest) (tea.Model
 		a.chartSelectModel = &m
 		return a, tea.Batch(a.listenStream(), m.Init())
 	case stream.KindDeployConfirm:
-		var plan events.DeployPlan
+		var plan deploytypes.DeployPlan
 		if err := json.Unmarshal(ir.Payload, &plan); err != nil {
 			return a, a.listenStream()
 		}
@@ -155,7 +155,7 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 	case stream.InteractionRequest:
 		return a.dispatchInteractionRequest(e)
 	case stream.StreamDone:
-		a.chat, _ = a.chat.Update(events.StreamDoneEvent{QueryID: e.QueryID, Result: e.Result})
+		a.chat, _ = a.chat.Update(e)
 		a.running = false
 		a.input.SetEnabled(true)
 		a.persistAssistantMessage()
@@ -165,39 +165,12 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 		if err == nil {
 			err = fmt.Errorf("stream ended")
 		}
-		a.chat, _ = a.chat.Update(events.StreamErrEvent{QueryID: e.QueryID, Err: err})
+		a.chat, _ = a.chat.Update(stream.StreamErr{QueryID: e.QueryID, Err: err})
 		a.running = false
 		a.input.SetEnabled(true)
 		return a, nil
 	default:
-		if te, ok := ToTUI(ev); ok {
-			return a.routeChatEvent(te)
-		}
-		return a, a.listenStream()
-	}
-}
-
-// routeChatEvent forwards progress/render TUI events to ChatModel.
-func (a App) routeChatEvent(te events.TUIEvent) (tea.Model, tea.Cmd) {
-	switch msg := te.(type) {
-	case events.AgentStartEvent,
-		events.AgentDoneEvent,
-		events.ToolCallEvent,
-		events.ToolDoneEvent,
-		events.ToolFailEvent,
-		events.RenderTextEvent,
-		events.RenderTableEvent,
-		events.RenderCodeEvent,
-		events.RenderKVEvent,
-		events.RenderListEvent,
-		events.RenderDetailEvent,
-		events.PhaseEvent,
-		events.LLMTextDeltaEvent,
-		events.SupervisorEvent:
-		var chatCmd tea.Cmd
-		a.chat, chatCmd = a.chat.Update(msg)
-		return a, tea.Batch(a.listenStream(), chatCmd)
-	default:
+		a.chat, _ = a.chat.Update(ev)
 		return a, a.listenStream()
 	}
 }

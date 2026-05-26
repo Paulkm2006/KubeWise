@@ -9,8 +9,8 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/values"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
+	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 )
 
 const toolUserConfirm = "user confirm"
@@ -26,7 +26,7 @@ func ReviewPlan(st *state.State) error {
 	)
 
 	for {
-		var decision events.DeployDecision
+		var decision deploytypes.DeployDecision
 		confirmErr := st.RunTool(st.Ctx, toolUserConfirm, 4, func(ctx context.Context) error {
 			var e error
 			decision, e = confirmDeploy(st)

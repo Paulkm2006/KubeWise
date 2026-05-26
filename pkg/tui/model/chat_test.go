@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/model"
 )
 
@@ -14,10 +14,10 @@ func TestPhaseEventUpdatesPhase(t *testing.T) {
 	m := model.NewChatModel(80, 40)
 
 	// Start an agent so a progress card exists
-	m.Update(events.AgentStartEvent{QueryID: "q-1", AgentName: "Query Agent"})
+	m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Query Agent"})
 
 	// Send a PhaseEvent
-	updated, _ := m.Update(events.PhaseEvent{QueryID: "q-1", Phase: "thinking"})
+	updated, _ := m.Update(stream.Phase{QueryID: "q-1", Phase: "thinking"})
 
 	if updated.Phase() != "thinking" {
 		t.Errorf("expected phase 'thinking', got %q", updated.Phase())
@@ -28,7 +28,7 @@ func TestPhaseEventIgnoredForUnknownQuery(t *testing.T) {
 	m := model.NewChatModel(80, 40)
 
 	// No AgentStartEvent for q-1, so PhaseEvent should be ignored
-	updated, _ := m.Update(events.PhaseEvent{QueryID: "q-1", Phase: "thinking"})
+	updated, _ := m.Update(stream.Phase{QueryID: "q-1", Phase: "thinking"})
 
 	if updated.Phase() != "" {
 		t.Errorf("expected empty phase for unknown query, got %q", updated.Phase())
@@ -38,9 +38,9 @@ func TestPhaseEventIgnoredForUnknownQuery(t *testing.T) {
 func TestStreamDoneStopsSpinner(t *testing.T) {
 	m := model.NewChatModel(80, 40)
 
-	m.Update(events.AgentStartEvent{QueryID: "q-1", AgentName: "Query Agent"})
+	m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Query Agent"})
 
-	updated, _ := m.Update(events.StreamDoneEvent{QueryID: "q-1", Result: "done"})
+	updated, _ := m.Update(stream.StreamDone{QueryID: "q-1", Result: "done"})
 
 	if updated.IsSpinning() {
 		t.Error("expected spinner to stop after StreamDoneEvent")
@@ -49,9 +49,9 @@ func TestStreamDoneStopsSpinner(t *testing.T) {
 
 func TestToolFailMarksToolDoneWithoutErrorText(t *testing.T) {
 	m := model.NewChatModel(80, 40)
-	m, _ = m.Update(events.AgentStartEvent{QueryID: "q-1", AgentName: "Deploy Agent"})
-	m, _ = m.Update(events.ToolCallEvent{QueryID: "q-1", ToolName: "helm preflight", Step: 5})
-	m, _ = m.Update(events.ToolFailEvent{
+	m, _ = m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Deploy Agent"})
+	m, _ = m.Update(stream.ToolCall{QueryID: "q-1", ToolName: "helm preflight", Step: 5})
+	m, _ = m.Update(stream.ToolFail{
 		QueryID: "q-1", ToolName: "helm preflight", Step: 5, Elapsed: time.Second,
 	})
 
@@ -67,9 +67,9 @@ func TestToolFailMarksToolDoneWithoutErrorText(t *testing.T) {
 func TestStreamErrStopsSpinner(t *testing.T) {
 	m := model.NewChatModel(80, 40)
 
-	m.Update(events.AgentStartEvent{QueryID: "q-1", AgentName: "Query Agent"})
+	m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Query Agent"})
 
-	updated, _ := m.Update(events.StreamErrEvent{QueryID: "q-1", Err: fmt.Errorf("boom")})
+	updated, _ := m.Update(stream.StreamErr{QueryID: "q-1", Err: fmt.Errorf("boom")})
 
 	if updated.IsSpinning() {
 		t.Error("expected spinner to stop after StreamErrEvent")

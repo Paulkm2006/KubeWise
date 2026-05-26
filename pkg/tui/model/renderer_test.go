@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/model"
 )
 
@@ -18,7 +18,7 @@ func TestRenderText(t *testing.T) {
 
 func TestRenderKV(t *testing.T) {
 	r := model.NewRenderer(80)
-	pairs := []events.KVPair{{Key: "namespace", Value: "default"}, {Key: "pods", Value: "5"}}
+	pairs := []stream.KVPair{{Key: "namespace", Value: "default"}, {Key: "pods", Value: "5"}}
 	out := r.RenderKV(pairs)
 	if !strings.Contains(out, "namespace") || !strings.Contains(out, "default") {
 		t.Errorf("unexpected KV output: %q", out)
@@ -37,7 +37,7 @@ func TestRenderTable(t *testing.T) {
 
 func TestRenderList(t *testing.T) {
 	r := model.NewRenderer(80)
-	items := []events.ListItem{{Status: "ok", Text: "pod running"}, {Status: "error", Text: "pod crashed"}}
+	items := []stream.ListItem{{Status: "ok", Text: "pod running"}, {Status: "error", Text: "pod crashed"}}
 	out := r.RenderList(items)
 	if !strings.Contains(out, "pod running") {
 		t.Errorf("want 'pod running' in output: %q", out)
@@ -46,20 +46,20 @@ func TestRenderList(t *testing.T) {
 
 func TestRenderDetail(t *testing.T) {
 	r := model.NewRenderer(80)
-	detail := events.ResourceDetail{
+	detail := stream.ResourceDetail{
 		Kind:      "pod",
 		Name:      "my-pod",
 		Namespace: "default",
 		Status:    map[string]string{"phase": "Running", "ip": "10.0.0.1"},
 		Labels:    map[string]string{"app": "web"},
-		Containers: []events.ContainerInfo{
+		Containers: []stream.ContainerInfo{
 			{Name: "app", Image: "nginx:latest", Ready: true, RestartCount: 0, State: "Running"},
 			{Name: "sidecar", Image: "envoy:1.0", Ready: false, RestartCount: 3, State: "CrashLoopBackOff"},
 		},
-		Conditions: []events.ConditionInfo{
+		Conditions: []stream.ConditionInfo{
 			{Type: "Ready", Status: "True", Reason: "", Message: ""},
 		},
-		Events: []events.EventInfo{
+		Events: []stream.EventInfo{
 			{Type: "Normal", Reason: "Pulled", Message: "image pulled", Timestamp: "2024-01-01 00:00:00"},
 			{Type: "Warning", Reason: "BackOff", Message: "back-off restarting", Timestamp: "2024-01-01 00:01:00"},
 		},

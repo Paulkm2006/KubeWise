@@ -8,7 +8,7 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/catalog"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 )
 
 // streamChartSelectionHandler sends chart selection as a unified stream interaction.
@@ -86,10 +86,10 @@ type streamDeployConfirmHandler struct {
 	bridgeCtx context.Context
 }
 
-func (h *streamDeployConfirmHandler) ConfirmDeploy(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error) {
+func (h *streamDeployConfirmHandler) ConfirmDeploy(ctx context.Context, plan deploytypes.DeployPlan) (deploytypes.DeployDecision, error) {
 	payload, err := json.Marshal(plan)
 	if err != nil {
-		return events.DeployDecision{Action: "cancel"}, err
+		return deploytypes.DeployDecision{Action: "cancel"}, err
 	}
 	respCh := make(chan json.RawMessage, 1)
 	ireq := stream.InteractionRequest{
@@ -99,22 +99,22 @@ func (h *streamDeployConfirmHandler) ConfirmDeploy(ctx context.Context, plan eve
 		RespCh:  respCh,
 	}
 	if err := h.emitter.Emit(ctx, ireq); err != nil {
-		return events.DeployDecision{Action: "cancel"}, err
+		return deploytypes.DeployDecision{Action: "cancel"}, err
 	}
 	select {
 	case raw := <-respCh:
 		var r stream.DeployConfirmResponse
 		if err := json.Unmarshal(raw, &r); err != nil {
-			return events.DeployDecision{Action: "cancel"}, err
+			return deploytypes.DeployDecision{Action: "cancel"}, err
 		}
-		return events.DeployDecision{
+		return deploytypes.DeployDecision{
 			Action:     r.Action,
 			Values:     r.Values,
 			Correction: r.Correction,
 		}, nil
 	case <-ctx.Done():
-		return events.DeployDecision{Action: "cancel"}, ctx.Err()
+		return deploytypes.DeployDecision{Action: "cancel"}, ctx.Err()
 	case <-h.bridgeCtx.Done():
-		return events.DeployDecision{Action: "cancel"}, h.bridgeCtx.Err()
+		return deploytypes.DeployDecision{Action: "cancel"}, h.bridgeCtx.Err()
 	}
 }

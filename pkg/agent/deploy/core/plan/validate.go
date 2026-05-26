@@ -21,7 +21,7 @@ var blockedNamespaces = map[string]struct{}{
 // ValidationResult holds blocking errors and non-blocking warnings.
 type ValidationResult struct {
 	Errors   []string
-	Warnings []PlanWarning
+	Warnings []Warning
 }
 
 // HasBlockingErrors returns true when validation must stop before apply.
@@ -47,7 +47,7 @@ func ValidateDeployPlan(p DeployPlan) ValidationResult {
 	if err := ValidateNamespace(p.Namespace); err != nil {
 		result.Errors = append(result.Errors, err.Error())
 	} else if p.Namespace == "default" {
-		result.Warnings = append(result.Warnings, PlanWarning{
+		result.Warnings = append(result.Warnings, Warning{
 			Severity: "warn",
 			Message:  "将部署到 default 命名空间，建议使用专用 namespace",
 		})

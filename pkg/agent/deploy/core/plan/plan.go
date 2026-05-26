@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/kubewise/kubewise/pkg/catalog"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 )
 
 // DeployPlan is the internal deployment plan used by the deploy pipeline.
@@ -16,22 +16,22 @@ type DeployPlan struct {
 	DefaultValues string
 	CustomValues  string
 	IsUpgrade     bool
-	Warnings      []PlanWarning
+	Warnings      []Warning
 }
 
-// PlanWarning is a non-blocking advisory shown during review.
-type PlanWarning struct {
+// Warning is a non-blocking advisory shown during review.
+type Warning struct {
 	Severity string // "warn" | "error" (error-level warnings block execute in validator)
 	Message  string
 }
 
 // ToEventPlan converts the internal plan to the TUI-facing DeployPlan.
-func (p DeployPlan) ToEventPlan() events.DeployPlan {
-	warnings := make([]events.PlanWarning, len(p.Warnings))
+func (p DeployPlan) ToEventPlan() deploytypes.DeployPlan {
+	warnings := make([]deploytypes.PlanWarning, len(p.Warnings))
 	for i, w := range p.Warnings {
-		warnings[i] = events.PlanWarning{Severity: w.Severity, Message: w.Message}
+		warnings[i] = deploytypes.PlanWarning{Severity: w.Severity, Message: w.Message}
 	}
-	return events.DeployPlan{
+	return deploytypes.DeployPlan{
 		ChartInfo:     p.Chart,
 		DefaultValues: p.DefaultValues,
 		CustomValues:  p.CustomValues,

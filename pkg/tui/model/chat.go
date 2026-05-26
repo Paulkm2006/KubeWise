@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/session"
 	"github.com/kubewise/kubewise/pkg/tui/styles"
 )
@@ -220,41 +220,41 @@ func (m *ChatModel) renderBlock(b session.Block) string {
 	case "kv":
 		var p session.KVPayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
-			pairs := make([]events.KVPair, len(p.Pairs))
+			pairs := make([]stream.KVPair, len(p.Pairs))
 			for i, kp := range p.Pairs {
-				pairs[i] = events.KVPair{Key: kp.Key, Value: kp.Value}
+				pairs[i] = stream.KVPair{Key: kp.Key, Value: kp.Value}
 			}
 			return m.renderer.RenderKV(pairs)
 		}
 	case "list":
 		var p session.ListPayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
-			items := make([]events.ListItem, len(p.Items))
+			items := make([]stream.ListItem, len(p.Items))
 			for i, li := range p.Items {
-				items[i] = events.ListItem{Status: li.Status, Text: li.Text}
+				items[i] = stream.ListItem{Status: li.Status, Text: li.Text}
 			}
 			return m.renderer.RenderList(items)
 		}
 	case "detail":
 		var p session.DetailPayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
-			d := events.ResourceDetail{
+			d := stream.ResourceDetail{
 				Kind: p.Kind, Name: p.Name, Namespace: p.Namespace,
 				Status: p.Status, RecentLogs: p.RecentLogs, Labels: p.Labels,
 			}
 			for _, c := range p.Containers {
-				d.Containers = append(d.Containers, events.ContainerInfo{
+				d.Containers = append(d.Containers, stream.ContainerInfo{
 					Name: c.Name, Image: c.Image, Ready: c.Ready,
 					RestartCount: c.RestartCount, State: c.State, Resources: c.Resources,
 				})
 			}
 			for _, c := range p.Conditions {
-				d.Conditions = append(d.Conditions, events.ConditionInfo{
+				d.Conditions = append(d.Conditions, stream.ConditionInfo{
 					Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message,
 				})
 			}
 			for _, e := range p.Events {
-				d.Events = append(d.Events, events.EventInfo{
+				d.Events = append(d.Events, stream.EventInfo{
 					Type: e.Type, Reason: e.Reason, Message: e.Message, Timestamp: e.Timestamp,
 				})
 			}
@@ -308,7 +308,7 @@ func (m ChatModel) totalLines() int {
 func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	switch ev := msg.(type) {
 
-	case events.AgentStartEvent:
+	case stream.AgentStart:
 		now := time.Now()
 		m.cards[ev.QueryID] = &progressCard{
 			queryID:   ev.QueryID,
@@ -320,7 +320,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		m.spinning = true
 		return m, m.spinner.Tick
 
-	case events.AgentDoneEvent:
+	case stream.AgentDone:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			c.done = true
 			c.duration = ev.Duration
@@ -336,12 +336,12 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		}
 
 			m.flushStreamingText(ev.QueryID)
-	case events.ToolCallEvent:
+	case stream.ToolCall:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			c.tools = append(c.tools, toolLine{name: ev.ToolName, step: ev.Step})
 		}
 
-	case events.ToolDoneEvent:
+	case stream.ToolDone:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			for i := range c.tools {
 				if c.tools[i].name == ev.ToolName && c.tools[i].step == ev.Step && !c.tools[i].done {
@@ -352,7 +352,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			}
 		}
 
-	case events.ToolFailEvent:
+	case stream.ToolFail:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			for i := range c.tools {
 				if c.tools[i].name == ev.ToolName && c.tools[i].step == ev.Step && !c.tools[i].done {
@@ -364,27 +364,27 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			}
 		}
 
-	case events.RenderTextEvent:
+	case stream.RenderText:
 		m.addPending(ev.QueryID, session.Block{Type: "text"}, m.renderer.RenderText(ev.Text))
 
-		case events.LLMTextDeltaEvent:
+		case stream.LLMTextDelta:
 			if m.streamingID != ev.QueryID {
 				m.streamingID = ev.QueryID
 				m.streamingText.Reset()
 			}
 			m.streamingText.WriteString(ev.Delta)
 
-	case events.RenderTableEvent:
+	case stream.RenderTable:
 		rendered := m.renderer.RenderTable(ev.Headers, ev.Rows)
 		payload, _ := json.Marshal(session.TablePayload{Headers: ev.Headers, Rows: ev.Rows})
 		m.addPending(ev.QueryID, session.Block{Type: "table", Payload: payload}, rendered)
 
-	case events.RenderCodeEvent:
+	case stream.RenderCode:
 		rendered := m.renderer.RenderCode(ev.Language, ev.Content)
 		payload, _ := json.Marshal(session.CodePayload{Language: ev.Language, Content: ev.Content})
 		m.addPending(ev.QueryID, session.Block{Type: "code", Payload: payload}, rendered)
 
-	case events.RenderKVEvent:
+	case stream.RenderKV:
 		rendered := m.renderer.RenderKV(ev.Pairs)
 		kvPairs := make([]session.KVPair, len(ev.Pairs))
 		for i, p := range ev.Pairs {
@@ -393,7 +393,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		payload, _ := json.Marshal(session.KVPayload{Pairs: kvPairs})
 		m.addPending(ev.QueryID, session.Block{Type: "kv", Payload: payload}, rendered)
 
-	case events.RenderListEvent:
+	case stream.RenderList:
 		rendered := m.renderer.RenderList(ev.Items)
 		listItems := make([]session.ListItem, len(ev.Items))
 		for i, it := range ev.Items {
@@ -402,13 +402,13 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		payload, _ := json.Marshal(session.ListPayload{Items: listItems})
 		m.addPending(ev.QueryID, session.Block{Type: "list", Payload: payload}, rendered)
 
-	case events.RenderDetailEvent:
+	case stream.RenderDetail:
 		rendered := m.renderer.RenderDetail(ev.Detail)
 		dp := detailToPayload(ev.Detail)
 		payload, _ := json.Marshal(dp)
 		m.addPending(ev.QueryID, session.Block{Type: "detail", Payload: payload}, rendered)
 
-	case events.StreamDoneEvent:
+	case stream.StreamDone:
 			m.flushStreamingText(ev.QueryID)
 		p := m.pending[ev.QueryID]
 		var lines []string
@@ -443,7 +443,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
 
-	case events.StreamErrEvent:
+	case stream.StreamErr:
 		errMsg := fmt.Sprintf("错误：%v", ev.Err)
 		m.messages = append(m.messages, chatEntry{
 			role:      "error",
@@ -457,7 +457,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		delete(m.cards, ev.QueryID)
 
 			m.flushStreamingText(ev.QueryID)
-	case events.PhaseEvent:
+	case stream.Phase:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			now := time.Now()
 			if len(c.phases) > 0 {
@@ -472,7 +472,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			m.phaseStart = now
 		}
 
-	case events.SupervisorEvent:
+	case stream.Supervisor:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			now := time.Now()
 			if len(c.phases) > 0 {
@@ -499,8 +499,8 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	return m, nil
 }
 
-// detailToPayload converts an events.ResourceDetail to a session.DetailPayload.
-func detailToPayload(d events.ResourceDetail) session.DetailPayload {
+// detailToPayload converts an stream.ResourceDetail to a session.DetailPayload.
+func detailToPayload(d stream.ResourceDetail) session.DetailPayload {
 	dp := session.DetailPayload{
 		Kind:       d.Kind,
 		Name:       d.Name,

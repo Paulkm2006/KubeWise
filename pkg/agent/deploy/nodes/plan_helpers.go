@@ -9,7 +9,7 @@ import (
 	chartcore "github.com/kubewise/kubewise/pkg/agent/deploy/core/chart"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 )
 
 func validatePlan(st *state.State, stage string) error {
@@ -51,9 +51,9 @@ func logPlanValidation(st *state.State, stage string, validation plan.Validation
 	st.LogDebug("deploy plan validation ok", fields...)
 }
 
-func confirmDeploy(st *state.State) (events.DeployDecision, error) {
+func confirmDeploy(st *state.State) (deploytypes.DeployDecision, error) {
 	if st.Confirm == nil {
-		return events.DeployDecision{Action: "execute", Values: st.Plan.CustomValues}, nil
+		return deploytypes.DeployDecision{Action: "execute", Values: st.Plan.CustomValues}, nil
 	}
 	return st.Confirm.ConfirmDeploy(st.Ctx, st.Plan.ToEventPlan())
 }

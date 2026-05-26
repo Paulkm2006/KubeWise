@@ -7,12 +7,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kubewise/kubewise/pkg/catalog"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 	"github.com/kubewise/kubewise/pkg/tui/model"
 )
 
 func TestNewDeployConfirmModelWithSize(t *testing.T) {
-	plan := events.DeployPlan{
+	plan := deploytypes.DeployPlan{
 		DefaultValues: "default: values",
 		CustomValues:  "custom: values",
 	}
@@ -55,7 +55,7 @@ func TestNewDeployConfirmModelWithSize(t *testing.T) {
 }
 
 func TestNewDeployConfirmModelWithDifferentSize(t *testing.T) {
-	plan := events.DeployPlan{
+	plan := deploytypes.DeployPlan{
 		DefaultValues: "default: values",
 		CustomValues:  "custom: values",
 	}
@@ -83,7 +83,7 @@ func TestNewDeployConfirmModelWithDifferentSize(t *testing.T) {
 }
 
 func TestDeployConfirmFocusPanel(t *testing.T) {
-	plan := events.DeployPlan{
+	plan := deploytypes.DeployPlan{
 		ChartInfo: &catalog.ChartInfo{
 			RepoName:         "testrepo",
 			ChartName:        "testchart",
@@ -124,7 +124,7 @@ func TestDeployConfirmViewScrollKeys(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		tallContent += fmt.Sprintf("key_%d: value_%d\n", i, i)
 	}
-	plan := events.DeployPlan{
+	plan := deploytypes.DeployPlan{
 		ChartInfo:     &catalog.ChartInfo{RepoName: "r", ChartName: "c", Source: "s", DefaultNamespace: "ns"},
 		DefaultValues: tallContent,
 		CustomValues:  tallContent,
@@ -174,7 +174,7 @@ func TestDeployConfirmViewMouseWheel(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		tallContent += fmt.Sprintf("key_%d: value_%d\n", i, i)
 	}
-	plan := events.DeployPlan{
+	plan := deploytypes.DeployPlan{
 		ChartInfo:     &catalog.ChartInfo{RepoName: "r", ChartName: "c", Source: "s", DefaultNamespace: "ns"},
 		DefaultValues: tallContent,
 		CustomValues:  tallContent,
@@ -203,7 +203,7 @@ func TestDeployConfirmFullPreviewMouseWheel(t *testing.T) {
 	for i := 0; i < 80; i++ {
 		tallContent += fmt.Sprintf("key_%d: value_%d\n", i, i)
 	}
-	plan := events.DeployPlan{
+	plan := deploytypes.DeployPlan{
 		ChartInfo:     &catalog.ChartInfo{RepoName: "r", ChartName: "c", Source: "s", DefaultNamespace: "ns"},
 		DefaultValues: tallContent,
 		CustomValues:  "custom: val",
@@ -224,13 +224,13 @@ func TestDeployConfirmFullPreviewMouseWheel(t *testing.T) {
 }
 
 func TestDeployConfirm_RendersWarnings(t *testing.T) {
-	plan := events.DeployPlan{
+	plan := deploytypes.DeployPlan{
 		ChartInfo:     &catalog.ChartInfo{RepoName: "r", ChartName: "c", Source: "s", DefaultNamespace: "ns"},
 		DefaultValues: "replicas: 1",
 		CustomValues:  "privileged: true",
 		ReleaseName:   "test",
 		Namespace:     "ns",
-		Warnings: []events.PlanWarning{
+		Warnings: []deploytypes.PlanWarning{
 			{Severity: "warn", Message: "hostNetwork: true"},
 		},
 	}

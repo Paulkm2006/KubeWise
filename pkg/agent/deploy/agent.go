@@ -8,13 +8,13 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/report"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/types"
 	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/tool"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
 
 	_ "github.com/kubewise/kubewise/pkg/tools/v1/query"
@@ -23,7 +23,7 @@ import (
 
 // DeployConfirmationHandler presents a deploy plan and waits for user decision.
 type DeployConfirmationHandler interface {
-	ConfirmDeploy(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error)
+	ConfirmDeploy(ctx context.Context, plan deploytypes.DeployPlan) (deploytypes.DeployDecision, error)
 }
 
 // ChartSelectionHandler presents chart candidates for user selection.
@@ -112,9 +112,9 @@ func (a *Agent) HandleQuery(ctx context.Context, query string, entities types.En
 }
 
 // ConfirmDeploy implements state.ConfirmHandler.
-func (a *Agent) ConfirmDeploy(ctx context.Context, p events.DeployPlan) (events.DeployDecision, error) {
+func (a *Agent) ConfirmDeploy(ctx context.Context, p deploytypes.DeployPlan) (deploytypes.DeployDecision, error) {
 	if a.confirmHandler == nil {
-		return events.DeployDecision{Action: "execute", Values: p.CustomValues}, nil
+		return deploytypes.DeployDecision{Action: "execute", Values: p.CustomValues}, nil
 	}
 	return a.confirmHandler.ConfirmDeploy(ctx, p)
 }
