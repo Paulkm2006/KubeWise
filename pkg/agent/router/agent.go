@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy"
 	"github.com/kubewise/kubewise/pkg/agent/operation"
@@ -32,6 +33,7 @@ type Agent struct {
 	operationAgent       *operation.Agent
 	deployAgent          *deploy.Agent
 	helmClient           *helm.Client
+	streamMu             sync.Mutex
 	log                  *zap.Logger
 }
 
@@ -133,6 +135,9 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 // channel support, routes to the appropriate sub-agent, and emits structured
 // render events followed by StreamDoneEvent on success.
 func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string, eventCh chan<- stream.Event) error {
+	a.streamMu.Lock()
+	defer a.streamMu.Unlock()
+
 	se := stream.NewEmitter(eventCh, queryID)
 	emit := func(ev stream.Event) {
 		_ = se.Emit(ctx, ev)
