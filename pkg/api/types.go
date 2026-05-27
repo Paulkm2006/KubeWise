@@ -105,41 +105,9 @@ type ToolFailData struct {
 	Error    string        `json:"error"`
 }
 
-type RenderTextData struct {
+type LLMTextDeltaData struct {
 	QueryID string `json:"query_id"`
-	Text    string `json:"text"`
-}
-
-type RenderTableData struct {
-	QueryID string     `json:"query_id"`
-	Headers []string   `json:"headers"`
-	Rows    [][]string `json:"rows"`
-}
-
-type RenderCodeData struct {
-	QueryID  string `json:"query_id"`
-	Language string `json:"language"`
-	Content  string `json:"content"`
-}
-
-type RenderKVData struct {
-	QueryID string   `json:"query_id"`
-	Pairs   []KVPair `json:"pairs"`
-}
-
-type KVPair struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-type RenderListData struct {
-	QueryID string     `json:"query_id"`
-	Items   []ListItem `json:"items"`
-}
-
-type ListItem struct {
-	Status string `json:"status"`
-	Text   string `json:"text"`
+	Delta   string `json:"delta"`
 }
 
 // InteractionRequestData is emitted as SSE event interaction_request.
@@ -172,42 +140,3 @@ type SupervisorData struct {
 	Detail   string `json:"detail"`
 }
 
-type RenderDetailData struct {
-	QueryID string             `json:"query_id"`
-	Detail  ResourceDetailData `json:"detail"`
-}
-
-type ResourceDetailData struct {
-	Kind       string              `json:"kind"`
-	Name       string              `json:"name"`
-	Namespace  string              `json:"namespace"`
-	Status     map[string]string   `json:"status"`
-	Containers []ContainerInfoData `json:"containers,omitempty"`
-	Conditions []ConditionInfoData `json:"conditions,omitempty"`
-	Events     []EventInfoData     `json:"events,omitempty"`
-	RecentLogs string              `json:"recent_logs,omitempty"`
-	Labels     map[string]string   `json:"labels,omitempty"`
-}
-
-type ContainerInfoData struct {
-	Name         string            `json:"name"`
-	Image        string            `json:"image"`
-	Ready        bool              `json:"ready"`
-	RestartCount int32             `json:"restart_count"`
-	State        string            `json:"state"`
-	Resources    map[string]string `json:"resources,omitempty"`
-}
-
-type ConditionInfoData struct {
-	Type    string `json:"type"`
-	Status  string `json:"status"`
-	Reason  string `json:"reason"`
-	Message string `json:"message"`
-}
-
-type EventInfoData struct {
-	Type      string `json:"type"`
-	Reason    string `json:"reason"`
-	Message   string `json:"message"`
-	Timestamp string `json:"timestamp"`
-}

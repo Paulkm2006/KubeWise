@@ -49,9 +49,9 @@ func emitValuesNotes(st *state.State, r *values.Result) {
 	if r == nil || r.Explanation == "" {
 		return
 	}
-	st.Emit(stream.RenderText{QueryID: st.QueryID, Text: r.Explanation})
+	st.Emit(stream.LLMTextDelta{QueryID: st.QueryID, Delta: r.Explanation})
 	if r.RiskLevel == "high" {
-		st.Emit(stream.RenderText{QueryID: st.QueryID, Text: "⚠️ 配置风险等级: high，请仔细确认"})
+		st.Emit(stream.LLMTextDelta{QueryID: st.QueryID, Delta: "⚠️ 配置风险等级: high，请仔细确认"})
 	}
 }
 

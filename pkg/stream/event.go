@@ -64,50 +64,6 @@ type ToolFail struct {
 
 func (ToolFail) isStreamEvent() {}
 
-type RenderText struct {
-	QueryID string
-	Text    string
-}
-
-func (RenderText) isStreamEvent() {}
-
-type RenderTable struct {
-	QueryID string
-	Headers []string
-	Rows    [][]string
-}
-
-func (RenderTable) isStreamEvent() {}
-
-type RenderCode struct {
-	QueryID  string
-	Language string
-	Content  string
-}
-
-func (RenderCode) isStreamEvent() {}
-
-type RenderKV struct {
-	QueryID string
-	Pairs   []KVPair
-}
-
-func (RenderKV) isStreamEvent() {}
-
-type RenderList struct {
-	QueryID string
-	Items   []ListItem
-}
-
-func (RenderList) isStreamEvent() {}
-
-type RenderDetail struct {
-	QueryID string
-	Detail  ResourceDetail
-}
-
-func (RenderDetail) isStreamEvent() {}
-
 // LLMTextDelta carries a piece of streaming LLM output text for live display.
 type LLMTextDelta struct {
 	QueryID string

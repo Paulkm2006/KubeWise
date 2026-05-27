@@ -37,3 +37,4 @@ go.work.sum
 config.yaml
 kubewise.log
 .kube
+main
