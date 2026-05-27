@@ -11,8 +11,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/session/store"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 type mockStreamQuerier struct {

@@ -9,8 +9,8 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/recovery"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
-	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/helm"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 const toolInstallUpgrade = "helm install/upgrade"

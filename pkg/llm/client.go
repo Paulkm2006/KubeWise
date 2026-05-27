@@ -121,7 +121,7 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 	accum := make(map[int64]*toolCallAccum)
 	var toolOrder []int64
 	result := &Message{Role: "assistant"}
-	var finalized bool    // 是否已通过 finish_reason 确定 content + tool_calls
+	var finalized bool // 是否已通过 finish_reason 确定 content + tool_calls
 
 	for s.Next() {
 		chunk := s.Current()

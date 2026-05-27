@@ -9,14 +9,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/pkg/agent/router"
-	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/catalog"
 	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
-	appsession "github.com/kubewise/kubewise/pkg/session"
-	"github.com/kubewise/kubewise/pkg/tui/model"
+	"github.com/kubewise/kubewise/pkg/agent/router"
+	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/session"
+	appsession "github.com/kubewise/kubewise/pkg/session"
 	"github.com/kubewise/kubewise/pkg/session/store"
+	"github.com/kubewise/kubewise/pkg/stream"
+	"github.com/kubewise/kubewise/pkg/tui/model"
 	tuistyles "github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
@@ -35,12 +35,12 @@ type App struct {
 	confirm *model.ConfirmModel // nil when no modal is shown
 
 	// Deploy TUI 组件（同一时刻最多一个 active）
-	chartSelectModel   *model.ChartSelectModel
-	manualInputModel   *model.ManualChartInputModel
-	deployConfirmModel *model.DeployConfirmModel
+	chartSelectModel        *model.ChartSelectModel
+	manualInputModel        *model.ManualChartInputModel
+	deployConfirmModel      *model.DeployConfirmModel
 	deployConfirmStreamResp chan<- json.RawMessage // deploy_confirm InteractionRequest
 	streamChartResp         chan<- json.RawMessage // chart_select InteractionRequest
-	streamChartCandidates  []catalog.ChartInfo
+	streamChartCandidates   []catalog.ChartInfo
 
 	sessions []*session.Conversation
 	active   *session.Conversation
@@ -121,7 +121,7 @@ func (a App) dispatchInteractionRequest(ir stream.InteractionRequest) (tea.Model
 		return a, a.listenStream()
 	case stream.KindChartSelect:
 		var p struct {
-			AppName    string               `json:"app_name"`
+			AppName    string              `json:"app_name"`
 			Candidates []catalog.ChartInfo `json:"candidates"`
 		}
 		if err := json.Unmarshal(ir.Payload, &p); err != nil {

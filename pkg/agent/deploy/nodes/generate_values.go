@@ -10,8 +10,8 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/values"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/state"
-	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/catalog"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 // GenerateValues asks the LLM for override values and builds the deploy plan.

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/catalog"
 	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
+	"github.com/kubewise/kubewise/pkg/catalog"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 // streamChartSelectionHandler sends chart selection as a unified stream interaction.
@@ -20,7 +20,7 @@ type streamChartSelectionHandler struct {
 
 func (h *streamChartSelectionHandler) SelectChart(ctx context.Context, appName string, candidates []catalog.ChartInfo) (*catalog.ChartInfo, error) {
 	payload, err := json.Marshal(struct {
-		AppName    string               `json:"app_name"`
+		AppName    string              `json:"app_name"`
 		Candidates []catalog.ChartInfo `json:"candidates"`
 	}{
 		AppName:    appName,

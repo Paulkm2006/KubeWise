@@ -3,8 +3,8 @@ package plan
 import (
 	"strings"
 
-	"github.com/kubewise/kubewise/pkg/catalog"
 	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
+	"github.com/kubewise/kubewise/pkg/catalog"
 )
 
 // DeployPlan is the internal deployment plan used by the deploy pipeline.

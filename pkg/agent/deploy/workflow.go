@@ -34,16 +34,16 @@ func RunPipeline(st *state.State) (string, error) {
 
 func (a *Agent) runDeployPipeline(ctx context.Context, query string, entities types.Entities) (string, error) {
 	st := state.New(ctx, query, entities, state.Deps{
-		LLM:      a.llmClient,
-		Helm:     a.helmClient,
-		K8s:      a.k8sClient,
-		Tools:    a.toolRegistry,
-		Confirm:  a,
-		Select:   a,
+		LLM:         a.llmClient,
+		Helm:        a.helmClient,
+		K8s:         a.k8sClient,
+		Tools:       a.toolRegistry,
+		Confirm:     a,
+		Select:      a,
 		BuildReport: a.buildReport,
-		QueryID:  a.queryID,
-		EventCh:  a.eventCh,
-		Log:      a.logger(),
+		QueryID:     a.queryID,
+		EventCh:     a.eventCh,
+		Log:         a.logger(),
 	})
 	return RunPipeline(st)
 }

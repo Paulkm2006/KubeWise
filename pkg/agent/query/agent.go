@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tool"
 	"github.com/kubewise/kubewise/pkg/types"
 	"go.uber.org/zap"

@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/pkg/catalog"
 	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
+	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/tui/model"
 )
 

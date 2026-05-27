@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/kubewise/kubewise/pkg/stream"
 	appsession "github.com/kubewise/kubewise/pkg/session"
 	"github.com/kubewise/kubewise/pkg/session/store"
+	"github.com/kubewise/kubewise/pkg/stream"
 )
 
 // StreamQuerier abstracts the router agent for testability.

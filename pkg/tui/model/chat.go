@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/session"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
@@ -64,17 +64,17 @@ type chatEntry struct {
 
 // ChatModel manages the chat display, progress cards, and pending message assembly.
 type ChatModel struct {
-	messages     []chatEntry
-	pending      map[string]*pendingMsg
-	cards        map[string]*progressCard
-	renderer     *Renderer
-	width        int
-	height       int
-	spinner      spinner.Model
-	phase        string
-	phaseStart   time.Time
-	spinning     bool
-	scrollOffset int // 0 = pinned to bottom; >0 = number of lines scrolled up
+	messages      []chatEntry
+	pending       map[string]*pendingMsg
+	cards         map[string]*progressCard
+	renderer      *Renderer
+	width         int
+	height        int
+	spinner       spinner.Model
+	phase         string
+	phaseStart    time.Time
+	spinning      bool
+	scrollOffset  int // 0 = pinned to bottom; >0 = number of lines scrolled up
 	streamingText *strings.Builder
 	streamingID   string
 }
@@ -86,13 +86,13 @@ func NewChatModel(width, height int) ChatModel {
 	sp.Style = styles.CardRunning
 
 	return ChatModel{
-		messages: make([]chatEntry, 0),
-		pending:  make(map[string]*pendingMsg),
-		cards:    make(map[string]*progressCard),
-		renderer: NewRenderer(width - 2),
-		width:    width,
-		height:   height,
-		spinner:  sp,
+		messages:      make([]chatEntry, 0),
+		pending:       make(map[string]*pendingMsg),
+		cards:         make(map[string]*progressCard),
+		renderer:      NewRenderer(width - 2),
+		width:         width,
+		height:        height,
+		spinner:       sp,
 		streamingText: &strings.Builder{},
 	}
 }
@@ -336,7 +336,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			}
 		}
 
-			m.flushStreamingText(ev.QueryID)
+		m.flushStreamingText(ev.QueryID)
 	// LLMTextDelta accumulates streaming text output.
 	case stream.LLMTextDelta:
 		if m.streamingID != ev.QueryID {
@@ -373,29 +373,28 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			}
 		}
 
-
 	case stream.StreamDone:
-			m.flushStreamingText(ev.QueryID)
-			var inTokens, outTokens int
-			var durationS float64
-			if c, ok := m.cards[ev.QueryID]; ok {
-				inTokens = c.inTokens
-				outTokens = c.outTokens
-				durationS = c.duration.Seconds()
-			}
-			m.messages = append(m.messages, chatEntry{
-				role:      "assistant",
-				content:   ev.Result,
-				lines:     []string{m.renderer.RenderText(ev.Result)},
-				timestamp: time.Now(),
-				inTokens:  inTokens,
-				outTokens: outTokens,
-				durationS: durationS,
-			})
-			m.spinning = false
-			m.phase = ""
-			m.scrollOffset = 0
-			delete(m.cards, ev.QueryID)
+		m.flushStreamingText(ev.QueryID)
+		var inTokens, outTokens int
+		var durationS float64
+		if c, ok := m.cards[ev.QueryID]; ok {
+			inTokens = c.inTokens
+			outTokens = c.outTokens
+			durationS = c.duration.Seconds()
+		}
+		m.messages = append(m.messages, chatEntry{
+			role:      "assistant",
+			content:   ev.Result,
+			lines:     []string{m.renderer.RenderText(ev.Result)},
+			timestamp: time.Now(),
+			inTokens:  inTokens,
+			outTokens: outTokens,
+			durationS: durationS,
+		})
+		m.spinning = false
+		m.phase = ""
+		m.scrollOffset = 0
+		delete(m.cards, ev.QueryID)
 
 	case stream.StreamErr:
 		errMsg := fmt.Sprintf("错误：%v", ev.Err)
@@ -410,7 +409,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
 
-			m.flushStreamingText(ev.QueryID)
+		m.flushStreamingText(ev.QueryID)
 	case stream.Phase:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			now := time.Now()

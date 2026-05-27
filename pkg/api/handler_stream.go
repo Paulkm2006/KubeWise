@@ -123,4 +123,3 @@ func (h *Handler) handleStreamInteractionSSE(sse *SSEWriter, e stream.Interactio
 
 	return sse.WriteEvent("interaction_request", data)
 }
-

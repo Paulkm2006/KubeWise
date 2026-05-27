@@ -128,9 +128,9 @@ type OperationConfirmResponse struct {
 
 // ChartSelectResponse is the JSON body for KindChartSelect responses.
 type ChartSelectResponse struct {
-	Cancelled       bool `json:"cancelled"`
-	UseManualChart  bool `json:"use_manual_chart"`
-	CandidateIndex  int  `json:"candidate_index"` // 0-based into candidates list
+	Cancelled      bool `json:"cancelled"`
+	UseManualChart bool `json:"use_manual_chart"`
+	CandidateIndex int  `json:"candidate_index"` // 0-based into candidates list
 	// When UseManualChart and the client collected repo/chart details (e.g. TUI manual form).
 	ManualRepoURL   string `json:"manual_repo_url,omitempty"`
 	ManualChartName string `json:"manual_chart_name,omitempty"`

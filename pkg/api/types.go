@@ -139,4 +139,3 @@ type SupervisorData struct {
 	Decision string `json:"decision"`
 	Detail   string `json:"detail"`
 }
-

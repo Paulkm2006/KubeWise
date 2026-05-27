@@ -6,7 +6,7 @@ import (
 
 // Emitter sends stream events without dropping interactions, stream terminals, or render blocks.
 type Emitter struct {
-	ch     chan<- Event
+	ch      chan<- Event
 	queryID string
 }
 
@@ -46,4 +46,3 @@ func (e Emitter) Emit(ctx context.Context, ev Event) error {
 		return nil
 	}
 }
-
