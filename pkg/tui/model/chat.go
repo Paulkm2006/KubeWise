@@ -75,7 +75,7 @@ type ChatModel struct {
 	phaseStart   time.Time
 	spinning     bool
 	scrollOffset int // 0 = pinned to bottom; >0 = number of lines scrolled up
-	streamingText strings.Builder
+	streamingText *strings.Builder
 	streamingID   string
 }
 
@@ -93,6 +93,7 @@ func NewChatModel(width, height int) ChatModel {
 		width:    width,
 		height:   height,
 		spinner:  sp,
+		streamingText: &strings.Builder{},
 	}
 }
 
