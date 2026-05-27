@@ -115,6 +115,55 @@ func TestChatStreamNoQuery(t *testing.T) {
 	}
 }
 
+func TestChatStreamLLMTextDeltaSSE(t *testing.T) {
+	q := &mockStreamQuerier{
+		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
+			eventCh <- stream.LLMTextDelta{QueryID: queryID, Delta: "hello"}
+			eventCh <- stream.StreamDone{QueryID: queryID, Result: "done"}
+			return nil
+		},
+	}
+	h := NewHandlerWithDeps(q, newTestStore(t))
+	e := setupEcho(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?query=ping", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	lines := strings.Split(rec.Body.String(), "\n")
+	for i := 0; i+1 < len(lines); i++ {
+		if lines[i] != "event: llm_text_delta" {
+			continue
+		}
+		if !strings.HasPrefix(lines[i+1], "data: ") {
+			t.Fatalf("missing data line for llm_text_delta event: %q", lines[i+1])
+		}
+
+		raw := strings.TrimPrefix(lines[i+1], "data: ")
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			t.Fatalf("invalid llm_text_delta payload: %v", err)
+		}
+
+		if payload["query_id"] == "" {
+			t.Fatalf("expected non-empty query_id in payload: %s", raw)
+		}
+		if payload["delta"] != "hello" {
+			t.Fatalf("unexpected delta in payload: %s", raw)
+		}
+		if len(payload) != 2 {
+			t.Fatalf("unexpected payload shape for llm_text_delta: %s", raw)
+		}
+		return
+	}
+
+	t.Fatalf("expected llm_text_delta event in stream, got body: %s", rec.Body.String())
+}
+
 func TestConfirmFlow(t *testing.T) {
 	q := &mockStreamQuerier{
 		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
