@@ -1,4 +1,4 @@
-package session
+package store
 
 import (
 	"encoding/json"
@@ -8,15 +8,17 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/kubewise/kubewise/pkg/session"
 )
 
-// Store persists sessions as JSON files under Dir.
-type Store struct {
+// FileStore persists conversations as JSON files on disk.
+type FileStore struct {
 	Dir string
 }
 
-// NewStore creates a Store pointed at ~/.kubewise/sessions/, creating it if absent.
-func NewStore() (*Store, error) {
+// NewFileStore creates a FileStore pointed at ~/.kubewise/sessions/.
+func NewFileStore() (*FileStore, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("get home dir: %w", err)
@@ -25,26 +27,26 @@ func NewStore() (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create sessions dir: %w", err)
 	}
-	return &Store{Dir: dir}, nil
+	return &FileStore{Dir: dir}, nil
 }
 
-// Save writes sess to a JSON file named <date>-<id>.json, creating the dir if needed.
-func (s *Store) Save(sess *Session) error {
+// Save writes a conversation as a JSON file.
+func (s *FileStore) Save(conv *session.Conversation) error {
 	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
 		return fmt.Errorf("create sessions dir: %w", err)
 	}
-	sess.UpdatedAt = time.Now()
-	filename := fmt.Sprintf("%s-%s.json", sess.CreatedAt.Format("2006-01-02-150405"), sess.ID)
+	conv.UpdatedAt = time.Now()
+	filename := fmt.Sprintf("%s-%s.json", conv.CreatedAt.Format("2006-01-02-150405"), conv.ID)
 	path := filepath.Join(s.Dir, filename)
-	data, err := json.MarshalIndent(sess, "", "  ")
+	data, err := json.MarshalIndent(conv, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
 }
 
-// LoadRecent returns up to n sessions sorted by file modification time, newest first.
-func (s *Store) LoadRecent(n int) ([]*Session, error) {
+// LoadRecent returns up to n conversations sorted by modification time, newest first.
+func (s *FileStore) LoadRecent(n int) ([]*session.Conversation, error) {
 	entries, err := os.ReadDir(s.Dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -80,23 +82,23 @@ func (s *Store) LoadRecent(n int) ([]*Session, error) {
 		files = files[:n]
 	}
 
-	sessions := make([]*Session, 0, len(files))
+	convs := make([]*session.Conversation, 0, len(files))
 	for _, f := range files {
 		data, err := os.ReadFile(f.path)
 		if err != nil {
 			continue
 		}
-		var sess Session
-		if err := json.Unmarshal(data, &sess); err != nil {
+		var conv session.Conversation
+		if err := json.Unmarshal(data, &conv); err != nil {
 			continue
 		}
-		sessions = append(sessions, &sess)
+		convs = append(convs, &conv)
 	}
-	return sessions, nil
+	return convs, nil
 }
 
-// Delete removes the session file matching the given ID.
-func (s *Store) Delete(id string) error {
+// Delete removes the conversation file matching the given ID.
+func (s *FileStore) Delete(id string) error {
 	entries, err := os.ReadDir(s.Dir)
 	if err != nil {
 		return err

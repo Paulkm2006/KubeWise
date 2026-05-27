@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/tui/session"
+	"github.com/kubewise/kubewise/pkg/session"
 	"github.com/kubewise/kubewise/pkg/tui/styles"
 )
 

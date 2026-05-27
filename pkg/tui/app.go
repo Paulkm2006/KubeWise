@@ -15,7 +15,8 @@ import (
 	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 	appsession "github.com/kubewise/kubewise/pkg/session"
 	"github.com/kubewise/kubewise/pkg/tui/model"
-	"github.com/kubewise/kubewise/pkg/tui/session"
+	"github.com/kubewise/kubewise/pkg/session"
+	"github.com/kubewise/kubewise/pkg/session/store"
 	tuistyles "github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
@@ -41,9 +42,9 @@ type App struct {
 	streamChartResp         chan<- json.RawMessage // chart_select InteractionRequest
 	streamChartCandidates  []catalog.ChartInfo
 
-	sessions []*session.Session
-	active   *session.Session
-	store    *session.Store
+	sessions []*session.Conversation
+	active   *session.Conversation
+	store    store.Store
 
 	eventCh  chan stream.Event
 	cancelFn context.CancelFunc
@@ -60,7 +61,7 @@ type App struct {
 
 // NewApp creates the App, loading recent sessions from disk.
 func NewApp(sess *appsession.Session, log *zap.Logger) (*App, error) {
-	store, err := session.NewStore()
+	store, err := store.NewFileStore()
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
 	}
@@ -70,12 +71,9 @@ func NewApp(sess *appsession.Session, log *zap.Logger) (*App, error) {
 		recentSessions = nil
 	}
 
-	activeSession := session.New()
+	activeSession := session.NewConversation()
 
 	routerAgent := sess.Router
-	if err != nil {
-		return nil, err
-	}
 	routerAgent.SetLogger(log)
 
 	return &App{
@@ -452,15 +450,15 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 
 func (a *App) newSession() {
 	a.saveSession()
-	a.active = session.New()
+	a.active = session.NewConversation()
 	a.chat = model.NewChatModel(a.width-tuistyles.SidebarWidth, a.height-5)
 	if !containsSession(a.sessions, a.active.ID) {
-		a.sessions = append([]*session.Session{a.active}, a.sessions...)
+		a.sessions = append([]*session.Conversation{a.active}, a.sessions...)
 	}
 	a.sidebar.SetSessions(a.sessions)
 }
 
-func (a *App) loadSession(s *session.Session) {
+func (a *App) loadSession(s *session.Conversation) {
 	a.saveSession()
 	a.active = s
 	a.chat.SetMessages(s.Messages)
@@ -567,7 +565,7 @@ func Run(sess *appsession.Session, log *zap.Logger) error {
 	return err
 }
 
-func containsSession(sessions []*session.Session, id string) bool {
+func containsSession(sessions []*session.Conversation, id string) bool {
 	for _, s := range sessions {
 		if s.ID == id {
 			return true

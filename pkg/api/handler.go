@@ -7,7 +7,7 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/stream"
 	appsession "github.com/kubewise/kubewise/pkg/session"
-	"github.com/kubewise/kubewise/pkg/tui/session"
+	"github.com/kubewise/kubewise/pkg/session/store"
 )
 
 // StreamQuerier abstracts the router agent for testability.
@@ -23,7 +23,7 @@ type pendingInteraction struct {
 
 type Handler struct {
 	querier             StreamQuerier
-	sessionStore        *session.Store
+	sessionStore        store.Store
 	mu                  sync.RWMutex
 	pendingInteractions map[string]*pendingInteraction
 }
@@ -31,7 +31,7 @@ type Handler struct {
 // NewHandler creates a Handler with real K8s/LLM clients.
 func NewHandler(sess *appsession.Session) (*Handler, error) {
 	routerAgent := sess.Router
-	store, err := session.NewStore()
+	store, err := store.NewFileStore()
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func NewHandler(sess *appsession.Session) (*Handler, error) {
 }
 
 // NewHandlerWithDeps creates a Handler with custom dependencies (for testing).
-func NewHandlerWithDeps(querier StreamQuerier, store *session.Store) *Handler {
+func NewHandlerWithDeps(querier StreamQuerier, store store.Store) *Handler {
 	return &Handler{
 		querier:             querier,
 		sessionStore:        store,

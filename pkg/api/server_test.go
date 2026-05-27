@@ -12,7 +12,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/tui/session"
+	"github.com/kubewise/kubewise/pkg/session/store"
 )
 
 type mockStreamQuerier struct {
@@ -28,9 +28,9 @@ func (m *mockStreamQuerier) HandleQueryStream(ctx context.Context, query, queryI
 	return m.handleQueryStream(ctx, query, queryID, eventCh)
 }
 
-func newTestStore(t *testing.T) *session.Store {
+func newTestStore(t *testing.T) store.Store {
 	t.Helper()
-	return &session.Store{Dir: t.TempDir()}
+	return &store.FileStore{Dir: t.TempDir()}
 }
 
 func setupEcho(h *Handler) *echo.Echo {

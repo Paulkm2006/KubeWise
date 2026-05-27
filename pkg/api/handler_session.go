@@ -5,7 +5,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/kubewise/kubewise/pkg/tui/session"
+	"github.com/kubewise/kubewise/pkg/session"
 )
 
 func (h *Handler) ListSessions(c *echo.Context) error {
@@ -30,7 +30,7 @@ func (h *Handler) CreateSession(c *echo.Context) error {
 	var req CreateSessionRequest
 	_ = c.Bind(&req)
 
-	sess := session.New()
+	sess := session.NewConversation()
 	if req.Title != "" {
 		sess.Title = req.Title
 	}
