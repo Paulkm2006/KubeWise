@@ -74,23 +74,31 @@ paths:
               schema:
                 type: string
                 description: |
-                  SSE stream with the following event types:
-                  - `phase`: Agent processing phase
-                  - `agent_start`: Agent begins processing
-                  - `agent_done`: Agent finished (includes duration and token counts)
-                  - `tool_call`: Tool invocation started
-                  - `tool_done`: Tool invocation completed
-                  - `render_text`: Plain text result
-                  - `render_table`: Table result with headers and rows
-                  - `render_code`: Code block result (YAML/JSON)
-                  - `render_kv`: Key-value pairs result
-                  - `render_list`: Status list result
-                  - `interaction_request`: Human-in-the-loop (operation confirm, chart select, deploy confirm)
-                  - `tool_fail`: Tool failed (includes error message)
-                  - `render_detail`: Structured resource detail
-                  - `stream_done`: Query completed successfully
-                  - `stream_err`: Query failed with error
-                  - `supervisor`: Supervisor intervention event
+                  SSE stream. Each event has:
+                  ```
+                  event: <type>
+                  data: <json>
+                  ```
+
+                  Event types and their data shapes:
+
+                  - `phase` → `{"query_id":"...","phase":"thinking"}`
+                  - `agent_start` → `{"query_id":"...","agent_name":"Query Agent"}`
+                  - `agent_done` → `{"query_id":"...","duration_ns":123,"in_tokens":10,"out_tokens":50}`
+                  - `tool_call` → `{"query_id":"...","tool_name":"get_pods","step":1}`
+                  - `tool_done` → `{"query_id":"...","tool_name":"get_pods","step":1,"elapsed_ns":500000000}`
+                  - `tool_fail` → `{"query_id":"...","tool_name":"get_pods","step":1,"elapsed_ns":500000000,"error":"timeout"}`
+                  - `render_text` → `{"query_id":"...","text":"hello"}`
+                  - `render_table` → `{"query_id":"...","headers":["Name"],"rows":[["pod-a"]]}`
+                  - `render_code` → `{"query_id":"...","language":"yaml","content":"..."}`
+                  - `render_kv` → `{"query_id":"...","pairs":[{"key":"ns","value":"default"}]}`
+                  - `render_list` → `{"query_id":"...","items":[{"status":"ok","text":"pod running"}]}`
+                  - `render_detail` → `{"query_id":"...","detail":{"kind":"pod","name":"my-pod","namespace":"default",...}}`
+                  - `llm_text_delta` → `{"query_id":"...","delta":"思考中"}`
+                  - `supervisor` → `{"query_id":"...","reason":"loop detected","decision":"interrupt","detail":"..."}`
+                  - `interaction_request` → see InteractionRequestData schema below
+                  - `stream_done` → `{"query_id":"...","result":"..."}`
+                  - `stream_err` → `{"query_id":"...","error":"..."}`
         "400":
           description: Missing query parameter
           content:
@@ -260,8 +268,16 @@ components:
           type: string
           description: ID from the interaction_request SSE event
         payload:
-          type: object
-          description: Kind-specific JSON body (e.g. confirmed/correction for operation_step)
+          oneOf:
+            - $ref: "#/components/schemas/OperationStepPayload"
+            - $ref: "#/components/schemas/ChartSelectPayload"
+            - $ref: "#/components/schemas/DeployConfirmPayload"
+          description: |
+            Kind-specific JSON body:
+
+            - `operation_step` → `{"confirmed":true}` or `{"confirmed":false,"correction":"改成3个副本"}`
+            - `chart_select` → `{"cancelled":true}` or `{"use_manual_chart":false,"candidate_index":0}`
+            - `deploy_confirm` → `{"action":"execute"}` or `{"action":"cancel"}` or `{"action":"execute","values":"...","correction":"..."}`
 
     CreateSessionRequest:
       type: object
@@ -329,4 +345,122 @@ components:
         error:
           type: string
         detail:
+          type: string
+
+    # --- SSE Event Data Schemas ---
+
+    InteractionRequestData:
+      type: object
+      properties:
+        query_id:
+          type: string
+        interaction_id:
+          type: string
+        kind:
+          type: string
+          enum: [operation_step, chart_select, deploy_confirm]
+        payload:
+          type: object
+          description: Opaque JSON; see kind-specific schemas
+        total_steps:
+          type: integer
+          description: Only for operation_step
+
+    OperationStepPayload:
+      type: object
+      properties:
+        confirmed:
+          type: boolean
+        correction:
+          type: string
+
+    ChartSelectPayload:
+      type: object
+      properties:
+        cancelled:
+          type: boolean
+        use_manual_chart:
+          type: boolean
+        candidate_index:
+          type: integer
+
+    DeployConfirmPayload:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [execute, cancel]
+        values:
+          type: string
+        correction:
+          type: string
+
+    DetailPayload:
+      type: object
+      properties:
+        kind:
+          type: string
+        name:
+          type: string
+        namespace:
+          type: string
+        status:
+          type: object
+          additionalProperties:
+            type: string
+        containers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContainerInfo"
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConditionInfo"
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventInfo"
+        recent_logs:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+
+    ContainerInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        image:
+          type: string
+        ready:
+          type: boolean
+        restart_count:
+          type: integer
+        state:
+          type: string
+
+    ConditionInfo:
+      type: object
+      properties:
+        type:
+          type: string
+        status:
+          type: string
+        reason:
+          type: string
+        message:
+          type: string
+
+    EventInfo:
+      type: object
+      properties:
+        type:
+          type: string
+        reason:
+          type: string
+        message:
+          type: string
+        timestamp:
           type: string
