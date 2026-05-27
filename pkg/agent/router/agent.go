@@ -135,6 +135,8 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 // channel support, routes to the appropriate sub-agent, and emits structured
 // render events followed by StreamDoneEvent on success.
 func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string, eventCh chan<- stream.Event) error {
+	// Sub-agents are shared and mutate per-request event routing state.
+	// Serialize streaming queries to prevent cross-request channel/queryID races.
 	a.streamMu.Lock()
 	defer a.streamMu.Unlock()
 
