@@ -336,6 +336,14 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		}
 
 			m.flushStreamingText(ev.QueryID)
+	// LLMTextDelta accumulates streaming text output.
+	case stream.LLMTextDelta:
+		if m.streamingID != ev.QueryID {
+			m.streamingID = ev.QueryID
+			m.streamingText.Reset()
+		}
+		m.streamingText.WriteString(ev.Delta)
+
 	case stream.ToolCall:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			c.tools = append(c.tools, toolLine{name: ev.ToolName, step: ev.Step})
