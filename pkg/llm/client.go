@@ -186,7 +186,10 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 					a := accum[idx]
 					var args map[string]any
 					if a.ArgumentsJSON.Len() > 0 {
-						_ = json.Unmarshal([]byte(a.ArgumentsJSON.String()), &args)
+						argsStr := a.ArgumentsJSON.String()
+						if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+							args = map[string]any{"raw_arguments": argsStr}
+						}
 					}
 					if args == nil {
 						args = make(map[string]any)
