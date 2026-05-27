@@ -13,7 +13,6 @@ import (
 	"github.com/kubewise/kubewise/pkg/agent/router"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/session"
-	appsession "github.com/kubewise/kubewise/pkg/session"
 	"github.com/kubewise/kubewise/pkg/session/store"
 	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/model"
@@ -60,7 +59,7 @@ type App struct {
 }
 
 // NewApp creates the App, loading recent sessions from disk.
-func NewApp(sess *appsession.Session, log *zap.Logger) (*App, error) {
+func NewApp(sess *session.Session, log *zap.Logger) (*App, error) {
 	store, err := store.NewFileStore()
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
@@ -545,7 +544,7 @@ func (a App) View() string {
 }
 
 // Run starts the bubbletea program.
-func Run(sess *appsession.Session, log *zap.Logger) error {
+func Run(sess *session.Session, log *zap.Logger) error {
 	app, err := NewApp(sess, log)
 	if err != nil {
 		return err
