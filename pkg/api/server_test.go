@@ -149,10 +149,12 @@ func TestChatStreamLLMTextDeltaSSE(t *testing.T) {
 			t.Fatalf("invalid llm_text_delta payload: %v", err)
 		}
 
-		if payload["query_id"] == "" {
+		queryID, ok := payload["query_id"].(string)
+		if !ok || queryID == "" {
 			t.Fatalf("expected non-empty query_id in payload: %s", raw)
 		}
-		if payload["delta"] != "hello" {
+		delta, ok := payload["delta"].(string)
+		if !ok || delta != "hello" {
 			t.Fatalf("unexpected delta in payload: %s", raw)
 		}
 		if len(payload) != 2 {
