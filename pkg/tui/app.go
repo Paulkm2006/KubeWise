@@ -151,23 +151,26 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 	case stream.InteractionRequest:
 		return a.dispatchInteractionRequest(e)
 	case stream.StreamDone:
-		a.chat, _ = a.chat.Update(e)
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(e)
 		a.running = false
 		a.input.SetEnabled(true)
 		a.persistAssistantMessage()
-		return a, nil
+		return a, chatCmd
 	case stream.StreamErr:
 		err := e.Err
 		if err == nil {
 			err = fmt.Errorf("stream ended")
 		}
-		a.chat, _ = a.chat.Update(stream.StreamErr{QueryID: e.QueryID, Err: err})
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(stream.StreamErr{QueryID: e.QueryID, Err: err})
 		a.running = false
 		a.input.SetEnabled(true)
-		return a, nil
+		return a, chatCmd
 	default:
-		a.chat, _ = a.chat.Update(ev)
-		return a, a.listenStream()
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(ev)
+		return a, tea.Batch(a.listenStream(), chatCmd)
 	}
 }
 
