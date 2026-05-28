@@ -119,7 +119,7 @@ func TestChatStreamLLMTextDeltaSSE(t *testing.T) {
 	q := &mockStreamQuerier{
 		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
 			eventCh <- stream.LLMTextDelta{QueryID: queryID, Delta: "hello"}
-			eventCh <- stream.StreamDone{QueryID: queryID, Result: "done"}
+			eventCh <- stream.StreamDone{QueryID: queryID}
 			return nil
 		},
 	}
@@ -182,7 +182,7 @@ func TestConfirmFlow(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				return context.DeadlineExceeded
 			}
-			eventCh <- stream.StreamDone{QueryID: queryID, Result: "done"}
+			eventCh <- stream.StreamDone{QueryID: queryID}
 			return nil
 		},
 	}
@@ -254,7 +254,7 @@ func TestInteractionOperationStepFlow(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				return context.DeadlineExceeded
 			}
-			eventCh <- stream.StreamDone{QueryID: queryID, Result: "done"}
+			eventCh <- stream.StreamDone{QueryID: queryID}
 			return nil
 		},
 	}

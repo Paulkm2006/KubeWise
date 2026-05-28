@@ -34,6 +34,7 @@ type phaseLine struct {
 type progressCard struct {
 	queryID   string
 	agentName string
+	result    string
 	tools     []toolLine
 	phases    []phaseLine
 	done      bool
@@ -324,6 +325,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	case stream.AgentDone:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			c.done = true
+			c.result = ev.Result
 			c.duration = ev.Duration
 			c.inTokens = ev.InTokens
 			c.outTokens = ev.OutTokens
@@ -376,16 +378,18 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	case stream.StreamDone:
 		m.flushStreamingText(ev.QueryID)
 		var inTokens, outTokens int
-		var durationS float64
+		var result string
+			var durationS float64
 		if c, ok := m.cards[ev.QueryID]; ok {
 			inTokens = c.inTokens
 			outTokens = c.outTokens
 			durationS = c.duration.Seconds()
+				result = c.result
 		}
 		m.messages = append(m.messages, chatEntry{
 			role:      "assistant",
-			content:   ev.Result,
-			lines:     []string{m.renderer.RenderText(ev.Result)},
+			content:   result,
+			lines:     []string{m.renderer.RenderText(result)},
 			timestamp: time.Now(),
 			inTokens:  inTokens,
 			outTokens: outTokens,

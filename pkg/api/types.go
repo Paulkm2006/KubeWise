@@ -79,6 +79,7 @@ type AgentStartData struct {
 
 type AgentDoneData struct {
 	QueryID   string        `json:"query_id"`
+	Result    string        `json:"result"`
 	Duration  time.Duration `json:"duration"`
 	InTokens  int           `json:"in_tokens"`
 	OutTokens int           `json:"out_tokens"`
@@ -125,7 +126,6 @@ type UnknownStreamEventData struct {
 
 type StreamDoneData struct {
 	QueryID string `json:"query_id"`
-	Result  string `json:"result"`
 }
 
 type StreamErrData struct {

@@ -265,7 +265,8 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		return err
 	}
 
-	emit(stream.StreamDone{QueryID: queryID, Result: result})
+	emit(stream.AgentDone{QueryID: queryID, Result: result})
+	emit(stream.StreamDone{QueryID: queryID})
 	return nil
 }
 

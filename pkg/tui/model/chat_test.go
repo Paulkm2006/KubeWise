@@ -40,7 +40,7 @@ func TestStreamDoneStopsSpinner(t *testing.T) {
 
 	m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Query Agent"})
 
-	updated, _ := m.Update(stream.StreamDone{QueryID: "q-1", Result: "done"})
+	updated, _ := m.Update(stream.StreamDone{QueryID: "q-1"})
 
 	if updated.IsSpinning() {
 		t.Error("expected spinner to stop after StreamDoneEvent")
