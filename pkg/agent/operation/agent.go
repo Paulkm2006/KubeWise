@@ -169,7 +169,7 @@ func (a *Agent) accumulate(resp *llm.Message) {
 }
 
 // HandleQuery is the entry point called by the router.
-func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (string, error) {
+func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (result string, err error) {
 	a.inTokens = 0
 	a.outTokens = 0
 	start := time.Now()
@@ -178,6 +178,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	defer func() {
 		a.emit(stream.AgentDone{
 			QueryID:   a.queryID,
+			Result:    result,
 			Duration:  time.Since(start),
 			InTokens:  a.inTokens,
 			OutTokens: a.outTokens,

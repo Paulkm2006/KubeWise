@@ -133,7 +133,7 @@ func (a *Agent) buildSystemPrompt() string {
 }
 
 // HandleQuery 处理安全审计请求
-func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (string, error) {
+func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (result string, err error) {
 	start := time.Now()
 	var inTokens, outTokens int
 	a.emit(stream.AgentStart{AgentName: "Security Agent", QueryID: a.queryID})
@@ -141,6 +141,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	defer func() {
 		a.emit(stream.AgentDone{
 			QueryID:   a.queryID,
+			Result:    result,
 			Duration:  time.Since(start),
 			InTokens:  inTokens,
 			OutTokens: outTokens,
