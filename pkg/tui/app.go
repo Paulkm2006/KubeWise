@@ -154,14 +154,14 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 		// StreamDone handles chatEntry creation and input re-enable.
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(e)
-		return a, chatCmd
+		return a, tea.Batch(a.listenStream(), chatCmd)
 	case stream.StreamDone:
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(e)
 		a.running = false
 		a.input.SetEnabled(true)
 		a.persistAssistantMessage()
-		return a, chatCmd
+		return a, tea.Batch(a.listenStream(), chatCmd)
 	case stream.StreamErr:
 		err := e.Err
 		if err == nil {
@@ -171,7 +171,7 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 		a.chat, chatCmd = a.chat.Update(stream.StreamErr{QueryID: e.QueryID, Err: err})
 		a.running = false
 		a.input.SetEnabled(true)
-		return a, chatCmd
+		return a, tea.Batch(a.listenStream(), chatCmd)
 	default:
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(ev)
