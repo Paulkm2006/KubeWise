@@ -286,7 +286,10 @@ func (m *ChatModel) ScrollToBottom() {
 func (m ChatModel) totalLines() int {
 	var count int
 	for _, e := range m.messages {
-		count += len(e.lines) + 2 // lines + timestamp + blank separator
+		for _, line := range e.lines {
+			count += strings.Count(line, "\n") + 1
+		}
+		count += 2 // timestamp + blank separator
 	}
 	for _, card := range m.cards {
 		rendered := m.renderCard(card)
