@@ -17,7 +17,7 @@ type mockLLM struct {
 	chat func(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error)
 }
 
-func (m *mockLLM) ChatCompletion(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error) {
+func (m *mockLLM) ChatCompletion(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition, onChunk func(llm.StreamChunk)) (*llm.Message, error) {
 	return m.chat(ctx, messages, functions)
 }
 

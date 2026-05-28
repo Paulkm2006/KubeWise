@@ -11,8 +11,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/kubewise/kubewise/pkg/session/store"
 	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/tui/session"
 )
 
 type mockStreamQuerier struct {
@@ -28,9 +28,9 @@ func (m *mockStreamQuerier) HandleQueryStream(ctx context.Context, query, queryI
 	return m.handleQueryStream(ctx, query, queryID, eventCh)
 }
 
-func newTestStore(t *testing.T) *session.Store {
+func newTestStore(t *testing.T) store.Store {
 	t.Helper()
-	return &session.Store{Dir: t.TempDir()}
+	return &store.FileStore{Dir: t.TempDir()}
 }
 
 func setupEcho(h *Handler) *echo.Echo {
@@ -102,36 +102,6 @@ func TestChatSyncEmptyQuery(t *testing.T) {
 	}
 }
 
-func TestChatStreamSSE(t *testing.T) {
-	q := &mockStreamQuerier{
-		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
-			eventCh <- stream.Phase{QueryID: queryID, Phase: "thinking"}
-			eventCh <- stream.RenderText{QueryID: queryID, Text: "hello"}
-			eventCh <- stream.StreamDone{QueryID: queryID, Result: "hello"}
-			return nil
-		},
-	}
-	h := NewHandlerWithDeps(q, newTestStore(t))
-	e := setupEcho(h)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?query=test", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "text/event-stream" {
-		t.Fatalf("expected text/event-stream, got %s", ct)
-	}
-	body := rec.Body.String()
-	for _, ev := range []string{"event: phase", "event: render_text", "event: stream_done"} {
-		if !strings.Contains(body, ev) {
-			t.Errorf("missing %s", ev)
-		}
-	}
-}
-
 func TestChatStreamNoQuery(t *testing.T) {
 	h := NewHandlerWithDeps(&mockStreamQuerier{}, newTestStore(t))
 	e := setupEcho(h)
@@ -143,6 +113,57 @@ func TestChatStreamNoQuery(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
+}
+
+func TestChatStreamLLMTextDeltaSSE(t *testing.T) {
+	q := &mockStreamQuerier{
+		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
+			eventCh <- stream.LLMTextDelta{QueryID: queryID, Delta: "hello"}
+			eventCh <- stream.StreamDone{QueryID: queryID, Result: "done"}
+			return nil
+		},
+	}
+	h := NewHandlerWithDeps(q, newTestStore(t))
+	e := setupEcho(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?query=ping", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	lines := strings.Split(rec.Body.String(), "\n")
+	for i := 0; i+1 < len(lines); i++ {
+		if lines[i] != "event: llm_text_delta" {
+			continue
+		}
+		if !strings.HasPrefix(lines[i+1], "data: ") {
+			t.Fatalf("missing data line for llm_text_delta event: %q", lines[i+1])
+		}
+
+		raw := strings.TrimPrefix(lines[i+1], "data: ")
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			t.Fatalf("invalid llm_text_delta payload: %v", err)
+		}
+
+		queryID, ok := payload["query_id"].(string)
+		if !ok || queryID == "" {
+			t.Fatalf("expected non-empty query_id in payload: %s", raw)
+		}
+		delta, ok := payload["delta"].(string)
+		if !ok || delta != "hello" {
+			t.Fatalf("unexpected delta in payload: %s", raw)
+		}
+		if len(payload) != 2 {
+			t.Fatalf("unexpected payload shape for llm_text_delta: %s", raw)
+		}
+		return
+	}
+
+	t.Fatalf("expected llm_text_delta event in stream, got body: %s", rec.Body.String())
 }
 
 func TestConfirmFlow(t *testing.T) {
@@ -371,40 +392,6 @@ func TestDeleteSessionNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
-	}
-}
-
-func TestSSEAllEventTypes(t *testing.T) {
-	q := &mockStreamQuerier{
-		handleQueryStream: func(ctx context.Context, query, queryID string, eventCh chan<- stream.Event) error {
-			eventCh <- stream.AgentStart{QueryID: queryID, AgentName: "query"}
-			eventCh <- stream.ToolCall{QueryID: queryID, ToolName: "list_pods", Step: 1}
-			eventCh <- stream.ToolDone{QueryID: queryID, ToolName: "list_pods", Step: 1, Elapsed: time.Second}
-			eventCh <- stream.RenderTable{QueryID: queryID, Headers: []string{"Name"}, Rows: [][]string{{"pod-1"}}}
-			eventCh <- stream.RenderCode{QueryID: queryID, Language: "yaml", Content: "apiVersion: v1"}
-			eventCh <- stream.RenderKV{QueryID: queryID, Pairs: []stream.KVPair{{Key: "k", Value: "v"}}}
-			eventCh <- stream.RenderList{QueryID: queryID, Items: []stream.ListItem{{Status: "ok", Text: "t"}}}
-			eventCh <- stream.Supervisor{QueryID: queryID, Reason: "loop", Decision: "continue", Detail: "d"}
-			eventCh <- stream.StreamDone{QueryID: queryID, Result: "done"}
-			return nil
-		},
-	}
-	h := NewHandlerWithDeps(q, newTestStore(t))
-	e := setupEcho(h)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/chat/stream?query=test", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	body := rec.Body.String()
-	for _, ev := range []string{
-		"event: agent_start", "event: tool_call", "event: tool_done",
-		"event: render_table", "event: render_code", "event: render_kv",
-		"event: render_list", "event: supervisor", "event: stream_done",
-	} {
-		if !strings.Contains(body, ev) {
-			t.Errorf("missing %s", ev)
-		}
 	}
 }
 

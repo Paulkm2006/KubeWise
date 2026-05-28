@@ -221,7 +221,7 @@ Return JSON only: {"decision": "continue"|"reset"|"abort", "extra_steps": <int>,
 		{Role: "user", Content: userMsg},
 	}
 
-	resp, err := s.llmClient.ChatCompletion(ctx, evalMessages, nil)
+	resp, err := s.llmClient.ChatCompletion(ctx, evalMessages, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("supervisor LLM call failed: %w", err)
 	}

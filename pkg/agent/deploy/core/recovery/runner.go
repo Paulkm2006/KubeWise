@@ -42,7 +42,7 @@ type Result struct {
 
 // LLMClient is the minimal LLM interface for recovery.
 type LLMClient interface {
-	ChatCompletion(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition) (*llm.Message, error)
+	ChatCompletion(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition, onChunk func(llm.StreamChunk)) (*llm.Message, error)
 }
 
 // HelmClient reads release status for diagnostics snapshots.
@@ -171,7 +171,7 @@ Namespace: %s
 
 		r.logDebug("recovery step", zap.Int("step", step+1), zap.Int("messages", recoveryCtx.Len()))
 
-		resp, err := r.LLM.ChatCompletion(ctx, recoveryCtx.Messages(), tools)
+		resp, err := r.LLM.ChatCompletion(ctx, recoveryCtx.Messages(), tools, nil)
 		if err != nil {
 			r.logError("recover LLM call failed", zap.Int("step", step+1), zap.Error(err))
 			return nil, fmt.Errorf("诊断修复过程出错: %w", err)

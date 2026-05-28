@@ -87,9 +87,9 @@ func applyRecoveredValues(st *state.State, result *recovery.Result) error {
 		return err
 	}
 	st.RecoveryPendingReview = true
-	st.EmitCritical(stream.RenderCode{QueryID: st.QueryID, Language: "yaml", Content: st.FinalValues})
+	st.EmitCritical(stream.LLMTextDelta{QueryID: st.QueryID, Delta: "最终 Values:\n" + st.FinalValues})
 	if result.Summary != "" {
-		st.EmitCritical(stream.RenderText{QueryID: st.QueryID, Text: result.Summary})
+		st.EmitCritical(stream.LLMTextDelta{QueryID: st.QueryID, Delta: result.Summary})
 	}
 	st.LogInfo("recovery values accepted by state",
 		zap.Int("attempt", st.RecoveryAttempts),

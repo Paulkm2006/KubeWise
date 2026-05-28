@@ -5,17 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy"
 	"github.com/kubewise/kubewise/pkg/agent/operation"
 	"github.com/kubewise/kubewise/pkg/agent/query"
 	"github.com/kubewise/kubewise/pkg/agent/security"
-	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/agent/troubleshooting"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/types"
 	"go.uber.org/zap"
 )
@@ -32,6 +33,7 @@ type Agent struct {
 	operationAgent       *operation.Agent
 	deployAgent          *deploy.Agent
 	helmClient           *helm.Client
+	streamMu             sync.Mutex
 	log                  *zap.Logger
 }
 
@@ -133,6 +135,11 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 // channel support, routes to the appropriate sub-agent, and emits structured
 // render events followed by StreamDoneEvent on success.
 func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string, eventCh chan<- stream.Event) error {
+	// Sub-agents are shared and mutate per-request event routing state.
+	// Serialize streaming queries to prevent cross-request channel/queryID races.
+	a.streamMu.Lock()
+	defer a.streamMu.Unlock()
+
 	se := stream.NewEmitter(eventCh, queryID)
 	emit := func(ev stream.Event) {
 		_ = se.Emit(ctx, ev)
@@ -158,31 +165,19 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	emit(stream.Phase{QueryID: queryID, Phase: phaseLabel})
 	switch intent.TaskType {
 	case types.TaskTypeQuery:
-		ag, agErr := query.New(a.k8sClient, a.llmClient, query.WithEventChannel(eventCh, queryID), query.WithMaxSteps(a.maxSteps), query.WithSupervisorConfig(a.supervisorCfg))
-		if agErr != nil {
-			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
-			return agErr
-		}
-		ag.SetLogger(a.log)
-		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
+		a.queryAgent.SetEventChannel(eventCh, queryID)
+		a.queryAgent.SetLogger(a.log)
+		result, err = a.queryAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeTroubleshooting:
-		ag, agErr := troubleshooting.New(a.k8sClient, a.llmClient, troubleshooting.WithEventChannel(eventCh, queryID), troubleshooting.WithMaxSteps(a.maxSteps), troubleshooting.WithSupervisorConfig(a.supervisorCfg))
-		if agErr != nil {
-			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
-			return agErr
-		}
-		ag.SetLogger(a.log)
-		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
+		a.troubleshootingAgent.SetEventChannel(eventCh, queryID)
+		a.troubleshootingAgent.SetLogger(a.log)
+		result, err = a.troubleshootingAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeSecurity:
-		ag, agErr := security.New(a.k8sClient, a.llmClient, security.WithEventChannel(eventCh, queryID), security.WithMaxSteps(a.maxSteps), security.WithSupervisorConfig(a.supervisorCfg))
-		if agErr != nil {
-			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
-			return agErr
-		}
-		ag.SetLogger(a.log)
-		result, err = ag.HandleQuery(ctx, userQuery, intent.Entities)
+		a.securityAgent.SetEventChannel(eventCh, queryID)
+		a.securityAgent.SetLogger(a.log)
+		result, err = a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeDeploy:
 		// Bridge goroutine: 将 Deploy Agent 的同步 ConfirmHandler / SelectionHandler
@@ -201,16 +196,11 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			bridgeCtx: bridgeCtx,
 		}
 
-		deployAgentWithEvents := deploy.New(
-			a.llmClient,
-			a.helmClient,
-			a.k8sClient,
-			deploy.WithEventChannel(eventCh, queryID),
-			deploy.WithSelectionHandler(selectionHandler),
-			deploy.WithConfirmHandler(confirmHandler),
-		)
-		deployAgentWithEvents.SetLogger(a.log)
-		result, err = deployAgentWithEvents.HandleQuery(ctx, userQuery, intent.Entities)
+		a.deployAgent.SetEventChannel(eventCh, queryID)
+		a.deployAgent.SetSelectionHandler(selectionHandler)
+		a.deployAgent.SetConfirmHandler(confirmHandler)
+		a.deployAgent.SetLogger(a.log)
+		result, err = a.deployAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeOperation:
 		handler := operation.NewChannelConfirmationHandler()
@@ -260,19 +250,10 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			}
 		}()
 
-		opAgent, agErr := operation.New(
-			a.k8sClient, a.llmClient,
-			operation.WithConfirmationHandler(handler),
-			operation.WithEventChannel(eventCh, queryID),
-			operation.WithMaxSteps(a.maxSteps),
-			operation.WithSupervisorConfig(a.supervisorCfg),
-		)
-		if agErr != nil {
-			emit(stream.StreamErr{QueryID: queryID, Err: agErr})
-			return agErr
-		}
-		opAgent.SetLogger(a.log)
-		result, err = opAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		a.operationAgent.SetConfirmationHandler(handler)
+		a.operationAgent.SetEventChannel(eventCh, queryID)
+		a.operationAgent.SetLogger(a.log)
+		result, err = a.operationAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	default:
 		a.logger().Error("unsupported task type", zap.String("task_type", string(intent.TaskType)))
@@ -284,233 +265,8 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		return err
 	}
 
-	emitRenderEvent(emit, queryID, result)
 	emit(stream.StreamDone{QueryID: queryID, Result: result})
 	return nil
-}
-
-// emitRenderEvent detects the best render format for result and emits the
-// corresponding event. Detection priority: Detail marker → YAML → JSON → Table → List → KV → Text.
-func emitRenderEvent(emit func(stream.Event), queryID, result string) {
-	// 0. KubeWise detail marker.
-	if detail, stripped, ok := extractDetailMarker(result); ok {
-		emit(stream.RenderDetail{QueryID: queryID, Detail: detail})
-		if strings.TrimSpace(stripped) == "" {
-			return
-		}
-		result = stripped
-	}
-
-	// 1. YAML code block.
-	for line := range strings.SplitSeq(result, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "apiVersion:") || strings.HasPrefix(trimmed, "kind:") {
-			emit(stream.RenderCode{QueryID: queryID, Language: "yaml", Content: result})
-			return
-		}
-	}
-
-	// 2. JSON code block.
-	trimmed := strings.TrimSpace(result)
-	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		emit(stream.RenderCode{QueryID: queryID, Language: "json", Content: result})
-		return
-	}
-
-	// 3. Table (pipe-delimited, ≥ 3 lines with "|").
-	if headers, rows, ok := parseTable(result); ok {
-		emit(stream.RenderTable{QueryID: queryID, Headers: headers, Rows: rows})
-		return
-	}
-
-	// 4. Status list.
-	// Build items from ALL non-empty lines; matched lines get their detected status,
-	// others get "info".
-	statusOf := make(map[int]string) // line index → status
-	lines := strings.Split(result, "\n")
-	matchCount := 0
-	for i, line := range lines {
-		if line == "" {
-			continue
-		}
-		lower := strings.ToLower(line)
-		var status string
-		switch {
-		case containsAny(lower, "error", "failed", "crashloopbackoff", "unhealthy", "critical"):
-			status = "error"
-		case containsAny(lower, "pending", "terminating", "warning"):
-			status = "warn"
-		case containsAny(lower, "running", "healthy"):
-			status = "ok"
-		default:
-			status = ""
-		}
-		if status != "" {
-			statusOf[i] = status
-			matchCount++
-		}
-	}
-	if matchCount >= 2 {
-		items := make([]stream.ListItem, 0)
-		for i, line := range lines {
-			if line == "" {
-				continue
-			}
-			status, matched := statusOf[i]
-			if !matched {
-				status = "info"
-			}
-			items = append(items, stream.ListItem{Status: status, Text: line})
-		}
-		emit(stream.RenderList{QueryID: queryID, Items: items})
-		return
-	}
-
-	// 5. KV pairs (key: value pattern).
-	var kvLines []string
-	var nonEmptyCount int
-	for _, l := range lines {
-		if strings.TrimSpace(l) == "" {
-			continue
-		}
-		nonEmptyCount++
-		if idx := strings.Index(l, ": "); idx > 0 {
-			before := strings.TrimSpace(l[:idx])
-			if before != "" && !strings.Contains(before, " ") {
-				kvLines = append(kvLines, l)
-			}
-		}
-	}
-	if len(kvLines) >= 2 && nonEmptyCount > 0 && len(kvLines)*2 >= nonEmptyCount {
-		pairs := make([]stream.KVPair, 0, len(kvLines))
-		for _, l := range kvLines {
-			key, val, _ := strings.Cut(l, ": ")
-			pairs = append(pairs, stream.KVPair{
-				Key:   strings.TrimSpace(key),
-				Value: strings.TrimSpace(val),
-			})
-		}
-		emit(stream.RenderKV{QueryID: queryID, Pairs: pairs})
-		return
-	}
-
-	// 6. Default: plain text.
-	emit(stream.RenderText{QueryID: queryID, Text: result})
-}
-
-// extractDetailMarker looks for a __KUBEWISE_DETAIL:<kind>__ ... __END__ block
-// in the result string. If found, it parses the JSON payload into a ResourceDetail,
-// returns the result with the marker block stripped, and ok=true.
-func extractDetailMarker(result string) (stream.ResourceDetail, string, bool) {
-	const startPrefix = "__KUBEWISE_DETAIL:"
-	const startSuffix = "__"
-	const endMarker = "__END__"
-
-	startIdx := strings.Index(result, startPrefix)
-	if startIdx < 0 {
-		return stream.ResourceDetail{}, result, false
-	}
-	kindEnd := strings.Index(result[startIdx+len(startPrefix):], startSuffix)
-	if kindEnd < 0 {
-		return stream.ResourceDetail{}, result, false
-	}
-	payloadStart := startIdx + len(startPrefix) + kindEnd + len(startSuffix)
-	// Skip whitespace after the marker line.
-	payloadStart = skipLeadingNewline(result, payloadStart)
-
-	endIdx := strings.Index(result[payloadStart:], endMarker)
-	if endIdx < 0 {
-		return stream.ResourceDetail{}, result, false
-	}
-	jsonStr := strings.TrimSpace(result[payloadStart : payloadStart+endIdx])
-
-	var detail stream.ResourceDetail
-	if err := json.Unmarshal([]byte(jsonStr), &detail); err != nil {
-		return stream.ResourceDetail{}, result, false
-	}
-
-	stripped := result[:startIdx] + result[payloadStart+endIdx+len(endMarker):]
-	return detail, stripped, true
-}
-
-// skipLeadingNewline advances past a single \n or \r\n at pos.
-func skipLeadingNewline(s string, pos int) int {
-	if pos < len(s) && s[pos] == '\n' {
-		return pos + 1
-	}
-	if pos+1 < len(s) && s[pos] == '\r' && s[pos+1] == '\n' {
-		return pos + 2
-	}
-	return pos
-}
-
-// containsAny reports whether s contains any of the given substrings.
-func containsAny(s string, subs ...string) bool {
-	for _, sub := range subs {
-		if strings.Contains(s, sub) {
-			return true
-		}
-	}
-	return false
-}
-
-// isSeparatorRow reports whether l is a markdown table separator row
-// (every non-empty cell consists only of '-' and ':' characters).
-func isSeparatorRow(line string) bool {
-	hasCell := false
-	for cell := range strings.SplitSeq(line, "|") {
-		cell = strings.TrimSpace(cell)
-		if cell == "" {
-			continue
-		}
-		hasCell = true
-		for _, ch := range cell {
-			if ch != '-' && ch != ':' {
-				return false
-			}
-		}
-	}
-	return hasCell
-}
-
-// parseTable tries to parse a pipe-delimited markdown table from result.
-// Returns ok=true only when at least one header and one data row are found.
-func parseTable(result string) (headers []string, rows [][]string, ok bool) {
-	lines := strings.Split(result, "\n")
-	var tableLines []string
-	for _, l := range lines {
-		if strings.Contains(l, "|") {
-			tableLines = append(tableLines, l)
-		}
-	}
-	if len(tableLines) < 3 {
-		return nil, nil, false
-	}
-	for _, l := range tableLines {
-		if isSeparatorRow(l) {
-			continue
-		}
-		if len(headers) == 0 {
-			for cell := range strings.SplitSeq(l, "|") {
-				cell = strings.TrimSpace(cell)
-				if cell != "" {
-					headers = append(headers, cell)
-				}
-			}
-		} else {
-			var row []string
-			for cell := range strings.SplitSeq(l, "|") {
-				cell = strings.TrimSpace(cell)
-				if cell != "" {
-					row = append(row, cell)
-				}
-			}
-			if len(row) > 0 {
-				rows = append(rows, row)
-			}
-		}
-	}
-	return headers, rows, len(headers) > 0 && len(rows) > 0
 }
 
 // classifyIntent 意图分类
@@ -540,7 +296,7 @@ func (a *Agent) classifyIntent(ctx context.Context, userQuery string) (*types.In
 		{Role: "user", Content: userQuery},
 	}
 
-	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil)
+	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil, nil)
 	if err != nil {
 		return nil, err
 	}

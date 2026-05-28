@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// Session represents one conversation thread.
-type Session struct {
+// Conversation represents one conversation thread.
+type Conversation struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
 	CreatedAt time.Time `json:"created_at"`
@@ -107,11 +107,11 @@ type EventInfo struct {
 	Timestamp string `json:"timestamp"`
 }
 
-// New creates a new session with a generated ID.
-func New() *Session {
+// NewConversation creates a new conversation with a generated ID.
+func NewConversation() *Conversation {
 	now := time.Now()
 	id := fmt.Sprintf("%x", now.UnixNano())[:8]
-	return &Session{
+	return &Conversation{
 		ID:        id,
 		CreatedAt: now,
 		UpdatedAt: now,

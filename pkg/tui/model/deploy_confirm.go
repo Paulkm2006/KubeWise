@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 	"github.com/kubewise/kubewise/pkg/helm"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 )
 
 // deployConfirmMode 表示 Deploy 确认界面的当前交互模式。
@@ -50,13 +50,13 @@ func layoutDimensions(width, height int) (panelW, panelH, fullW, fullH int) {
 // DeployConfirmDoneMsg 用户完成确认后发送的消息。
 type DeployConfirmDoneMsg struct {
 	QueryID  string
-	Decision events.DeployDecision
+	Decision deploytypes.DeployDecision
 }
 
 // DeployConfirmModel 是 Deploy 确认界面的 Bubble Tea 模型。
 type DeployConfirmModel struct {
 	queryID string
-	plan    events.DeployPlan
+	plan    deploytypes.DeployPlan
 	mode    deployConfirmMode
 	active  bool
 	// 左面板：默认 values 滚动视图
@@ -77,7 +77,7 @@ type DeployConfirmModel struct {
 
 // NewDeployConfirmModel 创建 Deploy 确认模型。
 // width, height 为终端窗口尺寸，用于内部组件布局。
-func NewDeployConfirmModel(queryID string, plan events.DeployPlan, width, height int) DeployConfirmModel {
+func NewDeployConfirmModel(queryID string, plan deploytypes.DeployPlan, width, height int) DeployConfirmModel {
 	panelW, panelH, fullW, fullH := layoutDimensions(width, height)
 
 	defaultVP := viewport.New(panelW, panelH)
@@ -214,7 +214,7 @@ func (m DeployConfirmModel) handleViewMode(msg tea.KeyMsg) (DeployConfirmModel, 
 		return m, func() tea.Msg {
 			return DeployConfirmDoneMsg{
 				QueryID:  m.queryID,
-				Decision: events.DeployDecision{Action: "execute", Values: values},
+				Decision: deploytypes.DeployDecision{Action: "execute", Values: values},
 			}
 		}
 	case "n", "esc":
@@ -222,7 +222,7 @@ func (m DeployConfirmModel) handleViewMode(msg tea.KeyMsg) (DeployConfirmModel, 
 		return m, func() tea.Msg {
 			return DeployConfirmDoneMsg{
 				QueryID:  m.queryID,
-				Decision: events.DeployDecision{Action: "cancel"},
+				Decision: deploytypes.DeployDecision{Action: "cancel"},
 			}
 		}
 	case "e":
@@ -286,7 +286,7 @@ func (m DeployConfirmModel) handleEditNLMode(msg tea.KeyMsg) (DeployConfirmModel
 		return m, func() tea.Msg {
 			return DeployConfirmDoneMsg{
 				QueryID: m.queryID,
-				Decision: events.DeployDecision{
+				Decision: deploytypes.DeployDecision{
 					Action:     "execute",
 					Values:     values,
 					Correction: correction,

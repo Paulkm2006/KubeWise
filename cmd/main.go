@@ -9,12 +9,11 @@ import (
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/pkg/agent/router"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/api"
-	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
 	"github.com/kubewise/kubewise/pkg/log"
+	"github.com/kubewise/kubewise/pkg/session"
 	"github.com/kubewise/kubewise/pkg/tui"
 )
 
@@ -48,36 +47,23 @@ var chatCmd = &cobra.Command{
 		}
 		userQuery := strings.Join(args, " ")
 
-		// 初始化K8s客户端
-		kubeconfig := viper.GetString("kubeconfig")
-		k8sClient, err := k8s.NewClient(kubeconfig)
+		sess, err := session.New(session.Config{
+			LLM: llm.Config{
+				Model:   viper.GetString("llm.model"),
+				APIKey:  viper.GetString("llm.api_key"),
+				APIBase: viper.GetString("llm.api_base"),
+			},
+			KubeConfig:    viper.GetString("kubeconfig"),
+			MaxSteps:      viper.GetInt("agent.max_steps"),
+			SupervisorCfg: getSupervisorConfig(),
+		}, logger)
 		if err != nil {
-			return fmt.Errorf("初始化K8s客户端失败: %w", err)
+			return fmt.Errorf("初始化Session失败: %w", err)
 		}
-		k8sClient.SetLogger(logger)
-
-		// 初始化LLM客户端
-		llmConfig := llm.Config{
-			Model:   viper.GetString("llm.model"),
-			APIKey:  viper.GetString("llm.api_key"),
-			APIBase: viper.GetString("llm.api_base"),
-		}
-		llmClient, err := llm.NewClient(llmConfig)
-		if err != nil {
-			return fmt.Errorf("初始化LLM客户端失败: %w", err)
-		}
-		llmClient.SetLogger(logger)
-
-		// 初始化路由Agent
-		routerAgent, err := router.New(k8sClient, llmClient, viper.GetInt("agent.max_steps"), getSupervisorConfig())
-		if err != nil {
-			return fmt.Errorf("初始化路由Agent失败: %w", err)
-		}
-		routerAgent.SetLogger(logger)
 
 		// 处理查询
 		fmt.Println("\n处理中...")
-		result, err := routerAgent.HandleQuery(userQuery)
+		result, err := sess.Router.HandleQuery(userQuery)
 		if err != nil {
 			return fmt.Errorf("处理查询失败: %w", err)
 		}
@@ -100,25 +86,21 @@ var tuiCmd = &cobra.Command{
   Tab       切换焦点（侧边栏 ↔ 输入框）
   /resume   重发被中断的消息`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		kubeconfig := viper.GetString("kubeconfig")
-		k8sClient, err := k8s.NewClient(kubeconfig)
+		sess, err := session.New(session.Config{
+			LLM: llm.Config{
+				Model:   viper.GetString("llm.model"),
+				APIKey:  viper.GetString("llm.api_key"),
+				APIBase: viper.GetString("llm.api_base"),
+			},
+			KubeConfig:    viper.GetString("kubeconfig"),
+			MaxSteps:      viper.GetInt("agent.max_steps"),
+			SupervisorCfg: getSupervisorConfig(),
+		}, logger)
 		if err != nil {
-			return fmt.Errorf("初始化K8s客户端失败: %w", err)
+			return fmt.Errorf("初始化Session失败: %w", err)
 		}
-		k8sClient.SetLogger(logger)
 
-		llmConfig := llm.Config{
-			Model:   viper.GetString("llm.model"),
-			APIKey:  viper.GetString("llm.api_key"),
-			APIBase: viper.GetString("llm.api_base"),
-		}
-		llmClient, err := llm.NewClient(llmConfig)
-		if err != nil {
-			return fmt.Errorf("初始化LLM客户端失败: %w", err)
-		}
-		llmClient.SetLogger(logger)
-
-		return tui.Run(k8sClient, llmClient, logger, viper.GetInt("agent.max_steps"), getSupervisorConfig())
+		return tui.Run(sess, logger)
 	},
 }
 
@@ -130,24 +112,22 @@ var serveCmd = &cobra.Command{
   kubewise serve
   kubewise serve --addr :9090`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		kubeconfig := viper.GetString("kubeconfig")
-		k8sClient, err := k8s.NewClient(kubeconfig)
+		sess, err := session.New(session.Config{
+			LLM: llm.Config{
+				Model:   viper.GetString("llm.model"),
+				APIKey:  viper.GetString("llm.api_key"),
+				APIBase: viper.GetString("llm.api_base"),
+			},
+			KubeConfig:    viper.GetString("kubeconfig"),
+			MaxSteps:      viper.GetInt("agent.max_steps"),
+			SupervisorCfg: getSupervisorConfig(),
+		}, logger)
 		if err != nil {
-			return fmt.Errorf("初始化K8s客户端失败: %w", err)
-		}
-
-		llmConfig := llm.Config{
-			Model:   viper.GetString("llm.model"),
-			APIKey:  viper.GetString("llm.api_key"),
-			APIBase: viper.GetString("llm.api_base"),
-		}
-		llmClient, err := llm.NewClient(llmConfig)
-		if err != nil {
-			return fmt.Errorf("初始化LLM客户端失败: %w", err)
+			return fmt.Errorf("初始化Session失败: %w", err)
 		}
 
 		addr := viper.GetString("api.addr")
-		handler, err := api.NewHandler(k8sClient, llmClient, viper.GetInt("agent.max_steps"), getSupervisorConfig())
+		handler, err := api.NewHandler(sess)
 		if err != nil {
 			return fmt.Errorf("初始化API Handler失败: %w", err)
 		}

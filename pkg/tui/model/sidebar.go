@@ -6,13 +6,13 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/pkg/tui/session"
+	"github.com/kubewise/kubewise/pkg/session"
 	"github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
 // SidebarModel renders the session list on the left side of the TUI.
 type SidebarModel struct {
-	sessions []*session.Session
+	sessions []*session.Conversation
 	selected int
 	visible  bool
 	height   int
@@ -24,7 +24,7 @@ func NewSidebarModel() SidebarModel {
 }
 
 // SetSessions replaces the session list and resets the selection to 0.
-func (m *SidebarModel) SetSessions(sessions []*session.Session) {
+func (m *SidebarModel) SetSessions(sessions []*session.Conversation) {
 	m.sessions = sessions
 	m.selected = 0
 }
@@ -42,7 +42,7 @@ func (m SidebarModel) IsVisible() bool { return m.visible }
 func (m SidebarModel) SelectedIndex() int { return m.selected }
 
 // SelectedSession returns the currently highlighted session, or nil if none.
-func (m SidebarModel) SelectedSession() *session.Session {
+func (m SidebarModel) SelectedSession() *session.Conversation {
 	if len(m.sessions) == 0 || m.selected >= len(m.sessions) {
 		return nil
 	}

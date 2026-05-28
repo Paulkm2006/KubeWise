@@ -9,15 +9,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"go.uber.org/zap"
 
+	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 	"github.com/kubewise/kubewise/pkg/agent/router"
-	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/catalog"
-	"github.com/kubewise/kubewise/pkg/k8s"
-	"github.com/kubewise/kubewise/pkg/llm"
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/session"
+	"github.com/kubewise/kubewise/pkg/session/store"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/model"
-	"github.com/kubewise/kubewise/pkg/tui/session"
 	tuistyles "github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
@@ -36,16 +34,16 @@ type App struct {
 	confirm *model.ConfirmModel // nil when no modal is shown
 
 	// Deploy TUI 组件（同一时刻最多一个 active）
-	chartSelectModel   *model.ChartSelectModel
-	manualInputModel   *model.ManualChartInputModel
-	deployConfirmModel *model.DeployConfirmModel
+	chartSelectModel        *model.ChartSelectModel
+	manualInputModel        *model.ManualChartInputModel
+	deployConfirmModel      *model.DeployConfirmModel
 	deployConfirmStreamResp chan<- json.RawMessage // deploy_confirm InteractionRequest
 	streamChartResp         chan<- json.RawMessage // chart_select InteractionRequest
-	streamChartCandidates  []catalog.ChartInfo
+	streamChartCandidates   []catalog.ChartInfo
 
-	sessions []*session.Session
-	active   *session.Session
-	store    *session.Store
+	sessions []*session.Conversation
+	active   *session.Conversation
+	store    store.Store
 
 	eventCh  chan stream.Event
 	cancelFn context.CancelFunc
@@ -61,8 +59,8 @@ type App struct {
 }
 
 // NewApp creates the App, loading recent sessions from disk.
-func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSteps int, supervisorCfg supervisor.Config) (*App, error) {
-	store, err := session.NewStore()
+func NewApp(sess *session.Session, log *zap.Logger) (*App, error) {
+	store, err := store.NewFileStore()
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
 	}
@@ -72,12 +70,9 @@ func NewApp(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSt
 		recentSessions = nil
 	}
 
-	activeSession := session.New()
+	activeSession := session.NewConversation()
 
-	routerAgent, err := router.New(k8sClient, llmClient, maxSteps, supervisorCfg)
-	if err != nil {
-		return nil, err
-	}
+	routerAgent := sess.Router
 	routerAgent.SetLogger(log)
 
 	return &App{
@@ -125,7 +120,7 @@ func (a App) dispatchInteractionRequest(ir stream.InteractionRequest) (tea.Model
 		return a, a.listenStream()
 	case stream.KindChartSelect:
 		var p struct {
-			AppName    string               `json:"app_name"`
+			AppName    string              `json:"app_name"`
 			Candidates []catalog.ChartInfo `json:"candidates"`
 		}
 		if err := json.Unmarshal(ir.Payload, &p); err != nil {
@@ -137,7 +132,7 @@ func (a App) dispatchInteractionRequest(ir stream.InteractionRequest) (tea.Model
 		a.chartSelectModel = &m
 		return a, tea.Batch(a.listenStream(), m.Init())
 	case stream.KindDeployConfirm:
-		var plan events.DeployPlan
+		var plan deploytypes.DeployPlan
 		if err := json.Unmarshal(ir.Payload, &plan); err != nil {
 			return a, a.listenStream()
 		}
@@ -155,49 +150,26 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 	case stream.InteractionRequest:
 		return a.dispatchInteractionRequest(e)
 	case stream.StreamDone:
-		a.chat, _ = a.chat.Update(events.StreamDoneEvent{QueryID: e.QueryID, Result: e.Result})
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(e)
 		a.running = false
 		a.input.SetEnabled(true)
 		a.persistAssistantMessage()
-		return a, nil
+		return a, chatCmd
 	case stream.StreamErr:
 		err := e.Err
 		if err == nil {
 			err = fmt.Errorf("stream ended")
 		}
-		a.chat, _ = a.chat.Update(events.StreamErrEvent{QueryID: e.QueryID, Err: err})
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(stream.StreamErr{QueryID: e.QueryID, Err: err})
 		a.running = false
 		a.input.SetEnabled(true)
-		return a, nil
+		return a, chatCmd
 	default:
-		if te, ok := ToTUI(ev); ok {
-			return a.routeChatEvent(te)
-		}
-		return a, a.listenStream()
-	}
-}
-
-// routeChatEvent forwards progress/render TUI events to ChatModel.
-func (a App) routeChatEvent(te events.TUIEvent) (tea.Model, tea.Cmd) {
-	switch msg := te.(type) {
-	case events.AgentStartEvent,
-		events.AgentDoneEvent,
-		events.ToolCallEvent,
-		events.ToolDoneEvent,
-		events.ToolFailEvent,
-		events.RenderTextEvent,
-		events.RenderTableEvent,
-		events.RenderCodeEvent,
-		events.RenderKVEvent,
-		events.RenderListEvent,
-		events.RenderDetailEvent,
-		events.PhaseEvent,
-		events.SupervisorEvent:
 		var chatCmd tea.Cmd
-		a.chat, chatCmd = a.chat.Update(msg)
+		a.chat, chatCmd = a.chat.Update(ev)
 		return a, tea.Batch(a.listenStream(), chatCmd)
-	default:
-		return a, a.listenStream()
 	}
 }
 
@@ -480,15 +452,15 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 
 func (a *App) newSession() {
 	a.saveSession()
-	a.active = session.New()
+	a.active = session.NewConversation()
 	a.chat = model.NewChatModel(a.width-tuistyles.SidebarWidth, a.height-5)
 	if !containsSession(a.sessions, a.active.ID) {
-		a.sessions = append([]*session.Session{a.active}, a.sessions...)
+		a.sessions = append([]*session.Conversation{a.active}, a.sessions...)
 	}
 	a.sidebar.SetSessions(a.sessions)
 }
 
-func (a *App) loadSession(s *session.Session) {
+func (a *App) loadSession(s *session.Conversation) {
 	a.saveSession()
 	a.active = s
 	a.chat.SetMessages(s.Messages)
@@ -572,8 +544,8 @@ func (a App) View() string {
 }
 
 // Run starts the bubbletea program.
-func Run(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSteps int, supervisorCfg supervisor.Config) error {
-	app, err := NewApp(k8sClient, llmClient, log, maxSteps, supervisorCfg)
+func Run(sess *session.Session, log *zap.Logger) error {
+	app, err := NewApp(sess, log)
 	if err != nil {
 		return err
 	}
@@ -595,7 +567,7 @@ func Run(k8sClient *k8s.Client, llmClient *llm.Client, log *zap.Logger, maxSteps
 	return err
 }
 
-func containsSession(sessions []*session.Session, id string) bool {
+func containsSession(sessions []*session.Conversation, id string) bool {
 	for _, s := range sessions {
 		if s.ID == id {
 			return true

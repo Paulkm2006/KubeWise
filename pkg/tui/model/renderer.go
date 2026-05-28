@@ -10,7 +10,7 @@ import (
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/kubewise/kubewise/pkg/tui/events"
+	"github.com/kubewise/kubewise/pkg/session"
 	tuistyles "github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
@@ -98,7 +98,7 @@ func (r *Renderer) RenderCode(language, content string) string {
 }
 
 // RenderKV renders key-value pairs with right-aligned keys.
-func (r *Renderer) RenderKV(pairs []events.KVPair) string {
+func (r *Renderer) RenderKV(pairs []session.KVPair) string {
 	maxKey := 0
 	for _, p := range pairs {
 		if len(p.Key) > maxKey {
@@ -115,7 +115,7 @@ func (r *Renderer) RenderKV(pairs []events.KVPair) string {
 }
 
 // RenderDetail renders a structured resource detail card.
-func (r *Renderer) RenderDetail(detail events.ResourceDetail) string {
+func (r *Renderer) RenderDetail(detail session.DetailPayload) string {
 	var sb strings.Builder
 
 	// Header
@@ -194,7 +194,7 @@ func (r *Renderer) RenderDetail(detail events.ResourceDetail) string {
 }
 
 // RenderList renders status items with coloured status icons.
-func (r *Renderer) RenderList(items []events.ListItem) string {
+func (r *Renderer) RenderList(items []session.ListItem) string {
 	var sb strings.Builder
 	for _, item := range items {
 		icon, style := statusIconStyle(item.Status)

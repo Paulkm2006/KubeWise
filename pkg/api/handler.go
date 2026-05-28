@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/kubewise/kubewise/pkg/agent/router"
+	appsession "github.com/kubewise/kubewise/pkg/session"
+	"github.com/kubewise/kubewise/pkg/session/store"
 	"github.com/kubewise/kubewise/pkg/stream"
-	"github.com/kubewise/kubewise/pkg/agent/supervisor"
-	"github.com/kubewise/kubewise/pkg/k8s"
-	"github.com/kubewise/kubewise/pkg/llm"
-	"github.com/kubewise/kubewise/pkg/tui/session"
 )
 
 // StreamQuerier abstracts the router agent for testability.
@@ -26,18 +23,15 @@ type pendingInteraction struct {
 
 type Handler struct {
 	querier             StreamQuerier
-	sessionStore        *session.Store
+	sessionStore        store.Store
 	mu                  sync.RWMutex
 	pendingInteractions map[string]*pendingInteraction
 }
 
 // NewHandler creates a Handler with real K8s/LLM clients.
-func NewHandler(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) (*Handler, error) {
-	routerAgent, err := router.New(k8sClient, llmClient, maxSteps, supervisorCfg)
-	if err != nil {
-		return nil, err
-	}
-	store, err := session.NewStore()
+func NewHandler(sess *appsession.Session) (*Handler, error) {
+	routerAgent := sess.Router
+	store, err := store.NewFileStore()
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +43,7 @@ func NewHandler(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supe
 }
 
 // NewHandlerWithDeps creates a Handler with custom dependencies (for testing).
-func NewHandlerWithDeps(querier StreamQuerier, store *session.Store) *Handler {
+func NewHandlerWithDeps(querier StreamQuerier, store store.Store) *Handler {
 	return &Handler{
 		querier:             querier,
 		sessionStore:        store,

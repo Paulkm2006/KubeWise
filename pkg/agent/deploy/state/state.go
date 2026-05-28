@@ -9,13 +9,13 @@ import (
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/plan"
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/values"
-	"github.com/kubewise/kubewise/pkg/stream"
+	deploytypes "github.com/kubewise/kubewise/pkg/agent/deploy/types"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tool"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
 )
 
@@ -26,7 +26,7 @@ const (
 
 // ConfirmHandler presents a deploy plan and waits for user decision.
 type ConfirmHandler interface {
-	ConfirmDeploy(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error)
+	ConfirmDeploy(ctx context.Context, plan deploytypes.DeployPlan) (deploytypes.DeployDecision, error)
 }
 
 // SelectionHandler presents chart candidates for user selection.

@@ -2,7 +2,9 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -54,8 +56,18 @@ func NewClient(config Config) (*Client, error) {
 	return c, nil
 }
 
-// ChatCompletion 聊天补全接口，支持工具调用
-func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functions []FunctionDefinition) (*Message, error) {
+// toolCallAccum stores incremental tool call state during streaming.
+type toolCallAccum struct {
+	ID            string
+	Type          string
+	Name          string
+	ArgumentsJSON strings.Builder
+}
+
+// ChatCompletion 聊天补全接口，支持工具调用。
+// 内部始终使用流式 API 实现，若 onChunk 已设置则在每个 token delta 时回调，
+// 对外仍表现为阻塞返回完整 *Message 的同步接口。
+func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functions []FunctionDefinition, onChunk func(StreamChunk)) (*Message, error) {
 	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
 	for i, msg := range messages {
 		param, err := messageToOpenAIParam(msg)
@@ -65,18 +77,14 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		openaiMessages[i] = param
 	}
 
-	// 构建请求参数
 	params := openai.ChatCompletionNewParams{
 		Messages: openaiMessages,
 		Model:    openai.ChatModel(c.config.Model),
 	}
 
-	// 构建请求选项
 	reqOpts := []option.RequestOption{}
 
-	// 如果有工具定义，通过JSON Set添加到请求中
 	if len(functions) > 0 {
-		// 转换工具定义
 		tools := make([]map[string]any, len(functions))
 		for i, fn := range functions {
 			tools[i] = map[string]any{
@@ -91,6 +99,11 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		reqOpts = append(reqOpts, option.WithJSONSet("tools", tools))
 	}
 
+	// 请求最终 chunk 中的用量信息
+	reqOpts = append(reqOpts, option.WithJSONSet("stream_options", map[string]any{
+		"include_usage": true,
+	}))
+
 	toolNames := make([]string, 0, len(functions))
 	for _, fn := range functions {
 		toolNames = append(toolNames, fn.Name)
@@ -100,8 +113,103 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		zap.Int("messages", len(messages)),
 		zap.Strings("tools", toolNames),
 	)
-	resp, err := c.client.Chat.Completions.New(ctx, params, reqOpts...)
-	if err != nil {
+
+	s := c.client.Chat.Completions.NewStreaming(ctx, params, reqOpts...)
+	defer s.Close()
+
+	var content strings.Builder
+	accum := make(map[int64]*toolCallAccum)
+	var toolOrder []int64
+	result := &Message{Role: "assistant"}
+	var finalized bool // 是否已通过 finish_reason 确定 content + tool_calls
+
+	for s.Next() {
+		chunk := s.Current()
+
+		// 用法信息终包（stream_options: include_usage）
+		if len(chunk.Choices) == 0 {
+			if chunk.Usage.TotalTokens > 0 {
+				result.Usage = &Usage{
+					PromptTokens:     int(chunk.Usage.PromptTokens),
+					CompletionTokens: int(chunk.Usage.CompletionTokens),
+					TotalTokens:      int(chunk.Usage.TotalTokens),
+				}
+			}
+			if finalized && onChunk != nil {
+				onChunk(StreamChunk{Done: true, AccumulatedToolCalls: result.ToolCalls, Usage: result.Usage})
+				onChunk = nil // 只发一次
+			}
+			continue
+		}
+
+		choice := chunk.Choices[0]
+		delta := choice.Delta
+
+		// 文本内容 delta
+		if delta.Content != "" {
+			content.WriteString(delta.Content)
+			if onChunk != nil {
+				onChunk(StreamChunk{Content: delta.Content})
+			}
+		}
+
+		// 工具调用 delta（按 index 增量到达）
+		for _, tc := range delta.ToolCalls {
+			idx := tc.Index
+			a, exists := accum[idx]
+			if !exists {
+				toolOrder = append(toolOrder, idx)
+				a = &toolCallAccum{}
+				accum[idx] = a
+			}
+			if tc.ID != "" {
+				a.ID = tc.ID
+			}
+			if tc.Type != "" {
+				a.Type = tc.Type
+			}
+			if tc.Function.Name != "" {
+				a.Name = tc.Function.Name
+			}
+			if tc.Function.Arguments != "" {
+				a.ArgumentsJSON.WriteString(tc.Function.Arguments)
+			}
+		}
+
+		// finish_reason → 组装最终 content 和 tool_calls
+		if choice.FinishReason != "" {
+			result.Content = content.String()
+
+			if len(accum) > 0 {
+				tcs := make([]ToolCall, 0, len(toolOrder))
+				for _, idx := range toolOrder {
+					a := accum[idx]
+					var args map[string]any
+					if a.ArgumentsJSON.Len() > 0 {
+						argsStr := a.ArgumentsJSON.String()
+						if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+							args = map[string]any{"raw_arguments": argsStr}
+						}
+					}
+					if args == nil {
+						args = make(map[string]any)
+					}
+					tcs = append(tcs, ToolCall{
+						ID:   a.ID,
+						Type: a.Type,
+						Function: FunctionCall{
+							Name:      a.Name,
+							Arguments: args,
+						},
+					})
+				}
+				result.ToolCalls = tcs
+			}
+			finalized = true
+		}
+	}
+
+	if err := s.Err(); err != nil {
 		c.logger().Error("chat completion failed",
 			zap.Error(err),
 			zap.String("model", string(params.Model)),
@@ -111,27 +219,15 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		return nil, fmt.Errorf("chat completion failed: %w", err)
 	}
 
-	if len(resp.Choices) == 0 {
-		return nil, fmt.Errorf("no response from LLM")
+	// 未收到 usage-only chunk 时在此处发 Done
+	if onChunk != nil && finalized {
+		onChunk(StreamChunk{Done: true, AccumulatedToolCalls: result.ToolCalls, Usage: result.Usage})
 	}
 
-	choice := resp.Choices[0]
-
-	// 转换响应回我们的Message格式
-	result := &Message{
-		Role:    string(choice.Message.Role),
-		Content: choice.Message.Content,
+	// 如果全程未收到 finish_reason（极少见），补全 content
+	if !finalized {
+		result.Content = content.String()
 	}
-
-	if resp.Usage.TotalTokens > 0 {
-		result.Usage = &Usage{
-			PromptTokens:     int(resp.Usage.PromptTokens),
-			CompletionTokens: int(resp.Usage.CompletionTokens),
-			TotalTokens:      int(resp.Usage.TotalTokens),
-		}
-	}
-
-	result.ToolCalls = toolCallsFromCompletionMessage(choice.Message)
 
 	fields := []zap.Field{
 		zap.String("model", string(params.Model)),

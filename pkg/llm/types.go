@@ -37,6 +37,14 @@ type FunctionDefinition struct {
 	Parameters  map[string]any `json:"parameters"`
 }
 
+// StreamChunk is yielded by ChatCompletionStream for each delta.
+type StreamChunk struct {
+	Content              string     // text delta (empty for tool call deltas)
+	AccumulatedToolCalls []ToolCall // set on the final chunk when finish_reason="tool_calls"
+	Done                 bool       // true on the final chunk
+	Usage                *Usage     // set on the final chunk
+}
+
 // Config LLM客户端配置
 type Config struct {
 	Model   string `json:"model"`

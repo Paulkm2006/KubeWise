@@ -64,49 +64,13 @@ type ToolFail struct {
 
 func (ToolFail) isStreamEvent() {}
 
-type RenderText struct {
+// LLMTextDelta carries a piece of streaming LLM output text for live display.
+type LLMTextDelta struct {
 	QueryID string
-	Text    string
+	Delta   string
 }
 
-func (RenderText) isStreamEvent() {}
-
-type RenderTable struct {
-	QueryID string
-	Headers []string
-	Rows    [][]string
-}
-
-func (RenderTable) isStreamEvent() {}
-
-type RenderCode struct {
-	QueryID  string
-	Language string
-	Content  string
-}
-
-func (RenderCode) isStreamEvent() {}
-
-type RenderKV struct {
-	QueryID string
-	Pairs   []KVPair
-}
-
-func (RenderKV) isStreamEvent() {}
-
-type RenderList struct {
-	QueryID string
-	Items   []ListItem
-}
-
-func (RenderList) isStreamEvent() {}
-
-type RenderDetail struct {
-	QueryID string
-	Detail  ResourceDetail
-}
-
-func (RenderDetail) isStreamEvent() {}
+func (LLMTextDelta) isStreamEvent() {}
 
 type Supervisor struct {
 	QueryID  string
@@ -164,9 +128,9 @@ type OperationConfirmResponse struct {
 
 // ChartSelectResponse is the JSON body for KindChartSelect responses.
 type ChartSelectResponse struct {
-	Cancelled       bool `json:"cancelled"`
-	UseManualChart  bool `json:"use_manual_chart"`
-	CandidateIndex  int  `json:"candidate_index"` // 0-based into candidates list
+	Cancelled      bool `json:"cancelled"`
+	UseManualChart bool `json:"use_manual_chart"`
+	CandidateIndex int  `json:"candidate_index"` // 0-based into candidates list
 	// When UseManualChart and the client collected repo/chart details (e.g. TUI manual form).
 	ManualRepoURL   string `json:"manual_repo_url,omitempty"`
 	ManualChartName string `json:"manual_chart_name,omitempty"`

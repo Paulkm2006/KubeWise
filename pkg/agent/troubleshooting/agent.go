@@ -7,10 +7,10 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tool"
 	"github.com/kubewise/kubewise/pkg/types"
 
@@ -59,6 +59,12 @@ type Agent struct {
 	log           *zap.Logger
 	maxSteps      int
 	supervisorCfg supervisor.Config
+}
+
+// SetEventChannel sets the event channel and query ID for streaming progress.
+func (a *Agent) SetEventChannel(eventCh chan<- stream.Event, queryID string) {
+	a.eventCh = eventCh
+	a.queryID = queryID
 }
 
 // SetLogger injects a logger for debug output.
@@ -172,7 +178,7 @@ outer:
 	for iterationsRemaining > 0 {
 		for step := range iterationsRemaining {
 			a.emit(stream.Phase{QueryID: a.queryID, Phase: "thinking"})
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, nil)
 			if err != nil {
 				return "", fmt.Errorf("LLM调用失败: %w", err)
 			}

@@ -8,7 +8,7 @@ import (
 )
 
 // ScanPolicyWarnings inspects values YAML for high-risk settings.
-func ScanPolicyWarnings(valuesYAML string) []PlanWarning {
+func ScanPolicyWarnings(valuesYAML string) []Warning {
 	if strings.TrimSpace(valuesYAML) == "" {
 		return nil
 	}
@@ -16,12 +16,12 @@ func ScanPolicyWarnings(valuesYAML string) []PlanWarning {
 	if err := yaml.Unmarshal([]byte(valuesYAML), &root); err != nil {
 		return nil
 	}
-	var warnings []PlanWarning
+	var warnings []Warning
 	scanPolicyMap("", root, &warnings)
 	return warnings
 }
 
-func scanPolicyMap(path string, m map[string]interface{}, out *[]PlanWarning) {
+func scanPolicyMap(path string, m map[string]interface{}, out *[]Warning) {
 	for k, v := range m {
 		full := k
 		if path != "" {
@@ -98,19 +98,19 @@ func scanPolicyMap(path string, m map[string]interface{}, out *[]PlanWarning) {
 }
 
 // Warn builds a non-blocking plan warning.
-func Warn(path, msg string) PlanWarning {
+func Warn(path, msg string) Warning {
 	if path != "" {
 		msg = path + ": " + msg
 	}
-	return PlanWarning{Severity: "warn", Message: msg}
+	return Warning{Severity: "warn", Message: msg}
 }
 
 // Block builds a blocking plan warning.
-func Block(path, msg string) PlanWarning {
+func Block(path, msg string) Warning {
 	if path != "" {
 		msg = path + ": " + msg
 	}
-	return PlanWarning{Severity: "error", Message: msg}
+	return Warning{Severity: "error", Message: msg}
 }
 
 func truthy(v interface{}) bool {

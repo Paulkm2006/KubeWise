@@ -8,13 +8,13 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/pkg/agent/deploy/core/report"
-	"github.com/kubewise/kubewise/pkg/stream"
+	"github.com/kubewise/kubewise/pkg/agent/deploy/types"
 	"github.com/kubewise/kubewise/pkg/catalog"
 	"github.com/kubewise/kubewise/pkg/helm"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tool"
-	"github.com/kubewise/kubewise/pkg/tui/events"
 	"github.com/kubewise/kubewise/pkg/types"
 
 	_ "github.com/kubewise/kubewise/pkg/tools/v1/query"
@@ -23,7 +23,7 @@ import (
 
 // DeployConfirmationHandler presents a deploy plan and waits for user decision.
 type DeployConfirmationHandler interface {
-	ConfirmDeploy(ctx context.Context, plan events.DeployPlan) (events.DeployDecision, error)
+	ConfirmDeploy(ctx context.Context, plan deploytypes.DeployPlan) (deploytypes.DeployDecision, error)
 }
 
 // ChartSelectionHandler presents chart candidates for user selection.
@@ -42,6 +42,22 @@ type Agent struct {
 	log              *zap.Logger
 	toolRegistry     *tool.Registry
 	k8sClient        *k8s.Client
+}
+
+// SetEventChannel sets the event channel and query ID for streaming progress.
+func (a *Agent) SetEventChannel(eventCh chan<- stream.Event, queryID string) {
+	a.eventCh = eventCh
+	a.queryID = queryID
+}
+
+// SetSelectionHandler sets the chart selection handler.
+func (a *Agent) SetSelectionHandler(h ChartSelectionHandler) {
+	a.selectionHandler = h
+}
+
+// SetConfirmHandler sets the deploy confirmation handler.
+func (a *Agent) SetConfirmHandler(h DeployConfirmationHandler) {
+	a.confirmHandler = h
 }
 
 // SetLogger injects a logger for debug output.
@@ -112,9 +128,9 @@ func (a *Agent) HandleQuery(ctx context.Context, query string, entities types.En
 }
 
 // ConfirmDeploy implements state.ConfirmHandler.
-func (a *Agent) ConfirmDeploy(ctx context.Context, p events.DeployPlan) (events.DeployDecision, error) {
+func (a *Agent) ConfirmDeploy(ctx context.Context, p deploytypes.DeployPlan) (deploytypes.DeployDecision, error) {
 	if a.confirmHandler == nil {
-		return events.DeployDecision{Action: "execute", Values: p.CustomValues}, nil
+		return deploytypes.DeployDecision{Action: "execute", Values: p.CustomValues}, nil
 	}
 	return a.confirmHandler.ConfirmDeploy(ctx, p)
 }

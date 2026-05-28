@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tool"
 	"github.com/kubewise/kubewise/pkg/types"
 	"go.uber.org/zap"
@@ -67,6 +67,12 @@ func (a *Agent) logger() *zap.Logger {
 		return zap.NewNop()
 	}
 	return a.log
+}
+
+// SetEventChannel sets the event channel and query ID for streaming progress.
+func (a *Agent) SetEventChannel(eventCh chan<- stream.Event, queryID string) {
+	a.eventCh = eventCh
+	a.queryID = queryID
 }
 
 // emit sends an event to the event channel if one is set.
@@ -164,9 +170,13 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 outer:
 	for iterationsRemaining > 0 {
 		for step := range iterationsRemaining {
-			// 调用LLM
+			// 调用LLM（内部使用流式 API，onChunk 回调将 token delta 发出）
 			a.emit(stream.Phase{QueryID: a.queryID, Phase: "thinking"})
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, func(chunk llm.StreamChunk) {
+				if chunk.Content != "" {
+					a.emit(stream.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
+				}
+			})
 			if err != nil {
 				return "", fmt.Errorf("LLM调用失败: %w", err)
 			}

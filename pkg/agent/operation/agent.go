@@ -9,10 +9,10 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/agent/supervisor"
 	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/llm"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tool"
 	"github.com/kubewise/kubewise/pkg/types"
 
@@ -97,6 +97,17 @@ type Agent struct {
 	inTokens       int
 	outTokens      int
 	log            *zap.Logger
+}
+
+// SetEventChannel sets the event channel and query ID for streaming progress.
+func (a *Agent) SetEventChannel(eventCh chan<- stream.Event, queryID string) {
+	a.eventCh = eventCh
+	a.queryID = queryID
+}
+
+// SetConfirmationHandler sets the confirmation handler for this agent.
+func (a *Agent) SetConfirmationHandler(h ConfirmationHandler) {
+	a.confirmHandler = h
 }
 
 // SetLogger injects a logger for debug output.
@@ -238,7 +249,7 @@ func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([
 outer:
 	for iterationsRemaining > 0 {
 		for round := range iterationsRemaining {
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions)
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, nil)
 			if err != nil {
 				return nil, fmt.Errorf("LLM 调用失败: %w", err)
 			}
@@ -423,7 +434,7 @@ func (a *Agent) replan(ctx context.Context, original OperationStep, correction s
 		{Role: "user", Content: fmt.Sprintf("原始操作步骤：\n%s\n\n用户修正指令：%s", string(originalJSON), correction)},
 	}
 
-	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil)
+	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil, nil)
 	if err != nil {
 		return OperationStep{}, err
 	}

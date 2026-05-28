@@ -90,7 +90,7 @@ func RankChartCandidates(appName string, candidates []catalog.ChartInfo) []catal
 }
 
 // SelectionWarnings warns when the chosen chart likely is not the main application chart.
-func SelectionWarnings(appName string, chart *catalog.ChartInfo) []plan.PlanWarning {
+func SelectionWarnings(appName string, chart *catalog.ChartInfo) []plan.Warning {
 	if chart == nil {
 		return nil
 	}
@@ -103,13 +103,13 @@ func SelectionWarnings(appName string, chart *catalog.ChartInfo) []plan.PlanWarn
 		return nil
 	}
 	if strings.HasPrefix(chartName, app+"-") || strings.HasPrefix(chartName, app+"_") {
-		return []plan.PlanWarning{plan.Warn("chart",
+		return []plan.Warning{plan.Warn("chart",
 			fmt.Sprintf("Chart %q 通常是 %q 的配套/辅助 chart，不一定会安装主应用本体；安装 Argo CD 等服务请选用 chart %q",
 				chart.ChartName, appName, app),
 		)}
 	}
 	if !strings.Contains(chartName, app) {
-		return []plan.PlanWarning{plan.Warn("chart",
+		return []plan.Warning{plan.Warn("chart",
 			fmt.Sprintf("Chart 名称 %q 与目标应用 %q 不完全匹配，请确认是否选对", chart.ChartName, appName),
 		)}
 	}

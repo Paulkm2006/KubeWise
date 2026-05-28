@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/pkg/tui/events"
-	"github.com/kubewise/kubewise/pkg/tui/session"
+	"github.com/kubewise/kubewise/pkg/session"
+	"github.com/kubewise/kubewise/pkg/stream"
 	"github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
@@ -64,17 +64,19 @@ type chatEntry struct {
 
 // ChatModel manages the chat display, progress cards, and pending message assembly.
 type ChatModel struct {
-	messages     []chatEntry
-	pending      map[string]*pendingMsg
-	cards        map[string]*progressCard
-	renderer     *Renderer
-	width        int
-	height       int
-	spinner      spinner.Model
-	phase        string
-	phaseStart   time.Time
-	spinning     bool
-	scrollOffset int // 0 = pinned to bottom; >0 = number of lines scrolled up
+	messages      []chatEntry
+	pending       map[string]*pendingMsg
+	cards         map[string]*progressCard
+	renderer      *Renderer
+	width         int
+	height        int
+	spinner       spinner.Model
+	phase         string
+	phaseStart    time.Time
+	spinning      bool
+	scrollOffset  int // 0 = pinned to bottom; >0 = number of lines scrolled up
+	streamingText *strings.Builder
+	streamingID   string
 }
 
 // NewChatModel creates an empty ChatModel sized to the given terminal dimensions.
@@ -84,13 +86,14 @@ func NewChatModel(width, height int) ChatModel {
 	sp.Style = styles.CardRunning
 
 	return ChatModel{
-		messages: make([]chatEntry, 0),
-		pending:  make(map[string]*pendingMsg),
-		cards:    make(map[string]*progressCard),
-		renderer: NewRenderer(width - 2),
-		width:    width,
-		height:   height,
-		spinner:  sp,
+		messages:      make([]chatEntry, 0),
+		pending:       make(map[string]*pendingMsg),
+		cards:         make(map[string]*progressCard),
+		renderer:      NewRenderer(width - 2),
+		width:         width,
+		height:        height,
+		spinner:       sp,
+		streamingText: &strings.Builder{},
 	}
 }
 
@@ -218,41 +221,41 @@ func (m *ChatModel) renderBlock(b session.Block) string {
 	case "kv":
 		var p session.KVPayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
-			pairs := make([]events.KVPair, len(p.Pairs))
+			pairs := make([]session.KVPair, len(p.Pairs))
 			for i, kp := range p.Pairs {
-				pairs[i] = events.KVPair{Key: kp.Key, Value: kp.Value}
+				pairs[i] = session.KVPair{Key: kp.Key, Value: kp.Value}
 			}
 			return m.renderer.RenderKV(pairs)
 		}
 	case "list":
 		var p session.ListPayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
-			items := make([]events.ListItem, len(p.Items))
+			items := make([]session.ListItem, len(p.Items))
 			for i, li := range p.Items {
-				items[i] = events.ListItem{Status: li.Status, Text: li.Text}
+				items[i] = session.ListItem{Status: li.Status, Text: li.Text}
 			}
 			return m.renderer.RenderList(items)
 		}
 	case "detail":
 		var p session.DetailPayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
-			d := events.ResourceDetail{
+			d := session.DetailPayload{
 				Kind: p.Kind, Name: p.Name, Namespace: p.Namespace,
 				Status: p.Status, RecentLogs: p.RecentLogs, Labels: p.Labels,
 			}
 			for _, c := range p.Containers {
-				d.Containers = append(d.Containers, events.ContainerInfo{
+				d.Containers = append(d.Containers, session.ContainerInfo{
 					Name: c.Name, Image: c.Image, Ready: c.Ready,
 					RestartCount: c.RestartCount, State: c.State, Resources: c.Resources,
 				})
 			}
 			for _, c := range p.Conditions {
-				d.Conditions = append(d.Conditions, events.ConditionInfo{
+				d.Conditions = append(d.Conditions, session.ConditionInfo{
 					Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message,
 				})
 			}
 			for _, e := range p.Events {
-				d.Events = append(d.Events, events.EventInfo{
+				d.Events = append(d.Events, session.EventInfo{
 					Type: e.Type, Reason: e.Reason, Message: e.Message, Timestamp: e.Timestamp,
 				})
 			}
@@ -306,7 +309,7 @@ func (m ChatModel) totalLines() int {
 func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	switch ev := msg.(type) {
 
-	case events.AgentStartEvent:
+	case stream.AgentStart:
 		now := time.Now()
 		m.cards[ev.QueryID] = &progressCard{
 			queryID:   ev.QueryID,
@@ -318,7 +321,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		m.spinning = true
 		return m, m.spinner.Tick
 
-	case events.AgentDoneEvent:
+	case stream.AgentDone:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			c.done = true
 			c.duration = ev.Duration
@@ -333,12 +336,21 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			}
 		}
 
-	case events.ToolCallEvent:
+		m.flushStreamingText(ev.QueryID)
+	// LLMTextDelta accumulates streaming text output.
+	case stream.LLMTextDelta:
+		if m.streamingID != ev.QueryID {
+			m.streamingID = ev.QueryID
+			m.streamingText.Reset()
+		}
+		m.streamingText.WriteString(ev.Delta)
+
+	case stream.ToolCall:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			c.tools = append(c.tools, toolLine{name: ev.ToolName, step: ev.Step})
 		}
 
-	case events.ToolDoneEvent:
+	case stream.ToolDone:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			for i := range c.tools {
 				if c.tools[i].name == ev.ToolName && c.tools[i].step == ev.Step && !c.tools[i].done {
@@ -349,7 +361,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			}
 		}
 
-	case events.ToolFailEvent:
+	case stream.ToolFail:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			for i := range c.tools {
 				if c.tools[i].name == ev.ToolName && c.tools[i].step == ev.Step && !c.tools[i].done {
@@ -361,78 +373,30 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			}
 		}
 
-	case events.RenderTextEvent:
-		m.addPending(ev.QueryID, session.Block{Type: "text"}, m.renderer.RenderText(ev.Text))
-
-	case events.RenderTableEvent:
-		rendered := m.renderer.RenderTable(ev.Headers, ev.Rows)
-		payload, _ := json.Marshal(session.TablePayload{Headers: ev.Headers, Rows: ev.Rows})
-		m.addPending(ev.QueryID, session.Block{Type: "table", Payload: payload}, rendered)
-
-	case events.RenderCodeEvent:
-		rendered := m.renderer.RenderCode(ev.Language, ev.Content)
-		payload, _ := json.Marshal(session.CodePayload{Language: ev.Language, Content: ev.Content})
-		m.addPending(ev.QueryID, session.Block{Type: "code", Payload: payload}, rendered)
-
-	case events.RenderKVEvent:
-		rendered := m.renderer.RenderKV(ev.Pairs)
-		kvPairs := make([]session.KVPair, len(ev.Pairs))
-		for i, p := range ev.Pairs {
-			kvPairs[i] = session.KVPair{Key: p.Key, Value: p.Value}
-		}
-		payload, _ := json.Marshal(session.KVPayload{Pairs: kvPairs})
-		m.addPending(ev.QueryID, session.Block{Type: "kv", Payload: payload}, rendered)
-
-	case events.RenderListEvent:
-		rendered := m.renderer.RenderList(ev.Items)
-		listItems := make([]session.ListItem, len(ev.Items))
-		for i, it := range ev.Items {
-			listItems[i] = session.ListItem{Status: it.Status, Text: it.Text}
-		}
-		payload, _ := json.Marshal(session.ListPayload{Items: listItems})
-		m.addPending(ev.QueryID, session.Block{Type: "list", Payload: payload}, rendered)
-
-	case events.RenderDetailEvent:
-		rendered := m.renderer.RenderDetail(ev.Detail)
-		dp := detailToPayload(ev.Detail)
-		payload, _ := json.Marshal(dp)
-		m.addPending(ev.QueryID, session.Block{Type: "detail", Payload: payload}, rendered)
-
-	case events.StreamDoneEvent:
-		p := m.pending[ev.QueryID]
-		var lines []string
-		var blocks []session.Block
-		if p != nil {
-			lines = p.rendered
-			blocks = p.blocks
-		}
-		if len(lines) == 0 && ev.Result != "" {
-			lines = []string{m.renderer.RenderText(ev.Result)}
-		}
-		var card *progressCard
+	case stream.StreamDone:
+		m.flushStreamingText(ev.QueryID)
+		var inTokens, outTokens int
+		var durationS float64
 		if c, ok := m.cards[ev.QueryID]; ok {
-			card = c
+			inTokens = c.inTokens
+			outTokens = c.outTokens
+			durationS = c.duration.Seconds()
 		}
-		entry := chatEntry{
+		m.messages = append(m.messages, chatEntry{
 			role:      "assistant",
 			content:   ev.Result,
-			lines:     lines,
-			blocks:    blocks,
+			lines:     []string{m.renderer.RenderText(ev.Result)},
 			timestamp: time.Now(),
-		}
-		if card != nil {
-			entry.inTokens = card.inTokens
-			entry.outTokens = card.outTokens
-			entry.durationS = card.duration.Seconds()
-		}
-		m.messages = append(m.messages, entry)
+			inTokens:  inTokens,
+			outTokens: outTokens,
+			durationS: durationS,
+		})
 		m.spinning = false
 		m.phase = ""
 		m.scrollOffset = 0
-		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
 
-	case events.StreamErrEvent:
+	case stream.StreamErr:
 		errMsg := fmt.Sprintf("错误：%v", ev.Err)
 		m.messages = append(m.messages, chatEntry{
 			role:      "error",
@@ -445,7 +409,8 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
 
-	case events.PhaseEvent:
+		m.flushStreamingText(ev.QueryID)
+	case stream.Phase:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			now := time.Now()
 			if len(c.phases) > 0 {
@@ -460,7 +425,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 			m.phaseStart = now
 		}
 
-	case events.SupervisorEvent:
+	case stream.Supervisor:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			now := time.Now()
 			if len(c.phases) > 0 {
@@ -487,8 +452,8 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	return m, nil
 }
 
-// detailToPayload converts an events.ResourceDetail to a session.DetailPayload.
-func detailToPayload(d events.ResourceDetail) session.DetailPayload {
+// detailToPayload converts an session.DetailPayload to a session.DetailPayload.
+func detailToPayload(d session.DetailPayload) session.DetailPayload {
 	dp := session.DetailPayload{
 		Kind:       d.Kind,
 		Name:       d.Name,
@@ -545,6 +510,11 @@ func (m ChatModel) View() string {
 			sb.WriteString(line + "\n")
 		}
 		sb.WriteString("\n")
+	}
+
+	// Render live streaming LLM text
+	if m.streamingText.Len() > 0 {
+		sb.WriteString(m.renderer.RenderText(m.streamingText.String()))
 	}
 
 	for _, card := range m.cards {
@@ -646,4 +616,17 @@ func (m ChatModel) Phase() string {
 // IsSpinning reports whether the spinner is currently active.
 func (m ChatModel) IsSpinning() bool {
 	return m.spinning
+}
+
+// flushStreamingText flushes accumulated LLM text deltas into a pending text block.
+func (m *ChatModel) flushStreamingText(queryID string) {
+	if m.streamingText.Len() == 0 {
+		return
+	}
+	text := m.streamingText.String()
+	m.streamingText.Reset()
+	if text == "" {
+		return
+	}
+	m.addPending(queryID, session.Block{Type: "text"}, m.renderer.RenderText(text))
 }
