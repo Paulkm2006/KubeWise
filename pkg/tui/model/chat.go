@@ -617,7 +617,7 @@ func (m ChatModel) renderCompletedCard(c *progressCard) string {
 		c.agentName, c.duration.Seconds(), c.inTokens, c.outTokens)
 	sb.WriteString(styles.CardDone.Render(summary) + "\n")
 	if c.finalReport != "" {
-		sb.WriteString(c.finalReport)
+		sb.WriteString(m.renderer.RenderText(c.finalReport))
 	}
 	return sb.String()
 }
