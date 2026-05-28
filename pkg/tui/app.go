@@ -361,6 +361,12 @@ func (a App) handleShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
 		a.chat = model.NewChatModel(a.width-tuistyles.SidebarWidth, a.height-5)
 		return nil, true
 
+	case tea.KeyCtrlO:
+		if a.chat.TogglePhaseReasoning() {
+			return nil, true
+		}
+		return nil, false
+
 	case tea.KeyTab:
 		if a.showSidebar {
 			if a.focus == focusInput {
@@ -373,16 +379,6 @@ func (a App) handleShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 		return nil, true
 
-	case tea.KeyUp:
-		if a.focus == focusInput {
-			a.chat.ScrollUp(1)
-			return nil, true
-		}
-	case tea.KeyDown:
-		if a.focus == focusInput {
-			a.chat.ScrollDown(1)
-			return nil, true
-		}
 	case tea.KeyPgUp:
 		if a.focus == focusInput {
 			a.chat.ScrollUp(a.height - 2)
