@@ -8,6 +8,9 @@ import (
 	"github.com/kubewise/kubewise/pkg/tui/styles"
 )
 
+// maxHistoryLength limits the number of entries retained for Up/Down history navigation.
+const maxHistoryLength = 500
+
 // SubmitMsg is sent when the user presses Enter in the input box.
 type SubmitMsg struct{ Value string }
 
@@ -58,6 +61,9 @@ func (m InputModel) Update(msg tea.Msg) (InputModel, tea.Cmd) {
 			// Add to history
 			if len(m.history) == 0 || m.history[len(m.history)-1] != val {
 				m.history = append(m.history, val)
+				if len(m.history) > maxHistoryLength {
+					m.history = m.history[len(m.history)-maxHistoryLength:]
+				}
 			}
 			m.historyIdx = -1
 			m.savedBuffer = ""

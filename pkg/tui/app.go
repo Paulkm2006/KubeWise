@@ -149,6 +149,12 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 	switch e := ev.(type) {
 	case stream.InteractionRequest:
 		return a.dispatchInteractionRequest(e)
+	case stream.AgentDone:
+		// AgentDone updates the card but does not finalize the message;
+		// StreamDone handles chatEntry creation and input re-enable.
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(e)
+		return a, chatCmd
 	case stream.StreamDone:
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(e)
