@@ -22,33 +22,29 @@ type toolLine struct {
 	elapsed time.Duration
 }
 
-// phaseLine tracks a phase transition for step-bubble rendering.
-type phaseLine struct {
-	label   string
-	start   time.Time
-	done    bool
-	elapsed time.Duration
+// phaseGroup tracks a phase with nested tools and reasoning text.
+type phaseGroup struct {
+	label             string
+	start             time.Time
+	done              bool
+	elapsed           time.Duration
+	tools             []toolLine
+	reasoningText     strings.Builder
+	reasoningExpanded bool
 }
 
 // progressCard tracks an in-flight agent execution.
 type progressCard struct {
-	queryID   string
-	agentName string
-	result    string
-	tools     []toolLine
-	phases    []phaseLine
-	done      bool
-	failed    bool
-	errMsg    string
-	duration  time.Duration
-	inTokens  int
-	outTokens int
-}
-
-// pendingMsg accumulates rendered output blocks for a query in progress.
-type pendingMsg struct {
-	blocks   []session.Block
-	rendered []string // pre-rendered strings corresponding to each block
+	queryID     string
+	agentName   string
+	phases      []phaseGroup
+	done        bool
+	failed      bool
+	errMsg      string
+	duration    time.Duration
+	inTokens    int
+	outTokens   int
+	finalReport string // from AgentDone.Result
 }
 
 // chatEntry is a completed message (user or assistant) ready for display.
@@ -65,19 +61,16 @@ type chatEntry struct {
 
 // ChatModel manages the chat display, progress cards, and pending message assembly.
 type ChatModel struct {
-	messages      []chatEntry
-	pending       map[string]*pendingMsg
-	cards         map[string]*progressCard
-	renderer      *Renderer
-	width         int
-	height        int
-	spinner       spinner.Model
-	phase         string
-	phaseStart    time.Time
-	spinning      bool
-	scrollOffset  int // 0 = pinned to bottom; >0 = number of lines scrolled up
-	streamingText *strings.Builder
-	streamingID   string
+	messages     []chatEntry
+	cards        map[string]*progressCard
+	renderer     *Renderer
+	width        int
+	height       int
+	spinner      spinner.Model
+	phase        string
+	phaseStart   time.Time
+	spinning     bool
+	scrollOffset int // 0 = pinned to bottom; >0 = number of lines scrolled up
 }
 
 // NewChatModel creates an empty ChatModel sized to the given terminal dimensions.
@@ -87,14 +80,12 @@ func NewChatModel(width, height int) ChatModel {
 	sp.Style = styles.CardRunning
 
 	return ChatModel{
-		messages:      make([]chatEntry, 0),
-		pending:       make(map[string]*pendingMsg),
-		cards:         make(map[string]*progressCard),
-		renderer:      NewRenderer(width - 2),
-		width:         width,
-		height:        height,
-		spinner:       sp,
-		streamingText: &strings.Builder{},
+		messages: make([]chatEntry, 0),
+		cards:    make(map[string]*progressCard),
+		renderer: NewRenderer(width - 2),
+		width:    width,
+		height:   height,
+		spinner:  sp,
 	}
 }
 
@@ -172,7 +163,6 @@ func (m *ChatModel) AllMessages() []session.Message {
 // SetMessages replaces the display with previously saved session messages.
 func (m *ChatModel) SetMessages(msgs []session.Message) {
 	m.messages = make([]chatEntry, 0, len(msgs))
-	m.pending = make(map[string]*pendingMsg)
 	m.cards = make(map[string]*progressCard)
 	for _, msg := range msgs {
 		switch msg.Role {
@@ -315,7 +305,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		m.cards[ev.QueryID] = &progressCard{
 			queryID:   ev.QueryID,
 			agentName: ev.AgentName,
-			phases:    []phaseLine{{label: ev.AgentName, start: now}},
+			phases:    []phaseGroup{{label: ev.AgentName, start: now}},
 		}
 		m.phase = ev.AgentName
 		m.phaseStart = now
@@ -325,10 +315,10 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	case stream.AgentDone:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			c.done = true
-			c.result = ev.Result
 			c.duration = ev.Duration
 			c.inTokens = ev.InTokens
 			c.outTokens = ev.OutTokens
+			c.finalReport = ev.Result
 			if len(c.phases) > 0 {
 				last := &c.phases[len(c.phases)-1]
 				if !last.done {
@@ -337,68 +327,73 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 				}
 			}
 		}
+		m.spinning = false
+		m.phase = ""
+		m.scrollOffset = 0
 
-		m.flushStreamingText(ev.QueryID)
-	// LLMTextDelta accumulates streaming text output.
+	// LLMTextDelta writes to latest phase's reasoningText.
 	case stream.LLMTextDelta:
-		if m.streamingID != ev.QueryID {
-			m.streamingID = ev.QueryID
-			m.streamingText.Reset()
+		if c, ok := m.cards[ev.QueryID]; ok {
+			if len(c.phases) > 0 {
+				last := &c.phases[len(c.phases)-1]
+				last.reasoningText.WriteString(ev.Delta)
+			}
 		}
-		m.streamingText.WriteString(ev.Delta)
 
 	case stream.ToolCall:
 		if c, ok := m.cards[ev.QueryID]; ok {
-			c.tools = append(c.tools, toolLine{name: ev.ToolName, step: ev.Step})
+			if len(c.phases) > 0 {
+				last := &c.phases[len(c.phases)-1]
+				last.tools = append(last.tools, toolLine{name: ev.ToolName, step: ev.Step})
+			}
 		}
 
 	case stream.ToolDone:
 		if c, ok := m.cards[ev.QueryID]; ok {
-			for i := range c.tools {
-				if c.tools[i].name == ev.ToolName && c.tools[i].step == ev.Step && !c.tools[i].done {
-					c.tools[i].done = true
-					c.tools[i].elapsed = ev.Elapsed
-					break
+			if len(c.phases) > 0 {
+				for i := range c.phases[len(c.phases)-1].tools {
+					t := &c.phases[len(c.phases)-1].tools[i]
+					if t.name == ev.ToolName && t.step == ev.Step && !t.done {
+						t.done = true
+						t.elapsed = ev.Elapsed
+						break
+					}
 				}
 			}
 		}
 
 	case stream.ToolFail:
 		if c, ok := m.cards[ev.QueryID]; ok {
-			for i := range c.tools {
-				if c.tools[i].name == ev.ToolName && c.tools[i].step == ev.Step && !c.tools[i].done {
-					c.tools[i].done = true
-					c.tools[i].failed = true
-					c.tools[i].elapsed = ev.Elapsed
-					break
+			if len(c.phases) > 0 {
+				for i := range c.phases[len(c.phases)-1].tools {
+					t := &c.phases[len(c.phases)-1].tools[i]
+					if t.name == ev.ToolName && t.step == ev.Step && !t.done {
+						t.done = true
+						t.failed = true
+						t.elapsed = ev.Elapsed
+						break
+					}
 				}
 			}
 		}
 
 	case stream.StreamDone:
-		m.flushStreamingText(ev.QueryID)
-		var inTokens, outTokens int
-		var result string
-			var durationS float64
 		if c, ok := m.cards[ev.QueryID]; ok {
-			inTokens = c.inTokens
-			outTokens = c.outTokens
-			durationS = c.duration.Seconds()
-				result = c.result
+			cardView := m.renderCompletedCard(c)
+			m.messages = append(m.messages, chatEntry{
+				role:      "assistant",
+				content:   c.finalReport,
+				lines:     []string{cardView},
+				timestamp: time.Now(),
+				inTokens:  c.inTokens,
+				outTokens: c.outTokens,
+				durationS: c.duration.Seconds(),
+			})
+			delete(m.cards, ev.QueryID)
 		}
-		m.messages = append(m.messages, chatEntry{
-			role:      "assistant",
-			content:   result,
-			lines:     []string{m.renderer.RenderText(result)},
-			timestamp: time.Now(),
-			inTokens:  inTokens,
-			outTokens: outTokens,
-			durationS: durationS,
-		})
 		m.spinning = false
 		m.phase = ""
 		m.scrollOffset = 0
-		delete(m.cards, ev.QueryID)
 
 	case stream.StreamErr:
 		errMsg := fmt.Sprintf("错误：%v", ev.Err)
@@ -410,10 +405,8 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		m.spinning = false
 		m.phase = ""
 		m.scrollOffset = 0
-		delete(m.pending, ev.QueryID)
 		delete(m.cards, ev.QueryID)
 
-		m.flushStreamingText(ev.QueryID)
 	case stream.Phase:
 		if c, ok := m.cards[ev.QueryID]; ok {
 			now := time.Now()
@@ -424,7 +417,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 					last.elapsed = now.Sub(last.start)
 				}
 			}
-			c.phases = append(c.phases, phaseLine{label: ev.Phase, start: now})
+			c.phases = append(c.phases, phaseGroup{label: ev.Phase, start: now})
 			m.phase = ev.Phase
 			m.phaseStart = now
 		}
@@ -440,7 +433,7 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 				}
 			}
 			label := fmt.Sprintf("supervisor: %s — %s", ev.Decision, ev.Detail)
-			c.phases = append(c.phases, phaseLine{label: label, start: now})
+			c.phases = append(c.phases, phaseGroup{label: label, start: now})
 			m.phase = label
 			m.phaseStart = now
 		}
@@ -485,15 +478,6 @@ func detailToPayload(d session.DetailPayload) session.DetailPayload {
 	return dp
 }
 
-// addPending appends a block and its pre-rendered string to the pending message for queryID.
-func (m *ChatModel) addPending(queryID string, block session.Block, rendered string) {
-	if m.pending[queryID] == nil {
-		m.pending[queryID] = &pendingMsg{}
-	}
-	m.pending[queryID].blocks = append(m.pending[queryID].blocks, block)
-	m.pending[queryID].rendered = append(m.pending[queryID].rendered, rendered)
-}
-
 // View renders the entire chat area: completed messages followed by any active progress cards.
 // Output is clipped to m.height lines so the input prompt below stays visible.
 // When scrollOffset > 0 the view shifts up from the bottom, allowing the user to scroll
@@ -514,11 +498,6 @@ func (m ChatModel) View() string {
 			sb.WriteString(line + "\n")
 		}
 		sb.WriteString("\n")
-	}
-
-	// Render live streaming LLM text
-	if m.streamingText.Len() > 0 {
-		sb.WriteString(m.renderer.RenderText(m.streamingText.String()))
 	}
 
 	for _, card := range m.cards {
@@ -564,13 +543,10 @@ func (m ChatModel) View() string {
 	return view
 }
 
-// renderCard renders a single progress card to a styled string.
+// renderCard renders a single in-progress progress card to a styled string.
+// Has 3 zones: header (failed state), phase list with nested tools and reasoning.
 func (m ChatModel) renderCard(c *progressCard) string {
-	if c.done {
-		summary := fmt.Sprintf("✓ %s  %.1fs | ↑ %d ↓ %d tok",
-			c.agentName, c.duration.Seconds(), c.inTokens, c.outTokens)
-		return styles.CardDone.Render(summary)
-	}
+	// Zone 1: Failed state — short summary, no phase list
 	if c.failed {
 		summary := fmt.Sprintf("✗ %s: %s", c.agentName, c.errMsg)
 		return styles.CardFailed.Render(summary)
@@ -578,7 +554,7 @@ func (m ChatModel) renderCard(c *progressCard) string {
 
 	var lines []string
 
-	// Render phase history as step bubbles
+	// Zone 2: Phase list with nested tools and reasoning
 	for i, p := range c.phases {
 		isLast := i == len(c.phases)-1
 		if isLast && !p.done {
@@ -592,24 +568,83 @@ func (m ChatModel) renderCard(c *progressCard) string {
 			line := fmt.Sprintf("  ✓ %s %s", p.label, elapsed)
 			lines = append(lines, styles.StepDoneStyle.Render(line))
 		}
-	}
 
-	// Render tool lines nested under the active phase
-	for _, t := range c.tools {
-		switch {
-		case t.done && t.failed:
-			line := fmt.Sprintf("    ✗ %-30s %s", t.name, t.elapsed.Round(time.Millisecond).String())
-			lines = append(lines, styles.StepFailedStyle.Render(line))
-		case t.done:
-			line := fmt.Sprintf("    ✓ %-30s %s", t.name, t.elapsed.Round(time.Millisecond).String())
-			lines = append(lines, styles.StepDoneStyle.Render(line))
-		default:
-			line := fmt.Sprintf("    ⟳ %s", t.name)
-			lines = append(lines, styles.StepActiveStyle.Render(line))
+		// Reasoning text (if any)
+		if p.reasoningText.Len() > 0 {
+			if p.reasoningExpanded {
+				full := p.reasoningText.String()
+				divider := strings.Repeat("─", m.width-8)
+				lines = append(lines, styles.ReasoningExpanded.Render("  ▼ 推理过程\n  "+divider+"\n"+indentText(full, "  ")+"\n  "+divider))
+			} else if !p.done {
+				// Running, collapsed: show last 3 lines
+				full := p.reasoningText.String()
+				tail := lastNLines(full, 3)
+				divider := strings.Repeat("─", m.width-8)
+				lines = append(lines, styles.ReasoningPreview.Render("  "+divider))
+				for _, line := range tail {
+					lines = append(lines, styles.ReasoningPreview.Render("  "+line))
+				}
+			} else {
+				// Done, collapsed: just show hint
+				lines = append(lines, styles.ReasoningCollapsed.Render("  ▶ 推理过程"))
+			}
+		}
+
+		// Tools nested under this phase
+		for _, t := range p.tools {
+			indent := "    "
+			switch {
+			case t.done && t.failed:
+				line := fmt.Sprintf("%s✗ %-30s %s", indent, t.name, t.elapsed.Round(time.Millisecond).String())
+				lines = append(lines, styles.StepFailedStyle.Render(line))
+			case t.done:
+				line := fmt.Sprintf("%s✓ %-30s %s", indent, t.name, t.elapsed.Round(time.Millisecond).String())
+				lines = append(lines, styles.StepDoneStyle.Render(line))
+			default:
+				line := fmt.Sprintf("%s⟳ %s", indent, t.name)
+				lines = append(lines, styles.StepActiveStyle.Render(line))
+			}
 		}
 	}
 
 	return styles.CardStyle.Width(m.width - 4).Render(strings.Join(lines, "\n"))
+}
+
+// renderCompletedCard renders a summary for a completed card.
+func (m ChatModel) renderCompletedCard(c *progressCard) string {
+	var sb strings.Builder
+	summary := fmt.Sprintf("✓ %s  %.1fs | ↑ %d ↓ %d tok",
+		c.agentName, c.duration.Seconds(), c.inTokens, c.outTokens)
+	sb.WriteString(styles.CardDone.Render(summary) + "\n")
+	if c.finalReport != "" {
+		sb.WriteString(c.finalReport)
+	}
+	return sb.String()
+}
+
+// TogglePhaseReasoning toggles expanded/collapsed state for the latest active phase's reasoning text.
+func (m *ChatModel) TogglePhaseReasoning() bool {
+	var latestPhase *phaseGroup
+	var latestTime time.Time
+	for _, card := range m.cards {
+		if card.done {
+			continue
+		}
+		for i := range card.phases {
+			p := &card.phases[i]
+			if !p.done && p.reasoningText.Len() > 0 {
+				if p.start.After(latestTime) {
+					latestPhase = p
+					latestTime = p.start
+				}
+			}
+		}
+	}
+	if latestPhase == nil {
+		return false
+	}
+	latestPhase.reasoningExpanded = !latestPhase.reasoningExpanded
+	return true
 }
 
 // Phase returns the current phase label for the thinking indicator.
@@ -622,15 +657,20 @@ func (m ChatModel) IsSpinning() bool {
 	return m.spinning
 }
 
-// flushStreamingText flushes accumulated LLM text deltas into a pending text block.
-func (m *ChatModel) flushStreamingText(queryID string) {
-	if m.streamingText.Len() == 0 {
-		return
+// lastNLines returns the last n lines of s.
+func lastNLines(s string, n int) []string {
+	all := strings.Split(s, "\n")
+	if len(all) <= n {
+		return all
 	}
-	text := m.streamingText.String()
-	m.streamingText.Reset()
-	if text == "" {
-		return
+	return all[len(all)-n:]
+}
+
+// indentText prepends a prefix to every line of s.
+func indentText(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + line
 	}
-	m.addPending(queryID, session.Block{Type: "text"}, m.renderer.RenderText(text))
+	return strings.Join(lines, "\n")
 }

@@ -52,6 +52,11 @@ var (
 	// Scroll
 	ScrollIndicatorStyle = lipgloss.NewStyle().Foreground(Secondary).Italic(true)
 
+	// Reasoning text (collapsible inside phase groups)
+	ReasoningPreview   = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true)
+	ReasoningCollapsed = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	ReasoningExpanded  = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+
 	// Input bar
 	InputStyle = lipgloss.NewStyle().BorderTop(true).BorderStyle(lipgloss.NormalBorder()).BorderForeground(Secondary)
 )
