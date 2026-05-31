@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/kubewise/kubewise/pkg/agent/chat"
 	"github.com/kubewise/kubewise/pkg/agent/deploy"
 	"github.com/kubewise/kubewise/pkg/agent/operation"
 	"github.com/kubewise/kubewise/pkg/agent/query"
@@ -21,6 +22,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const chatFallbackConfidence = 0.60
+
 // Agent 路由Agent
 type Agent struct {
 	k8sClient            *k8s.Client
@@ -32,6 +35,7 @@ type Agent struct {
 	securityAgent        *security.Agent
 	operationAgent       *operation.Agent
 	deployAgent          *deploy.Agent
+	chatAgent            *chat.Agent
 	helmClient           *helm.Client
 	streamMu             sync.Mutex
 	log                  *zap.Logger
@@ -45,6 +49,7 @@ func (a *Agent) SetLogger(l *zap.Logger) {
 	a.securityAgent.SetLogger(l)
 	a.operationAgent.SetLogger(l)
 	a.deployAgent.SetLogger(l)
+	a.chatAgent.SetLogger(l)
 	if a.helmClient != nil {
 		a.helmClient.SetLogger(l)
 	}
@@ -55,6 +60,23 @@ func (a *Agent) logger() *zap.Logger {
 		return zap.NewNop()
 	}
 	return a.log
+}
+
+func (a *Agent) normalizeIntent(intent *types.IntentClassification) *types.IntentClassification {
+	if intent == nil {
+		return intent
+	}
+	if intent.TaskType == types.TaskTypeChat || intent.Confidence >= chatFallbackConfidence {
+		return intent
+	}
+	a.logger().Info("intent confidence below threshold, routing to chat",
+		zap.String("original_task_type", string(intent.TaskType)),
+		zap.Float64("confidence", intent.Confidence),
+		zap.Float64("threshold", chatFallbackConfidence),
+	)
+	intent.TaskType = types.TaskTypeChat
+	intent.TaskTypeDescription = "通用聊天"
+	return intent
 }
 
 // New 创建路由Agent
@@ -80,6 +102,7 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorC
 	}
 	helmClient := helm.New("")
 	deployAgent := deploy.New(llmClient, helmClient, k8sClient)
+	chatAgent := chat.New(llmClient)
 	return &Agent{
 		k8sClient:            k8sClient,
 		llmClient:            llmClient,
@@ -90,6 +113,7 @@ func New(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorC
 		securityAgent:        securityAgent,
 		operationAgent:       operationAgent,
 		deployAgent:          deployAgent,
+		chatAgent:            chatAgent,
 		helmClient:           helmClient,
 	}, nil
 }
@@ -106,6 +130,12 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 	}
 	a.logger().Info("intent classified",
 		zap.String("task_type", string(intent.TaskType)),
+		zap.Float64("confidence", intent.Confidence),
+	)
+	intent = a.normalizeIntent(intent)
+	a.logger().Info("intent routed",
+		zap.String("task_type", string(intent.TaskType)),
+		zap.String("description", intent.TaskTypeDescription),
 		zap.Float64("confidence", intent.Confidence),
 	)
 
@@ -126,6 +156,8 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 		return a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
 	case types.TaskTypeDeploy:
 		return a.deployAgent.HandleQuery(ctx, userQuery, intent.Entities)
+	case types.TaskTypeChat:
+		return a.chatAgent.HandleQuery(ctx, userQuery, intent.Entities)
 	default:
 		return "", fmt.Errorf("不支持的任务类型: %s", intent.TaskType)
 	}
@@ -155,6 +187,12 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	}
 	a.logger().Info("intent classified",
 		zap.String("task_type", string(intent.TaskType)),
+		zap.Float64("confidence", intent.Confidence),
+	)
+	intent = a.normalizeIntent(intent)
+	a.logger().Info("intent routed",
+		zap.String("task_type", string(intent.TaskType)),
+		zap.String("description", intent.TaskTypeDescription),
 		zap.Float64("confidence", intent.Confidence),
 	)
 
@@ -255,6 +293,11 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		a.operationAgent.SetLogger(a.log)
 		result, err = a.operationAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
+	case types.TaskTypeChat:
+		a.chatAgent.SetEventChannel(eventCh, queryID)
+		a.chatAgent.SetLogger(a.log)
+		result, err = a.chatAgent.HandleQuery(ctx, userQuery, intent.Entities)
+
 	default:
 		a.logger().Error("unsupported task type", zap.String("task_type", string(intent.TaskType)))
 		err = fmt.Errorf("不支持的任务类型: %s", intent.TaskType)
@@ -271,25 +314,37 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 
 // classifyIntent 意图分类
 func (a *Agent) classifyIntent(ctx context.Context, userQuery string) (*types.IntentClassification, error) {
-	systemPrompt := `你是Kubernetes智能运维系统的路由分析器，负责将用户的自然语言查询分类到以下五种任务类型之一：
-1. operation（操作类）：用户需要对已有资源执行原子操作，如扩缩容、重启、删除 Pod/Deployment 等
-2. query（查询类）：用户需要查询集群的状态、信息、统计等
-3. troubleshooting（故障排查类）：用户需要排查异常、错误、崩溃等问题
-4. security（安全审计类）：用户需要进行安全检查、权限审计、合规扫描等
-5. deploy（应用部署类）：用户想要安装、部署、升级或卸载一个完整应用（如 ArgoCD、Prometheus、Nginx Ingress 等 Helm Chart）。与 operation 的区别：deploy 用于安装完整应用，operation 用于对已有资源的原子操作。
+	systemPrompt := `你是 KubeWise 的 Router Agent，负责将用户输入分类到一个最合适的子 Agent。
 
-请分析用户查询，返回JSON格式的结果，包含：
-- task_type: 任务类型枚举值（operation/query/troubleshooting/security/deploy）
-- task_type_description: 任务类型中文描述
-- entities: 提取的关键实体，包含：
-  - namespace: 提到的命名空间（如果有）
-  - resource_name: 提到的资源名称（如果有）
-  - resource_type: 资源类型（Pod/Deployment/Service/PV/PVC等，如果有）
-  - app_name: 应用名称（如果有）
-  - operation: 操作类型（如果有）
-- confidence: 分类置信度（0-1之间的浮点数）
+只能返回以下六种 task_type 之一：
+1. operation：对已有 Kubernetes 资源执行写操作，例如扩容、缩容、重启、删除、apply、打标签、cordon/drain。
+2. query：查询真实 Kubernetes 集群状态、资源列表、资源详情或统计信息，例如列出 namespace、查看 Pod、查询 Deployment。
+3. troubleshooting：排查异常、失败、错误、CrashLoopBackOff、ImagePullBackOff、服务不可达、日志报错等问题。
+4. security：安全审计、权限检查、RBAC、Pod 安全、NetworkPolicy、镜像安全、合规扫描。
+5. deploy：安装、部署、升级或卸载完整应用或 Helm Chart，例如部署 Prometheus、ArgoCD、Nginx Ingress。
+6. chat：普通聊天、寒暄、身份介绍、知识分享、概念解释、学习辅导，或者不需要读取/修改真实集群的问题。
 
-注意：只返回JSON，不要有其他解释性文字。`
+分类规则：
+- “你好”“你是谁”“你能做什么”这类寒暄或身份问题，分类为 chat。
+- “Kubernetes 是什么”“Pod 和容器有什么区别”“讲讲 Helm”这类知识解释问题，分类为 chat。
+- 只有用户明确要求读取真实集群状态时，才分类为 query。
+- 只有用户明确要求修改真实集群资源时，才分类为 operation。
+- 如果用户要安装一个完整应用或 Helm Chart，分类为 deploy，不要分类为 operation。
+- 如果分类不确定，优先选择 chat，并降低 confidence。
+
+只返回 JSON，不要返回任何解释性文字。格式如下：
+{
+  "task_type": "operation|query|troubleshooting|security|deploy|chat",
+  "task_type_description": "任务类型中文描述",
+  "entities": {
+    "namespace": [],
+    "resource_name": "",
+    "resource_type": [],
+    "app_name": "",
+    "operation": ""
+  },
+  "confidence": 0.0
+}`
 
 	messages := []llm.Message{
 		{Role: "system", Content: systemPrompt},
