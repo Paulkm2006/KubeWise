@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	appsession "github.com/kubewise/kubewise/pkg/session"
+	"github.com/kubewise/kubewise/pkg/k8s"
 	"github.com/kubewise/kubewise/pkg/session/store"
 	"github.com/kubewise/kubewise/pkg/stream"
 )
@@ -24,9 +25,13 @@ type pendingInteraction struct {
 type Handler struct {
 	querier             StreamQuerier
 	sessionStore        store.Store
+	k8sClient           *k8s.Client    // for cluster status API
 	mu                  sync.RWMutex
 	pendingInteractions map[string]*pendingInteraction
 }
+
+// SetK8sClient sets the Kubernetes client for cluster status queries.
+func (h *Handler) SetK8sClient(c *k8s.Client) { h.k8sClient = c }
 
 // NewHandler creates a Handler with real K8s/LLM clients.
 func NewHandler(sess *appsession.Session) (*Handler, error) {
@@ -37,6 +42,7 @@ func NewHandler(sess *appsession.Session) (*Handler, error) {
 	}
 	return &Handler{
 		querier:             routerAgent,
+		k8sClient:           sess.K8s,
 		sessionStore:        store,
 		pendingInteractions: make(map[string]*pendingInteraction),
 	}, nil

@@ -97,6 +97,15 @@ func NewClient(kubeconfigPath string) (*Client, error) {
 	return c, nil
 }
 
+// ServerVersion returns the Kubernetes server version string (e.g. "v1.28.3").
+func (c *Client) ServerVersion(ctx context.Context) (string, error) {
+	v, err := c.clientset.Discovery().ServerVersion()
+	if err != nil {
+		return "", err
+	}
+	return v.GitVersion, nil
+}
+
 // ListPersistentVolumes 获取所有PV
 func (c *Client) ListPersistentVolumes(ctx context.Context) ([]corev1.PersistentVolume, error) {
 	pvList, err := c.clientset.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
