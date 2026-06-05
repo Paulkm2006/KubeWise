@@ -179,7 +179,11 @@ outer:
 	for iterationsRemaining > 0 {
 		for step := range iterationsRemaining {
 			a.emit(stream.Phase{QueryID: a.queryID, Phase: "thinking"})
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, nil)
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, func(chunk llm.StreamChunk) {
+				if chunk.Content != "" {
+					a.emit(stream.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
+				}
+			})
 			if err != nil {
 				return "", fmt.Errorf("LLM调用失败: %w", err)
 			}

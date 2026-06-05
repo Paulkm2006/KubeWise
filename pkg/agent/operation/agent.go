@@ -250,7 +250,11 @@ func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([
 outer:
 	for iterationsRemaining > 0 {
 		for round := range iterationsRemaining {
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, nil)
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, func(chunk llm.StreamChunk) {
+				if chunk.Content != "" {
+					a.emit(stream.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
+				}
+			})
 			if err != nil {
 				return nil, fmt.Errorf("LLM 调用失败: %w", err)
 			}
@@ -435,7 +439,12 @@ func (a *Agent) replan(ctx context.Context, original OperationStep, correction s
 		{Role: "user", Content: fmt.Sprintf("原始操作步骤：\n%s\n\n用户修正指令：%s", string(originalJSON), correction)},
 	}
 
-	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil, nil)
+	a.emit(stream.Phase{QueryID: a.queryID, Phase: "thinking"})
+	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil, func(chunk llm.StreamChunk) {
+		if chunk.Content != "" {
+			a.emit(stream.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
+		}
+	})
 	if err != nil {
 		return OperationStep{}, err
 	}
