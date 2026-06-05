@@ -127,7 +127,7 @@ func TestToolCallNestedUnderPhase(t *testing.T) {
 	m.Update(stream.Phase{QueryID: "q-1", Phase: "analyzing"})
 	m.Update(stream.ToolCall{QueryID: "q-1", ToolName: "get_resource", Step: 1})
 
-	// Mark first phase's tool done
+	// Mark analyzing phase's tool done
 	m.Update(stream.ToolDone{QueryID: "q-1", ToolName: "get_resource", Step: 1, Elapsed: time.Second})
 
 	view := m.View()

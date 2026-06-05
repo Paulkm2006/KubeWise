@@ -576,13 +576,15 @@ func (m ChatModel) renderCard(c *progressCard) string {
 		if p.reasoningText.Len() > 0 {
 			if p.reasoningExpanded {
 				full := p.reasoningText.String()
-				divider := strings.Repeat("─", m.width-8)
+				dividerLen := max(0, m.width-8)
+				divider := strings.Repeat("─", dividerLen)
 				lines = append(lines, styles.ReasoningExpanded.Render("  ▼ 推理过程\n  "+divider+"\n"+indentText(full, "  ")+"\n  "+divider))
 			} else if !p.done {
 				// Running, collapsed: show last 3 lines
 				full := p.reasoningText.String()
 				tail := lastNLines(full, 3)
-				divider := strings.Repeat("─", m.width-8)
+				dividerLen := max(0, m.width-8)
+				divider := strings.Repeat("─", dividerLen)
 				lines = append(lines, styles.ReasoningPreview.Render("  "+divider))
 				for _, line := range tail {
 					lines = append(lines, styles.ReasoningPreview.Render("  "+line))

@@ -32,9 +32,10 @@ func NewInputModel() InputModel {
 	ta.ShowLineNumbers = false
 	ta.Focus()
 	return InputModel{
-		textarea: ta,
-		enabled:  true,
-		width:    80,
+		textarea:    ta,
+		enabled:     true,
+		width:       80,
+		historyIdx:  -1,
 	}
 }
 
