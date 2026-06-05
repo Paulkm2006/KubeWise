@@ -40,7 +40,7 @@ func TestStreamDoneStopsSpinner(t *testing.T) {
 
 	m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Query Agent"})
 
-	updated, _ := m.Update(stream.StreamDone{QueryID: "q-1", Result: "done"})
+	updated, _ := m.Update(stream.StreamDone{QueryID: "q-1"})
 
 	if updated.IsSpinning() {
 		t.Error("expected spinner to stop after StreamDoneEvent")
@@ -73,5 +73,88 @@ func TestStreamErrStopsSpinner(t *testing.T) {
 
 	if updated.IsSpinning() {
 		t.Error("expected spinner to stop after StreamErrEvent")
+	}
+}
+
+func TestAgentDoneSetsFinalReportStreamDoneCreatesEntry(t *testing.T) {
+	m := model.NewChatModel(80, 40)
+
+	m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Query Agent"})
+
+	// AgentDone sets finalReport on the card
+	m.Update(stream.AgentDone{
+		QueryID: "q-1", Result: "found 2 pods", Duration: time.Second,
+		InTokens: 100, OutTokens: 50,
+	})
+
+	// Card should still be in m.cards (not yet consumed)
+	// StreamDone creates the chatEntry from the card's finalReport
+	updated, _ := m.Update(stream.StreamDone{QueryID: "q-1"})
+
+	view := updated.View()
+	if !strings.Contains(view, "found 2 pods") {
+		t.Errorf("expected final report in chat entry after StreamDone, got:\n%s", view)
+	}
+	if strings.Contains(view, "⟳") {
+		t.Errorf("expected no spinner in view after StreamDone, got:\n%s", view)
+	}
+}
+
+func TestLLMTextDeltaWritesToLatestPhase(t *testing.T) {
+	m := model.NewChatModel(80, 40)
+	m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Query Agent"})
+	m.Update(stream.Phase{QueryID: "q-1", Phase: "thinking"})
+
+	// Phase emits LLMTextDelta
+	m.Update(stream.LLMTextDelta{QueryID: "q-1", Delta: "checking pod status..."})
+	m.Update(stream.LLMTextDelta{QueryID: "q-1", Delta: " found 3 pods"})
+
+	view := m.View()
+	if !strings.Contains(view, "checking pod status...") || !strings.Contains(view, "found 3 pods") {
+		t.Errorf("expected reasoning text in card view, got:\n%s", view)
+	}
+}
+
+func TestToolCallNestedUnderPhase(t *testing.T) {
+	m := model.NewChatModel(80, 40)
+	m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Query Agent"})
+
+	// Phase 1: thinking, with tool call
+	m.Update(stream.Phase{QueryID: "q-1", Phase: "thinking"})
+	m.Update(stream.ToolCall{QueryID: "q-1", ToolName: "list_resources", Step: 1})
+
+	// Phase 2: analyzing, with different tool call
+	m.Update(stream.Phase{QueryID: "q-1", Phase: "analyzing"})
+	m.Update(stream.ToolCall{QueryID: "q-1", ToolName: "get_resource", Step: 1})
+
+	// Mark analyzing phase's tool done
+	m.Update(stream.ToolDone{QueryID: "q-1", ToolName: "get_resource", Step: 1, Elapsed: time.Second})
+
+	view := m.View()
+	if !strings.Contains(view, "list_resources") {
+		t.Errorf("expected list_resources tool under thinking phase, got:\n%s", view)
+	}
+	if !strings.Contains(view, "get_resource") {
+		t.Errorf("expected get_resource tool under analyzing phase, got:\n%s", view)
+	}
+}
+
+func TestTogglePhaseReasoning(t *testing.T) {
+	m := model.NewChatModel(80, 40)
+	m.Update(stream.AgentStart{QueryID: "q-1", AgentName: "Query Agent"})
+	m.Update(stream.Phase{QueryID: "q-1", Phase: "thinking"})
+	m.Update(stream.LLMTextDelta{QueryID: "q-1", Delta: "some reasoning text"})
+
+	// Default: reasoning is collapsed — check that expanded marker is absent
+	view := m.View()
+	if strings.Contains(view, "▼") {
+		t.Errorf("expected reasoning collapsed by default, got expanded:\n%s", view)
+	}
+
+	// After toggle: reasoning should be expanded
+	m.TogglePhaseReasoning()
+	view = m.View()
+	if !strings.Contains(view, "▼") || !strings.Contains(view, "some reasoning text") {
+		t.Errorf("expected expanded reasoning after toggle, got:\n%s", view)
 	}
 }

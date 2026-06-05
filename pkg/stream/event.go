@@ -29,6 +29,7 @@ func (AgentStart) isStreamEvent() {}
 
 type AgentDone struct {
 	QueryID   string
+	Result    string
 	Duration  time.Duration
 	InTokens  int
 	OutTokens int
@@ -83,7 +84,6 @@ func (Supervisor) isStreamEvent() {}
 
 type StreamDone struct {
 	QueryID string
-	Result  string
 }
 
 func (StreamDone) isStreamEvent() {}

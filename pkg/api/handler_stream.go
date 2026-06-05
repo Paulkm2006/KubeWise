@@ -61,8 +61,8 @@ func (h *Handler) bridgeStreamEvent(sse *SSEWriter, ev stream.Event) error {
 
 	case stream.AgentDone:
 		return sse.WriteEvent("agent_done", AgentDoneData{
-			QueryID: e.QueryID, Duration: e.Duration,
-			InTokens: e.InTokens, OutTokens: e.OutTokens,
+			QueryID: e.QueryID, Result: e.Result,
+			Duration: e.Duration, InTokens: e.InTokens, OutTokens: e.OutTokens,
 		})
 
 	case stream.ToolCall:
@@ -89,7 +89,7 @@ func (h *Handler) bridgeStreamEvent(sse *SSEWriter, ev stream.Event) error {
 		})
 
 	case stream.StreamDone:
-		return sse.WriteEvent("stream_done", StreamDoneData{QueryID: e.QueryID, Result: e.Result})
+		return sse.WriteEvent("stream_done", StreamDoneData{QueryID: e.QueryID})
 
 	case stream.StreamErr:
 		msg := ""

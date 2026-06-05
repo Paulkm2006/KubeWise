@@ -158,7 +158,6 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		zap.Float64("confidence", intent.Confidence),
 	)
 
-	var result string
 
 	// 2. Route to the appropriate sub-agent (fresh instance with eventCh).
 	phaseLabel := fmt.Sprintf("routing to %s agent", intent.TaskTypeDescription)
@@ -167,17 +166,17 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	case types.TaskTypeQuery:
 		a.queryAgent.SetEventChannel(eventCh, queryID)
 		a.queryAgent.SetLogger(a.log)
-		result, err = a.queryAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		_, err = a.queryAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeTroubleshooting:
 		a.troubleshootingAgent.SetEventChannel(eventCh, queryID)
 		a.troubleshootingAgent.SetLogger(a.log)
-		result, err = a.troubleshootingAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		_, err = a.troubleshootingAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeSecurity:
 		a.securityAgent.SetEventChannel(eventCh, queryID)
 		a.securityAgent.SetLogger(a.log)
-		result, err = a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		_, err = a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeDeploy:
 		// Bridge goroutine: 将 Deploy Agent 的同步 ConfirmHandler / SelectionHandler
@@ -200,7 +199,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		a.deployAgent.SetSelectionHandler(selectionHandler)
 		a.deployAgent.SetConfirmHandler(confirmHandler)
 		a.deployAgent.SetLogger(a.log)
-		result, err = a.deployAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		_, err = a.deployAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeOperation:
 		handler := operation.NewChannelConfirmationHandler()
@@ -253,7 +252,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		a.operationAgent.SetConfirmationHandler(handler)
 		a.operationAgent.SetEventChannel(eventCh, queryID)
 		a.operationAgent.SetLogger(a.log)
-		result, err = a.operationAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		_, err = a.operationAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	default:
 		a.logger().Error("unsupported task type", zap.String("task_type", string(intent.TaskType)))
@@ -265,7 +264,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		return err
 	}
 
-	emit(stream.StreamDone{QueryID: queryID, Result: result})
+	emit(stream.StreamDone{QueryID: queryID})
 	return nil
 }
 

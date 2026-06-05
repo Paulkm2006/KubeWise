@@ -149,13 +149,19 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 	switch e := ev.(type) {
 	case stream.InteractionRequest:
 		return a.dispatchInteractionRequest(e)
+	case stream.AgentDone:
+		// AgentDone updates the card but does not finalize the message;
+		// StreamDone handles chatEntry creation and input re-enable.
+		var chatCmd tea.Cmd
+		a.chat, chatCmd = a.chat.Update(e)
+		return a, tea.Batch(a.listenStream(), chatCmd)
 	case stream.StreamDone:
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(e)
 		a.running = false
 		a.input.SetEnabled(true)
 		a.persistAssistantMessage()
-		return a, chatCmd
+		return a, tea.Batch(a.listenStream(), chatCmd)
 	case stream.StreamErr:
 		err := e.Err
 		if err == nil {
@@ -165,7 +171,7 @@ func (a App) dispatchStreamEvent(ev stream.Event) (tea.Model, tea.Cmd) {
 		a.chat, chatCmd = a.chat.Update(stream.StreamErr{QueryID: e.QueryID, Err: err})
 		a.running = false
 		a.input.SetEnabled(true)
-		return a, chatCmd
+		return a, tea.Batch(a.listenStream(), chatCmd)
 	default:
 		var chatCmd tea.Cmd
 		a.chat, chatCmd = a.chat.Update(ev)
@@ -361,6 +367,12 @@ func (a App) handleShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
 		a.chat = model.NewChatModel(a.width-tuistyles.SidebarWidth, a.height-5)
 		return nil, true
 
+	case tea.KeyCtrlO:
+		if a.chat.TogglePhaseReasoning() {
+			return nil, true
+		}
+		return nil, false
+
 	case tea.KeyTab:
 		if a.showSidebar {
 			if a.focus == focusInput {
@@ -373,16 +385,6 @@ func (a App) handleShortcut(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 		return nil, true
 
-	case tea.KeyUp:
-		if a.focus == focusInput {
-			a.chat.ScrollUp(1)
-			return nil, true
-		}
-	case tea.KeyDown:
-		if a.focus == focusInput {
-			a.chat.ScrollDown(1)
-			return nil, true
-		}
 	case tea.KeyPgUp:
 		if a.focus == focusInput {
 			a.chat.ScrollUp(a.height - 2)

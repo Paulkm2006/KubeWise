@@ -112,7 +112,7 @@ func New(llmClient *llm.Client, helmClient *helm.Client, k8sClient *k8s.Client, 
 }
 
 // HandleQuery runs the deploy pipeline.
-func (a *Agent) HandleQuery(ctx context.Context, query string, entities types.Entities) (string, error) {
+func (a *Agent) HandleQuery(ctx context.Context, query string, entities types.Entities) (result string, err error) {
 	a.emit(stream.AgentStart{AgentName: "Deploy Agent", QueryID: a.queryID})
 	startTime := time.Now()
 	defer func() {
@@ -121,7 +121,7 @@ func (a *Agent) HandleQuery(ctx context.Context, query string, entities types.En
 			zap.String("query_id", a.queryID),
 			zap.Duration("elapsed", time.Since(startTime)),
 		)
-		a.emit(stream.AgentDone{QueryID: a.queryID, Duration: time.Since(startTime)})
+		a.emit(stream.AgentDone{QueryID: a.queryID, Result: result, Duration: time.Since(startTime)})
 	}()
 
 	return a.runDeployPipeline(ctx, query, entities)

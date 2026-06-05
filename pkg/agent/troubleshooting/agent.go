@@ -150,7 +150,7 @@ func (a *Agent) buildSystemPrompt() string {
 }
 
 // HandleQuery 处理故障排查请求
-func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (string, error) {
+func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (result string, err error) {
 	start := time.Now()
 	var inTokens, outTokens int
 	a.emit(stream.AgentStart{AgentName: "Troubleshooting Agent", QueryID: a.queryID})
@@ -158,6 +158,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	defer func() {
 		a.emit(stream.AgentDone{
 			QueryID:   a.queryID,
+			Result:    result,
 			Duration:  time.Since(start),
 			InTokens:  inTokens,
 			OutTokens: outTokens,
@@ -178,7 +179,11 @@ outer:
 	for iterationsRemaining > 0 {
 		for step := range iterationsRemaining {
 			a.emit(stream.Phase{QueryID: a.queryID, Phase: "thinking"})
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, nil)
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, func(chunk llm.StreamChunk) {
+				if chunk.Content != "" {
+					a.emit(stream.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
+				}
+			})
 			if err != nil {
 				return "", fmt.Errorf("LLM调用失败: %w", err)
 			}

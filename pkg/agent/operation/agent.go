@@ -169,7 +169,7 @@ func (a *Agent) accumulate(resp *llm.Message) {
 }
 
 // HandleQuery is the entry point called by the router.
-func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (string, error) {
+func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities) (result string, err error) {
 	a.inTokens = 0
 	a.outTokens = 0
 	start := time.Now()
@@ -178,6 +178,7 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 	defer func() {
 		a.emit(stream.AgentDone{
 			QueryID:   a.queryID,
+			Result:    result,
 			Duration:  time.Since(start),
 			InTokens:  a.inTokens,
 			OutTokens: a.outTokens,
@@ -249,7 +250,11 @@ func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([
 outer:
 	for iterationsRemaining > 0 {
 		for round := range iterationsRemaining {
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, nil)
+			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, func(chunk llm.StreamChunk) {
+				if chunk.Content != "" {
+					a.emit(stream.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
+				}
+			})
 			if err != nil {
 				return nil, fmt.Errorf("LLM 调用失败: %w", err)
 			}
@@ -434,7 +439,12 @@ func (a *Agent) replan(ctx context.Context, original OperationStep, correction s
 		{Role: "user", Content: fmt.Sprintf("原始操作步骤：\n%s\n\n用户修正指令：%s", string(originalJSON), correction)},
 	}
 
-	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil, nil)
+	a.emit(stream.Phase{QueryID: a.queryID, Phase: "thinking"})
+	resp, err := a.llmClient.ChatCompletion(ctx, messages, nil, func(chunk llm.StreamChunk) {
+		if chunk.Content != "" {
+			a.emit(stream.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
+		}
+	})
 	if err != nil {
 		return OperationStep{}, err
 	}
