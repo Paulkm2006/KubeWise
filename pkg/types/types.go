@@ -14,6 +14,7 @@ const (
 	TaskTypeTroubleshooting TaskType = "troubleshooting" // 故障排查类
 	TaskTypeSecurity        TaskType = "security"        // 安全审计类
 	TaskTypeDeploy          TaskType = "deploy"          // 应用部署类（Helm）
+	TaskTypeChat            TaskType = "chat"            // 通用聊天类
 )
 
 // StringSlice 自定义类型，兼容字符串和字符串数组的JSON解析
