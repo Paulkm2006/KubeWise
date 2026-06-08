@@ -1,0 +1,217 @@
+package model
+
+import (
+	"bytes"
+	"fmt"
+	"strings"
+
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	chromastyles "github.com/alecthomas/chroma/v2/styles"
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/kubewise/kubewise/internal/agent/session"
+	tuistyles "github.com/kubewise/kubewise/internal/tui/styles"
+)
+
+// Renderer converts structured event payloads to styled terminal strings.
+type Renderer struct {
+	width int
+}
+
+// NewRenderer creates a Renderer with the given terminal width.
+func NewRenderer(width int) *Renderer {
+	return &Renderer{width: width}
+}
+
+// SetWidth updates the terminal width (called on resize).
+func (r *Renderer) SetWidth(w int) { r.width = w }
+
+// RenderText returns plain text, word-wrapped to terminal width.
+func (r *Renderer) RenderText(text string) string {
+	return lipgloss.NewStyle().Width(r.width).Render(text)
+}
+
+// RenderTable renders headers + rows as a lipgloss-bordered table.
+func (r *Renderer) RenderTable(headers []string, rows [][]string) string {
+	colWidths := make([]int, len(headers))
+	for i, h := range headers {
+		colWidths[i] = len(h)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(colWidths) && len(cell) > colWidths[i] {
+				colWidths[i] = len(cell)
+			}
+		}
+	}
+
+	sep := strings.Repeat("─", r.width-2)
+
+	var sb strings.Builder
+	sb.WriteString(sep + "\n")
+	for i, h := range headers {
+		sb.WriteString(lipgloss.NewStyle().Width(colWidths[i] + 2).Bold(true).Render(h))
+	}
+	sb.WriteString("\n" + sep + "\n")
+
+	for _, row := range rows {
+		for i, cell := range row {
+			if i >= len(colWidths) {
+				break
+			}
+			sb.WriteString(lipgloss.NewStyle().Width(colWidths[i] + 2).Render(cell))
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString(sep)
+	return sb.String()
+}
+
+// RenderCode renders a syntax-highlighted fenced code block.
+func (r *Renderer) RenderCode(language, content string) string {
+	lexer := lexers.Get(language)
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	style := chromastyles.Get("monokai")
+	if style == nil {
+		style = chromastyles.Fallback
+	}
+	formatter := formatters.Get("terminal256")
+	if formatter == nil {
+		header := tuistyles.CodeLangStyle.Render(language)
+		return tuistyles.CodeBlockStyle.Width(r.width - 2).Render(header + "\n" + content)
+	}
+
+	tokenizer, err := lexer.Tokenise(nil, content)
+	if err != nil {
+		return content
+	}
+	var buf bytes.Buffer
+	if err := formatter.Format(&buf, style, tokenizer); err != nil {
+		return content
+	}
+
+	header := tuistyles.CodeLangStyle.Render(language)
+	return tuistyles.CodeBlockStyle.Width(r.width - 2).Render(header + "\n" + buf.String())
+}
+
+// RenderKV renders key-value pairs with right-aligned keys.
+func (r *Renderer) RenderKV(pairs []session.KVPair) string {
+	maxKey := 0
+	for _, p := range pairs {
+		if len(p.Key) > maxKey {
+			maxKey = len(p.Key)
+		}
+	}
+
+	var sb strings.Builder
+	for _, p := range pairs {
+		key := tuistyles.KVKeyStyle.Width(maxKey + 2).Align(lipgloss.Right).Render(p.Key)
+		fmt.Fprintf(&sb, "%s  %s\n", key, p.Value)
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// RenderDetail renders a structured resource detail card.
+func (r *Renderer) RenderDetail(detail session.DetailPayload) string {
+	var sb strings.Builder
+
+	// Header
+	header := fmt.Sprintf("%s/%s", detail.Kind, detail.Name)
+	if detail.Namespace != "" {
+		header = fmt.Sprintf("%s (ns: %s)", header, detail.Namespace)
+	}
+	sb.WriteString(tuistyles.CodeLangStyle.Render(header) + "\n")
+
+	// Status
+	if len(detail.Status) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Status") + "\n")
+		for k, v := range detail.Status {
+			fmt.Fprintf(&sb, "  %s: %s\n", k, v)
+		}
+	}
+
+	// Labels
+	if len(detail.Labels) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Labels") + "\n")
+		for k, v := range detail.Labels {
+			fmt.Fprintf(&sb, "  %s: %s\n", k, v)
+		}
+	}
+
+	// Containers
+	if len(detail.Containers) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Containers") + "\n")
+		for _, c := range detail.Containers {
+			icon := "✓"
+			if !c.Ready {
+				icon = "✗"
+			}
+			fmt.Fprintf(&sb, "  %s %s (%s) restarts=%d state=%s\n", icon, c.Name, c.Image, c.RestartCount, c.State)
+			if len(c.Resources) > 0 {
+				for k, v := range c.Resources {
+					fmt.Fprintf(&sb, "    %s: %s\n", k, v)
+				}
+			}
+		}
+	}
+
+	// Conditions
+	if len(detail.Conditions) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Conditions") + "\n")
+		for _, c := range detail.Conditions {
+			status := "ok"
+			if c.Status != "True" {
+				status = "warn"
+			}
+			icon, style := statusIconStyle(status)
+			sb.WriteString(style.Render(fmt.Sprintf("  %s %s: %s — %s", icon, c.Type, c.Reason, c.Message)) + "\n")
+		}
+	}
+
+	// Events
+	if len(detail.Events) > 0 {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Events") + "\n")
+		for _, e := range detail.Events {
+			status := "info"
+			if e.Type == "Warning" {
+				status = "warn"
+			}
+			icon, style := statusIconStyle(status)
+			sb.WriteString(style.Render(fmt.Sprintf("  %s [%s] %s: %s", icon, e.Timestamp, e.Reason, e.Message)) + "\n")
+		}
+	}
+
+	// Recent Logs
+	if detail.RecentLogs != "" {
+		sb.WriteString(tuistyles.KVKeyStyle.Render("Recent Logs") + "\n")
+		sb.WriteString(tuistyles.CodeBlockStyle.Width(r.width-2).Render(detail.RecentLogs) + "\n")
+	}
+
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+// RenderList renders status items with coloured status icons.
+func (r *Renderer) RenderList(items []session.ListItem) string {
+	var sb strings.Builder
+	for _, item := range items {
+		icon, style := statusIconStyle(item.Status)
+		sb.WriteString(style.Render(icon+" "+item.Text) + "\n")
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func statusIconStyle(status string) (string, lipgloss.Style) {
+	switch status {
+	case "ok":
+		return "✓", tuistyles.ListOKStyle
+	case "warn":
+		return "⚠", tuistyles.ListWarnStyle
+	case "error":
+		return "✗", tuistyles.ListErrorStyle
+	default:
+		return "•", tuistyles.ListInfoStyle
+	}
+}
