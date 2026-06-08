@@ -1,0 +1,269 @@
+package k8s
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/homedir"
+
+	"github.com/kubewise/kubewise/internal/config"
+)
+
+// Client Kubernetes客户端封装
+type Client struct {
+	clientset     *kubernetes.Clientset
+	dynamicClient dynamic.Interface
+	restConfig    *rest.Config
+}
+
+func (c *Client) logger() *zap.Logger {
+	return config.L()
+}
+
+// expandTilde 将路径开头的 "~" 展开为用户主目录
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~") {
+		home := homedir.HomeDir()
+		if home != "" {
+			return filepath.Join(home, path[1:])
+		}
+	}
+	return path
+}
+
+// NewClient 创建Kubernetes客户端
+func NewClient(kubeconfigPath string) (*Client, error) {
+	var restCfg *rest.Config
+	var err error
+
+	if kubeconfigPath != "" {
+		kubeconfigPath = expandTilde(kubeconfigPath)
+		// 用户指定了kubeconfig路径，只使用这个路径
+		restCfg, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("加载指定的kubeconfig失败: %w，请检查路径是否正确", err)
+		}
+	} else {
+		// 没有指定路径，先尝试集群内配置
+		restCfg, err = rest.InClusterConfig()
+		if err != nil {
+			// 集群内配置失败，尝试用户目录下的默认kubeconfig
+			home := homedir.HomeDir()
+			if home == "" {
+				return nil, fmt.Errorf("无法找到kubeconfig配置：集群内配置失败且无法获取用户主目录")
+			}
+			defaultKubeconfig := filepath.Join(home, ".kube", "config")
+			restCfg, err = clientcmd.BuildConfigFromFlags("", defaultKubeconfig)
+			if err != nil {
+				return nil, fmt.Errorf("加载kubeconfig失败：集群内配置失败且默认路径%s也加载失败: %w", defaultKubeconfig, err)
+			}
+		}
+	}
+
+	clientset, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	dynamicClient, err := dynamic.NewForConfig(restCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Client{
+		clientset:     clientset,
+		dynamicClient: dynamicClient,
+		restConfig:    restCfg,
+	}
+	config.L().Info("k8s client connected", zap.String("host", restCfg.Host))
+	return c, nil
+}
+
+// ServerVersion returns the Kubernetes server version string (e.g. "v1.28.3").
+func (c *Client) ServerVersion(ctx context.Context) (string, error) {
+	v, err := c.clientset.Discovery().ServerVersion()
+	if err != nil {
+		return "", err
+	}
+	return v.GitVersion, nil
+}
+
+// ListPersistentVolumes 获取所有PV
+func (c *Client) ListPersistentVolumes(ctx context.Context) ([]corev1.PersistentVolume, error) {
+	pvList, err := c.clientset.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return pvList.Items, nil
+}
+
+// ListPersistentVolumeClaims 获取指定命名空间下的PVC
+func (c *Client) ListPersistentVolumeClaims(ctx context.Context, namespace string) ([]corev1.PersistentVolumeClaim, error) {
+	pvcList, err := c.clientset.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return pvcList.Items, nil
+}
+
+// ListPods 获取指定命名空间下的Pod
+func (c *Client) ListPods(ctx context.Context, namespace string) ([]corev1.Pod, error) {
+	podList, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return podList.Items, nil
+}
+
+// GetPodLogs 获取Pod日志，tailLines为0时使用默认100行
+func (c *Client) GetPodLogs(ctx context.Context, namespace, podName, containerName string, tailLines int64) (string, error) {
+	if tailLines <= 0 {
+		tailLines = 100
+	}
+	req := c.clientset.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
+		Container: containerName,
+		TailLines: ptr(tailLines),
+	})
+	logs, err := req.DoRaw(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(logs), nil
+}
+
+// ListNamespaces 获取所有命名空间
+func (c *Client) ListNamespaces(ctx context.Context) ([]corev1.Namespace, error) {
+	nsList, err := c.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return nsList.Items, nil
+}
+
+// GetPod 获取指定Pod
+func (c *Client) GetPod(ctx context.Context, namespace, podName string) (*corev1.Pod, error) {
+	pod, err := c.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return pod, nil
+}
+
+// ListConfigMaps 获取指定命名空间下的ConfigMap
+func (c *Client) ListConfigMaps(ctx context.Context, namespace string) ([]corev1.ConfigMap, error) {
+	cmList, err := c.clientset.CoreV1().ConfigMaps(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return cmList.Items, nil
+}
+
+// GetConfigMap 获取指定ConfigMap
+func (c *Client) GetConfigMap(ctx context.Context, namespace, cmName string) (*corev1.ConfigMap, error) {
+	cm, err := c.clientset.CoreV1().ConfigMaps(namespace).Get(ctx, cmName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return cm, nil
+}
+
+// ListCustomResources 获取指定GroupVersionResource的自定义资源
+func (c *Client) ListCustomResources(ctx context.Context, gvr schema.GroupVersionResource, namespace string) ([]any, error) {
+	var result *unstructured.UnstructuredList
+	var err error
+
+	if namespace == "" {
+		// 空命名空间表示查询所有命名空间的资源
+		result, err = c.dynamicClient.Resource(gvr).List(ctx, metav1.ListOptions{})
+	} else {
+		// 查询指定命名空间的资源
+		result, err = c.dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]any, len(result.Items))
+	for i, item := range result.Items {
+		items[i] = item.Object
+	}
+	return items, nil
+}
+
+// GetCustomResource 获取指定名称的自定义资源
+func (c *Client) GetCustomResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (any, error) {
+	var result *unstructured.Unstructured
+	var err error
+
+	if namespace == "" {
+		// 空命名空间表示查询集群级资源
+		result, err = c.dynamicClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+	} else {
+		// 查询指定命名空间的资源
+		result, err = c.dynamicClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	return result.Object, nil
+}
+
+// GetEvents 获取指定资源相关的K8s事件
+func (c *Client) GetEvents(ctx context.Context, namespace, involvedObjectName string) ([]corev1.Event, error) {
+	fieldSelector := fmt.Sprintf("involvedObject.name=%s", involvedObjectName)
+	if namespace != "" {
+		fieldSelector += fmt.Sprintf(",involvedObject.namespace=%s", namespace)
+	}
+	eventList, err := c.clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: fieldSelector,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return eventList.Items, nil
+}
+
+// GetEndpoints 获取Service对应的Endpoints
+func (c *Client) GetEndpoints(ctx context.Context, namespace, serviceName string) (*corev1.Endpoints, error) {
+	ep, err := c.clientset.CoreV1().Endpoints(namespace).Get(ctx, serviceName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return ep, nil
+}
+
+// ListNodes 获取所有节点列表
+func (c *Client) ListNodes(ctx context.Context) ([]corev1.Node, error) {
+	nodeList, err := c.clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return nodeList.Items, nil
+}
+
+// ListNetworkPolicies 获取指定命名空间下的NetworkPolicy（空命名空间表示所有）
+func (c *Client) ListNetworkPolicies(ctx context.Context, namespace string) ([]networkingv1.NetworkPolicy, error) {
+	npList, err := c.clientset.NetworkingV1().NetworkPolicies(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return npList.Items, nil
+}
+
+func ptr[T any](v T) *T {
+	return &v
+}
