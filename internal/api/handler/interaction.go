@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"go.uber.org/zap"
+	"github.com/kubewise/kubewise/internal/utils/log"
 	"github.com/labstack/echo/v5"
 )
 
@@ -14,8 +16,10 @@ type InteractionAnswerRequest struct {
 }
 
 func (h *Handler) ChatInteraction(c *echo.Context) error {
+	ctx := c.Request().Context()
 	var req InteractionAnswerRequest
 	if err := c.Bind(&req); err != nil {
+		log.Ctx(ctx).Warn("interaction: invalid request body", zap.Error(err))
 		return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid request", Detail: err.Error()})
 	}
 	if req.InteractionID == "" {
@@ -35,6 +39,7 @@ func (h *Handler) ChatInteraction(c *echo.Context) error {
 	h.mu.Unlock()
 
 	if !ok {
+		log.Ctx(ctx).Warn("interaction: unknown interaction_id", zap.String("interaction_id", req.InteractionID))
 		return c.JSON(http.StatusNotFound, ErrorResponse{Error: "interaction_id not found or already responded"})
 	}
 
@@ -44,5 +49,6 @@ func (h *Handler) ChatInteraction(c *echo.Context) error {
 		return c.JSON(http.StatusConflict, ErrorResponse{Error: "agent no longer waiting for interaction"})
 	}
 
+	log.Ctx(ctx).Info("interaction received", zap.String("interaction_id", req.InteractionID))
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }

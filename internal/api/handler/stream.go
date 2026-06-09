@@ -7,23 +7,30 @@ import (
 	"github.com/google/uuid"
 	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/api/ssestream"
+	"github.com/kubewise/kubewise/internal/utils/log"
 	"github.com/labstack/echo/v5"
+	"go.uber.org/zap"
 	"net/http"
 )
 
 func (h *Handler) ChatStream(c *echo.Context) error {
+	ctx := c.Request().Context()
 	query := c.QueryParam("query")
 	if query == "" {
+		log.Ctx(ctx).Warn("chat stream: missing query parameter")
 		return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "query parameter is required"})
 	}
 
 	sse, err := ssestream.NewSSEWriter(c.Response())
 	if err != nil {
+		log.Ctx(ctx).Error("chat stream: failed to create SSE writer", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 	}
 
-	ctx, cancel := context.WithCancel(c.Request().Context())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	log.Ctx(ctx).Info("chat stream started", zap.String("query_preview", truncate(query, 80)))
 
 	queryID := fmt.Sprintf("q-%s", uuid.New().String()[:8])
 	eventCh := make(chan event.Event, 64)
@@ -37,13 +44,16 @@ func (h *Handler) ChatStream(c *echo.Context) error {
 
 	for ev := range eventCh {
 		if ctx.Err() != nil {
+			log.Ctx(ctx).Warn("chat stream: context cancelled, stopping event loop")
 			break
 		}
 		if err := h.bridgeStreamEvent(sse, ev); err != nil {
+			log.Ctx(ctx).Warn("chat stream: bridge write error, closing", zap.Error(err))
 			break
 		}
 	}
 
+	log.Ctx(ctx).Info("chat stream completed", zap.String("query_preview", truncate(query, 80)))
 	return nil
 }
 
