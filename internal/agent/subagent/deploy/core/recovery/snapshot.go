@@ -103,7 +103,7 @@ type podEventLister interface {
 	GetEvents(ctx context.Context, namespace, involvedObjectName string) ([]corev1.Event, error)
 }
 
-func collectUnhealthyPodEvents(ctx context.Context, namespace string, pods []corev1.Pod, k8s podEventLister) []map[string]string {
+func collectUnhealthyPodEvents(ctx context.Context, namespace string, pods []corev1.Pod, lister podEventLister) []map[string]string {
 	var unhealthy []corev1.Pod
 	for _, p := range pods {
 		if p.Status.Phase != corev1.PodRunning && p.Status.Phase != corev1.PodSucceeded {
@@ -117,7 +117,7 @@ func collectUnhealthyPodEvents(ctx context.Context, namespace string, pods []cor
 
 	var out []map[string]string
 	for _, p := range unhealthy {
-		events, err := k8s.GetEvents(ctx, namespace, p.Name)
+		events, err := lister.GetEvents(ctx, namespace, p.Name)
 		if err != nil || len(events) == 0 {
 			continue
 		}
