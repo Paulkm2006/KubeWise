@@ -17,14 +17,19 @@ func NewRingBuffer(capacity int) *RingBuffer {
 	}
 }
 
-func (rb *RingBuffer) Push(e StreamEvent) {
+func (rb *RingBuffer) Push(e StreamEvent) bool {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
+
+	evicted := rb.count >= rb.size
+
 	rb.data[rb.cursor] = e
 	rb.cursor = (rb.cursor + 1) % rb.size
 	if rb.count < rb.size {
 		rb.count++
 	}
+
+	return !evicted
 }
 
 func (rb *RingBuffer) Drain() []StreamEvent {
