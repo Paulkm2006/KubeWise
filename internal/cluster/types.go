@@ -61,3 +61,10 @@ type ClusterClient struct {
 	LastSeen    time.Time
 	mu          sync.RWMutex
 }
+
+// Clientset returns the underlying kubernetes clientset (nil if not connected).
+func (cc *ClusterClient) Clientset() *kubernetes.Clientset {
+	cc.mu.RLock()
+	defer cc.mu.RUnlock()
+	return cc.clientset
+}

@@ -24,6 +24,20 @@ func InitRouter(e *echo.Echo, h *handler.Handler) {
 
 	v1.GET("/cluster/status", h.ClusterStatus)
 
+	// Dashboard
+	v1.GET("/clusters", h.ListClusters)
+	v1.GET("/clusters/:name/issues", h.ListIssues)
+	v1.GET("/clusters/:name/events", h.ListClusterEvents)
+
+	// Diagnosis
+	v1.POST("/diagnose", h.StartDiagnose)
+	v1.GET("/diagnoses", h.ListDiagnoses)
+	v1.GET("/diagnoses/:id", h.GetDiagnosis)
+	v1.GET("/diagnose/stream", h.StreamDiagnosisEvents)
+
+	// Activities
+	v1.GET("/activities", h.ListActivities)
+
 	v1.GET("/sessions", h.ListSessions)
 	v1.POST("/sessions", h.CreateSession)
 	v1.GET("/sessions/:id", h.GetSession)
