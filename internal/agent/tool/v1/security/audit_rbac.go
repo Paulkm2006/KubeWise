@@ -9,8 +9,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 
-	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
+	"github.com/kubewise/kubewise/internal/cluster"
 )
 
 // AuditRBACTool RBAC安全审计工具

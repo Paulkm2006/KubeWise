@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
+	"github.com/kubewise/kubewise/internal/cluster"
 )
 
 // AuditNetworkPoliciesTool 网络策略审计工具

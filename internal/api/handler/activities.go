@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/labstack/echo/v5"
 	"github.com/kubewise/kubewise/internal/activity"
+	"github.com/labstack/echo/v5"
 )
 
 func (h *Handler) ListActivities(c *echo.Context) error {

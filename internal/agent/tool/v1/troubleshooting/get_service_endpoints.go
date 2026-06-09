@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
+	"github.com/kubewise/kubewise/internal/cluster"
 )
 
 // GetServiceEndpointsTool 获取Service Endpoints工具

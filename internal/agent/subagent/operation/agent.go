@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
 	"github.com/kubewise/kubewise/internal/config"
+	"go.uber.org/zap"
 
+	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/agent/router/types"
 	"github.com/kubewise/kubewise/internal/agent/supervisor"
+	"github.com/kubewise/kubewise/internal/agent/tool"
 	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/tool"
-	"github.com/kubewise/kubewise/internal/agent/router/types"
 
 	// Trigger init() registration of all read tools
 	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/query"

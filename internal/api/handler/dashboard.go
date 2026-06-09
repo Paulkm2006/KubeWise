@@ -8,8 +8,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/labstack/echo/v5"
 	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/labstack/echo/v5"
 )
 
 func (h *Handler) ListClusters(c *echo.Context) error {

@@ -5,9 +5,9 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/report"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/state"
-	"github.com/kubewise/kubewise/internal/agent/event"
 )
 
 const toolVerifyDeploy = "verify deployment"

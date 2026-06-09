@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
+	"github.com/kubewise/kubewise/internal/cluster"
 )
 
 // ListNamespacesTool 列出所有命名空间工具

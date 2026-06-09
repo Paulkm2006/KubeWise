@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"github.com/google/uuid"
-	"github.com/kubewise/kubewise/internal/api/ssestream"
 	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/api/ssestream"
 	"github.com/labstack/echo/v5"
+	"net/http"
 )
 
 func (h *Handler) ChatStream(c *echo.Context) error {

@@ -7,18 +7,18 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kubewise/kubewise/internal/config"
+	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/agent/router/types"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy"
 	"github.com/kubewise/kubewise/internal/agent/subagent/operation"
 	"github.com/kubewise/kubewise/internal/agent/subagent/query"
 	"github.com/kubewise/kubewise/internal/agent/subagent/security"
-	"github.com/kubewise/kubewise/internal/agent/supervisor"
 	"github.com/kubewise/kubewise/internal/agent/subagent/troubleshooting"
-	"github.com/kubewise/kubewise/internal/utils/helm"
+	"github.com/kubewise/kubewise/internal/agent/supervisor"
 	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/config"
+	"github.com/kubewise/kubewise/internal/utils/helm"
 	"github.com/kubewise/kubewise/internal/utils/llm"
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/router/types"
 	"go.uber.org/zap"
 )
 
@@ -36,7 +36,6 @@ type Agent struct {
 	helmClient           *helm.Client
 	streamMu             sync.Mutex
 }
-
 
 func (a *Agent) logger() *zap.Logger {
 	return config.L()
@@ -142,7 +141,6 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		zap.String("task_type", string(intent.TaskType)),
 		zap.Float64("confidence", intent.Confidence),
 	)
-
 
 	// 2. Route to the appropriate sub-agent (fresh instance with eventCh).
 	phaseLabel := fmt.Sprintf("routing to %s agent", intent.TaskTypeDescription)

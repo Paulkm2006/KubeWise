@@ -1,8 +1,8 @@
 package router
 
 import (
-	"github.com/kubewise/kubewise/internal/api/middlewares"
 	"github.com/kubewise/kubewise/internal/api/handler"
+	"github.com/kubewise/kubewise/internal/api/middlewares"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )

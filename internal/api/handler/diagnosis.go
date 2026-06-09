@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v5"
 	"github.com/kubewise/kubewise/internal/api/ssestream"
+	"github.com/labstack/echo/v5"
 )
 
 type DiagnoseRequest struct {

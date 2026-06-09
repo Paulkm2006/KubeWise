@@ -5,18 +5,18 @@ import (
 	"context"
 	"time"
 
-	"go.uber.org/zap"
 	"github.com/kubewise/kubewise/internal/config"
+	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/report"
-	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
+	"github.com/kubewise/kubewise/internal/agent/event"
 	routertypes "github.com/kubewise/kubewise/internal/agent/router/types"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	"github.com/kubewise/kubewise/internal/utils/helm"
-	"github.com/kubewise/kubewise/internal/cluster"
-	"github.com/kubewise/kubewise/internal/utils/llm"
-	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/report"
+	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
 	"github.com/kubewise/kubewise/internal/agent/tool"
+	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/utils/helm"
+	"github.com/kubewise/kubewise/internal/utils/llm"
 
 	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/query"
 	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/troubleshooting"
@@ -66,6 +66,7 @@ func (a *Agent) SetConfirmHandler(h DeployConfirmationHandler) {
 func (a *Agent) logger() *zap.Logger {
 	return config.L()
 }
+
 type Option func(*Agent)
 
 // WithConfirmHandler sets a custom confirmation handler.

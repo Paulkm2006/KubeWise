@@ -8,13 +8,13 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	"github.com/kubewise/kubewise/internal/agent/session"
+	"github.com/kubewise/kubewise/internal/agent/supervisor"
 	"github.com/kubewise/kubewise/internal/api"
 	"github.com/kubewise/kubewise/internal/config"
-	"github.com/kubewise/kubewise/internal/agent/supervisor"
+	"github.com/kubewise/kubewise/internal/tui"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/utils/log"
-	"github.com/kubewise/kubewise/internal/agent/session"
-	"github.com/kubewise/kubewise/internal/tui"
 )
 
 var cfgFile string

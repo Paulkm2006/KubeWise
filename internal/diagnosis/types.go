@@ -12,7 +12,7 @@ const (
 )
 
 type FixAction struct {
-	Type        string `json:"type"`        // "command" | "guidance"
+	Type        string `json:"type"` // "command" | "guidance"
 	Description string `json:"description"`
 	Command     string `json:"command,omitempty"`
 	Risk        string `json:"risk,omitempty"`
@@ -30,14 +30,14 @@ type StreamEvent struct {
 }
 
 type Diagnosis struct {
-	ID                 string       `json:"id"`
-	ClusterFingerprint string       `json:"cluster_fingerprint"`
-	ClusterDisplay     string       `json:"cluster_display"`
-	Disconnected       bool         `json:"disconnected"`
-	Namespace          string       `json:"namespace"`
-	Pod                string       `json:"pod"`
-	PodUID             string       `json:"pod_uid,omitempty"`
-	SymptomHash        string       `json:"symptom_hash,omitempty"`
+	ID                 string `json:"id"`
+	ClusterFingerprint string `json:"cluster_fingerprint"`
+	ClusterDisplay     string `json:"cluster_display"`
+	Disconnected       bool   `json:"disconnected"`
+	Namespace          string `json:"namespace"`
+	Pod                string `json:"pod"`
+	PodUID             string `json:"pod_uid,omitempty"`
+	SymptomHash        string `json:"symptom_hash,omitempty"`
 
 	Status     Status      `json:"status"`
 	RootCause  string      `json:"root_cause,omitempty"`

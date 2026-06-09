@@ -7,15 +7,15 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/kubewise/kubewise/internal/config"
 	"github.com/kubewise/kubewise/internal/activity"
-	"github.com/kubewise/kubewise/internal/agent/supervisor"
-	"github.com/kubewise/kubewise/internal/cluster"
-	"github.com/kubewise/kubewise/internal/diagnosis"
-	"github.com/kubewise/kubewise/internal/utils/llm"
+	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/agent/session"
 	"github.com/kubewise/kubewise/internal/agent/session/store"
-	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/agent/supervisor"
+	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/config"
+	"github.com/kubewise/kubewise/internal/diagnosis"
+	"github.com/kubewise/kubewise/internal/utils/llm"
 )
 
 // StreamQuerier abstracts the router agent for testability.

@@ -1,9 +1,10 @@
 package handler
 
 import (
-	"time"
 	"encoding/json"
+	"time"
 )
+
 // --- SSE event payload types ---
 
 type PhaseData struct {

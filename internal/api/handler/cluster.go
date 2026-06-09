@@ -54,17 +54,25 @@ func (h *Handler) ClusterStatus(c *echo.Context) error {
 	if nodeList, err := h.k8sClient.ListNodes(ctx); err == nil {
 		nodes.Total = len(nodeList)
 		for _, n := range nodeList {
-			if isNodeReady(n) { nodes.Ready++ } else { nodes.NotReady++ }
+			if isNodeReady(n) {
+				nodes.Ready++
+			} else {
+				nodes.NotReady++
+			}
 		}
 	}
 	if podList, err := h.k8sClient.ListPods(ctx, metav1.NamespaceAll); err == nil {
 		pods.Total = len(podList)
 		for _, p := range podList {
 			switch p.Status.Phase {
-			case corev1.PodRunning: pods.Running++
-			case corev1.PodPending: pods.Pending++
-			case corev1.PodFailed: pods.Failed++
-			case corev1.PodSucceeded: pods.Succeeded++
+			case corev1.PodRunning:
+				pods.Running++
+			case corev1.PodPending:
+				pods.Pending++
+			case corev1.PodFailed:
+				pods.Failed++
+			case corev1.PodSucceeded:
+				pods.Succeeded++
 			}
 		}
 	}
@@ -74,9 +82,12 @@ func (h *Handler) ClusterStatus(c *echo.Context) error {
 
 	health := "critical"
 	switch {
-	case nodes.Total == 0: health = "critical"
-	case nodes.Ready == nodes.Total: health = "healthy"
-	case nodes.Ready < nodes.Total: health = "degraded"
+	case nodes.Total == 0:
+		health = "critical"
+	case nodes.Ready == nodes.Total:
+		health = "healthy"
+	case nodes.Ready < nodes.Total:
+		health = "degraded"
 	}
 
 	return c.JSON(http.StatusOK, ClusterStatusResponse{

@@ -6,12 +6,12 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
 	chartcore "github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/chart"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/values"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/state"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	"github.com/kubewise/kubewise/internal/agent/event"
 )
 
 // GenerateValues asks the LLM for override values and builds the deploy plan.

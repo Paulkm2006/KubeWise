@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kubewise/kubewise/internal/agent/supervisor"
-	"github.com/kubewise/kubewise/internal/cluster"
-	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/tool"
 	"github.com/kubewise/kubewise/internal/agent/router/types"
-	"go.uber.org/zap"
+	"github.com/kubewise/kubewise/internal/agent/supervisor"
+	"github.com/kubewise/kubewise/internal/agent/tool"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/config"
+	"github.com/kubewise/kubewise/internal/utils/llm"
+	"go.uber.org/zap"
 
 	// 导入所有工具包，触发init函数注册工具
 	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/query"

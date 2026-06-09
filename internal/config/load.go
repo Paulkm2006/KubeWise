@@ -76,7 +76,7 @@ func ApplyFlags(fs *pflag.FlagSet) {
 
 func setDefaults() {
 	Global = &Config{
-		DataDir:  "", // resolved below
+		DataDir: "", // resolved below
 		Verbose: false,
 		Log: LogConfig{
 			Level: "info",
@@ -127,8 +127,9 @@ func loadFile(path string) error {
 // ---------------------------------------------------------------------------
 
 // envVar converts a dotted config key to the KUBEWISE_* env var name.
-//   llm.api_key  →  KUBEWISE_LLM_API_KEY
-//   agent.max_steps  →  KUBEWISE_AGENT_MAX_STEPS
+//
+//	llm.api_key  →  KUBEWISE_LLM_API_KEY
+//	agent.max_steps  →  KUBEWISE_AGENT_MAX_STEPS
 func envVar(key string) string {
 	s := strings.ToUpper(key)
 	s = strings.NewReplacer("-", "_", ".", "_").Replace(s)

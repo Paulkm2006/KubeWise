@@ -9,10 +9,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	"github.com/kubewise/kubewise/internal/utils/helm"
+	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
 	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/utils/helm"
 )
 
 const (

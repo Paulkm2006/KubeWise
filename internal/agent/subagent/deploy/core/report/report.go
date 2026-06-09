@@ -8,8 +8,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	"github.com/kubewise/kubewise/internal/utils/helm"
 	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/utils/helm"
 )
 
 // SuccessMessage builds the final Helm success report shown to the user.

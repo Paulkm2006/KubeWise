@@ -38,7 +38,7 @@ func (c *Client) ListRoleBindings(ctx context.Context, namespace string) ([]rbac
 // ListClusterRoleBindings 获取所有ClusterRoleBinding
 func (c *Client) ListClusterRoleBindings(ctx context.Context) ([]rbacv1.ClusterRoleBinding, error) {
 	crbList, err := c.clientset.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
-		if err != nil {
+	if err != nil {
 		return nil, err
 	}
 	return crbList.Items, nil

@@ -3,8 +3,8 @@ package troubleshooting
 import (
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/agent/tool"
+	"github.com/kubewise/kubewise/internal/utils/llm"
 )
 
 // RecoveryToolDefinitions returns function definitions for the deploy recovery ReAct loop.

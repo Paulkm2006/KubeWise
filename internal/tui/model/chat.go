@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/internal/agent/session"
 	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/agent/session"
 	"github.com/kubewise/kubewise/internal/tui/styles"
 )
 

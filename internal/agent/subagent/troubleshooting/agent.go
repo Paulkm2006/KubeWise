@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"time"
 
-	"go.uber.org/zap"
 	"github.com/kubewise/kubewise/internal/config"
+	"go.uber.org/zap"
 
+	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/agent/router/types"
 	"github.com/kubewise/kubewise/internal/agent/supervisor"
+	"github.com/kubewise/kubewise/internal/agent/tool"
 	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/tool"
-	"github.com/kubewise/kubewise/internal/agent/router/types"
 
 	// 加载查询工具和故障排查工具，触发init函数注册
 	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/query"

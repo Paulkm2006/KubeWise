@@ -8,13 +8,13 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
 	"github.com/kubewise/kubewise/internal/agent/subagent/troubleshooting"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	"github.com/kubewise/kubewise/internal/utils/helm"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
-	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/agent/tool"
+	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/utils/helm"
+	"github.com/kubewise/kubewise/internal/utils/llm"
 )
 
 const (
@@ -65,7 +65,7 @@ type Runner struct {
 	Helm    HelmClient
 	Tools   *tool.Registry
 	Log     Logger
-	K8s     *k8s.Client
+	K8s     *cluster.Client
 }
 
 // RunInput is input for the recovery loop.

@@ -7,10 +7,10 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/recovery"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/state"
 	"github.com/kubewise/kubewise/internal/utils/helm"
-	"github.com/kubewise/kubewise/internal/agent/event"
 )
 
 const toolInstallUpgrade = "helm install/upgrade"

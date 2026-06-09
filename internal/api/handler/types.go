@@ -16,7 +16,6 @@ type ErrorResponse struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-
 type Message struct {
 	Role      string    `json:"role"`
 	Content   string    `json:"content"`

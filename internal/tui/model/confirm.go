@@ -7,8 +7,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/internal/agent/subagent/operation"
 	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/agent/subagent/operation"
 	"github.com/kubewise/kubewise/internal/tui/styles"
 )
 

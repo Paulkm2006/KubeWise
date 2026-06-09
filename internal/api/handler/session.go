@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
+	"github.com/kubewise/kubewise/internal/agent/session"
 	"github.com/labstack/echo/v5"
 	"time"
-	"github.com/kubewise/kubewise/internal/agent/session"
 )
 
 type SessionResponse struct {

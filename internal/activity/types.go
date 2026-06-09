@@ -5,9 +5,9 @@ import "time"
 type Type string
 
 const (
-	TypeDiagnosis    Type = "diagnosis"
+	TypeDiagnosis     Type = "diagnosis"
 	TypeClusterSwitch Type = "cluster_switch"
-	TypeSystem       Type = "system"
+	TypeSystem        Type = "system"
 )
 
 type Activity struct {
