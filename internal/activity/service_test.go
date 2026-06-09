@@ -1,6 +1,7 @@
 package activity
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"testing"
@@ -37,7 +38,7 @@ func TestAddAndList(t *testing.T) {
 	db := openTestDB(t)
 	svc := NewService(db)
 
-	a, err := svc.Add(TypeDiagnosis, "nginx OOMKilled", "prod-us", "diag-1")
+	a, err := svc.Add(context.Background(), TypeDiagnosis, "nginx OOMKilled", "prod-us", "diag-1")
 	if err != nil {
 		t.Fatalf("Add() err = %v", err)
 	}
@@ -45,7 +46,7 @@ func TestAddAndList(t *testing.T) {
 		t.Fatalf("expected TypeDiagnosis, got %v", a.Type)
 	}
 
-	activities, err := svc.List(10, 0)
+	activities, err := svc.List(context.Background(), 10, 0)
 	if err != nil {
 		t.Fatalf("List() err = %v", err)
 	}
