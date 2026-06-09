@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/kubewise/kubewise/internal/config"
+	"github.com/kubewise/kubewise/internal/utils/log"
 )
 
 // ClusterClientManager manages a pool of ClusterClients by kubeconfig context.
@@ -93,6 +94,11 @@ func (m *ClusterClientManager) GetClient(ctx context.Context, name string) (*Clu
 	cc, ok := m.clients[name]
 	m.mu.RUnlock()
 	if !ok {
+		log.Ctx(ctx).Error("cluster client failed",
+			zap.String("event", "cluster.error"),
+			zap.String("cluster", name),
+			zap.Error(fmt.Errorf("cluster %q not found in kubeconfig", name)),
+		)
 		return nil, fmt.Errorf("cluster %q not found in kubeconfig", name)
 	}
 
@@ -100,6 +106,10 @@ func (m *ClusterClientManager) GetClient(ctx context.Context, name string) (*Clu
 	defer cc.mu.Unlock()
 
 	if cc.clientset != nil {
+		log.Ctx(ctx).Info("cluster client obtained",
+			zap.String("event", "cluster.connected"),
+			zap.String("cluster", name),
+		)
 		return cc, nil
 	}
 
@@ -110,18 +120,33 @@ func (m *ClusterClientManager) GetClient(ctx context.Context, name string) (*Clu
 	).ClientConfig()
 	if err != nil {
 		cc.Health = HealthOffline
+		log.Ctx(ctx).Error("cluster client failed",
+			zap.String("event", "cluster.error"),
+			zap.String("cluster", name),
+			zap.Error(fmt.Errorf("build config for %s: %w", name, err)),
+		)
 		return nil, fmt.Errorf("build config for %s: %w", name, err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		cc.Health = HealthOffline
+		log.Ctx(ctx).Error("cluster client failed",
+			zap.String("event", "cluster.error"),
+			zap.String("cluster", name),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
 	dynamicClient, err := dynamic.NewForConfig(restCfg)
 	if err != nil {
 		cc.Health = HealthOffline
+		log.Ctx(ctx).Error("cluster client failed",
+			zap.String("event", "cluster.error"),
+			zap.String("cluster", name),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
@@ -131,11 +156,17 @@ func (m *ClusterClientManager) GetClient(ctx context.Context, name string) (*Clu
 	cc.Health = HealthHealthy
 	cc.LastSeen = time.Now()
 
+	log.Ctx(ctx).Info("cluster client obtained",
+		zap.String("event", "cluster.connected"),
+		zap.String("cluster", name),
+	)
+
 	return cc, nil
 }
 
 // ListClusters returns summaries for all known clusters by polling in parallel.
 func (m *ClusterClientManager) ListClusters(ctx context.Context) []ClusterSummary {
+	log.Ctx(ctx).Debug("listing clusters")
 	m.mu.RLock()
 	names := make([]string, 0, len(m.clients))
 	for name := range m.clients {
@@ -198,6 +229,9 @@ func (m *ClusterClientManager) ListClusters(ctx context.Context) []ClusterSummar
 	}
 
 	wg.Wait()
+	log.Ctx(ctx).Info("clusters listed",
+		zap.Int("count", len(results)),
+	)
 	return results
 }
 
