@@ -7,17 +7,17 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // ListCustomResourcesByGvrTool 根据GVR列出自定义资源工具
 type ListCustomResourcesByGvrTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewListCustomResourcesByGvrTool 创建列出自定义资源工具实例
-func NewListCustomResourcesByGvrTool(k8sClient *k8s.Client) *ListCustomResourcesByGvrTool {
+func NewListCustomResourcesByGvrTool(k8sClient *cluster.Client) *ListCustomResourcesByGvrTool {
 	return &ListCustomResourcesByGvrTool{k8sClient: k8sClient}
 }
 

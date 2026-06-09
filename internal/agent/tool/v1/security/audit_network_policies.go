@@ -10,17 +10,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // AuditNetworkPoliciesTool 网络策略审计工具
 type AuditNetworkPoliciesTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewAuditNetworkPoliciesTool 创建网络策略审计工具实例
-func NewAuditNetworkPoliciesTool(k8sClient *k8s.Client) *AuditNetworkPoliciesTool {
+func NewAuditNetworkPoliciesTool(k8sClient *cluster.Client) *AuditNetworkPoliciesTool {
 	return &AuditNetworkPoliciesTool{k8sClient: k8sClient}
 }
 

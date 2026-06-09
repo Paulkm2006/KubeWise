@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/kubewise/kubewise/internal/agent/supervisor"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/agent/tool"
@@ -50,7 +50,7 @@ func WithSupervisorConfig(cfg supervisor.Config) Option {
 
 // Agent 查询Agent
 type Agent struct {
-	k8sClient     *k8s.Client
+	k8sClient     *cluster.Client
 	llmClient     *llm.Client
 	toolRegistry  *tool.Registry
 	eventCh       chan<- event.Event
@@ -82,7 +82,7 @@ func (a *Agent) emit(e event.Event) {
 }
 
 // New 创建查询Agent
-func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, error) {
+func New(k8sClient *cluster.Client, llmClient *llm.Client, opts ...Option) (*Agent, error) {
 	// 加载工具注册中心（必须成功，否则无法工作）
 	toolDep := tool.ToolDependency{
 		K8sClient: k8sClient,

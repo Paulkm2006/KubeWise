@@ -8,17 +8,17 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // GetResourceByGvrAndNameTool 获取指定资源详情工具
 type GetResourceByGvrAndNameTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewGetResourceByGvrAndNameTool 创建获取资源详情工具实例
-func NewGetResourceByGvrAndNameTool(k8sClient *k8s.Client) *GetResourceByGvrAndNameTool {
+func NewGetResourceByGvrAndNameTool(k8sClient *cluster.Client) *GetResourceByGvrAndNameTool {
 	return &GetResourceByGvrAndNameTool{k8sClient: k8sClient}
 }
 

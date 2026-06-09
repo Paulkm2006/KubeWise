@@ -9,11 +9,11 @@ import (
 
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
 	"github.com/kubewise/kubewise/internal/utils/helm"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 )
 
 // SuccessMessage builds the final Helm success report shown to the user.
-func SuccessMessage(ctx context.Context, rel *helm.Release, chartInfo *catalog.ChartInfo, namespace, releaseName string, k8sClient *k8s.Client, log *zap.Logger) string {
+func SuccessMessage(ctx context.Context, rel *helm.Release, chartInfo *catalog.ChartInfo, namespace, releaseName string, k8sClient *cluster.Client, log *zap.Logger) string {
 	if log == nil {
 		log = zap.NewNop()
 	}
@@ -47,7 +47,7 @@ Status:    %s
 	)
 }
 
-func workloadNote(ctx context.Context, k8sClient *k8s.Client, namespace, releaseName string, log *zap.Logger) string {
+func workloadNote(ctx context.Context, k8sClient *cluster.Client, namespace, releaseName string, log *zap.Logger) string {
 	if k8sClient == nil || namespace == "" {
 		return ""
 	}

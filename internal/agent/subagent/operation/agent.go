@@ -11,7 +11,7 @@ import (
 	"github.com/kubewise/kubewise/internal/config"
 
 	"github.com/kubewise/kubewise/internal/agent/supervisor"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/agent/tool"
@@ -86,7 +86,7 @@ type stepResult struct {
 // Agent is the operation agent. It plans via LLM + read tools, then executes
 // each step only after receiving user confirmation.
 type Agent struct {
-	k8sClient      *k8s.Client
+	k8sClient      *cluster.Client
 	llmClient      *llm.Client
 	readRegistry   *tool.Registry
 	writeRegistry  writeRegistryI
@@ -116,7 +116,7 @@ func (a *Agent) SetConfirmationHandler(h ConfirmationHandler) {
 func (a *Agent) logger() *zap.Logger {
 	return config.L()
 }
-func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, error) {
+func New(k8sClient *cluster.Client, llmClient *llm.Client, opts ...Option) (*Agent, error) {
 	dep := tool.ToolDependency{K8sClient: k8sClient}
 
 	readReg, err := tool.LoadGlobalRegistryByCategory(dep, "")

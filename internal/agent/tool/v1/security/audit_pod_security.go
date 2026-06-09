@@ -7,17 +7,17 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // AuditPodSecurityTool Pod安全审计工具
 type AuditPodSecurityTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewAuditPodSecurityTool 创建Pod安全审计工具实例
-func NewAuditPodSecurityTool(k8sClient *k8s.Client) *AuditPodSecurityTool {
+func NewAuditPodSecurityTool(k8sClient *cluster.Client) *AuditPodSecurityTool {
 	return &AuditPodSecurityTool{k8sClient: k8sClient}
 }
 

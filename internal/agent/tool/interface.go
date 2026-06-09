@@ -3,7 +3,7 @@ package tool
 import (
 	"context"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 )
 
@@ -33,7 +33,7 @@ type ToolMetadata struct {
 
 // ToolDependency 工具依赖注入的统一接口
 type ToolDependency struct {
-	K8sClient *k8s.Client
+	K8sClient *cluster.Client
 	// 可扩展其他依赖，如配置、其他客户端等
 }
 

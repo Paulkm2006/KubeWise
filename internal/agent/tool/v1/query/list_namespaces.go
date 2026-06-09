@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // ListNamespacesTool 列出所有命名空间工具
 type ListNamespacesTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewListNamespacesTool 创建列出命名空间工具实例
-func NewListNamespacesTool(k8sClient *k8s.Client) *ListNamespacesTool {
+func NewListNamespacesTool(k8sClient *cluster.Client) *ListNamespacesTool {
 	return &ListNamespacesTool{k8sClient: k8sClient}
 }
 

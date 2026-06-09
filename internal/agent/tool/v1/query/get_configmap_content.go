@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // GetConfigMapContentTool 获取指定ConfigMap的内容工具
 type GetConfigMapContentTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewGetConfigMapContentTool 创建获取ConfigMap内容工具实例
-func NewGetConfigMapContentTool(k8sClient *k8s.Client) *GetConfigMapContentTool {
+func NewGetConfigMapContentTool(k8sClient *cluster.Client) *GetConfigMapContentTool {
 	return &GetConfigMapContentTool{k8sClient: k8sClient}
 }
 

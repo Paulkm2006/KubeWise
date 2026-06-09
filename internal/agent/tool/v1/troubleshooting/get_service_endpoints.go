@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // GetServiceEndpointsTool 获取Service Endpoints工具
 type GetServiceEndpointsTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewGetServiceEndpointsTool 创建获取Service Endpoints工具实例
-func NewGetServiceEndpointsTool(k8sClient *k8s.Client) *GetServiceEndpointsTool {
+func NewGetServiceEndpointsTool(k8sClient *cluster.Client) *GetServiceEndpointsTool {
 	return &GetServiceEndpointsTool{k8sClient: k8sClient}
 }
 

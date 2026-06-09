@@ -12,7 +12,7 @@ import (
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
 	"github.com/kubewise/kubewise/internal/utils/helm"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 )
 
 const (
@@ -33,7 +33,7 @@ func BuildDiagnosticsSnapshot(
 	releaseName, namespace string,
 	chart *catalog.ChartInfo,
 	helmClient StatusClient,
-	k8sClient *k8s.Client,
+	k8sClient *cluster.Client,
 ) string {
 	snap := map[string]any{
 		"schemaVersion": "1",

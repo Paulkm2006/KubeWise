@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // GetPodResourceUsageTool 获取Pod资源使用情况工具
 type GetPodResourceUsageTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewGetPodResourceUsageTool 创建获取Pod资源工具实例
-func NewGetPodResourceUsageTool(k8sClient *k8s.Client) *GetPodResourceUsageTool {
+func NewGetPodResourceUsageTool(k8sClient *cluster.Client) *GetPodResourceUsageTool {
 	return &GetPodResourceUsageTool{k8sClient: k8sClient}
 }
 

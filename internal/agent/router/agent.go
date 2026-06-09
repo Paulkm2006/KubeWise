@@ -15,7 +15,7 @@ import (
 	"github.com/kubewise/kubewise/internal/agent/supervisor"
 	"github.com/kubewise/kubewise/internal/agent/subagent/troubleshooting"
 	"github.com/kubewise/kubewise/internal/utils/helm"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/agent/router/types"
@@ -24,7 +24,7 @@ import (
 
 // Agent 路由Agent
 type Agent struct {
-	k8sClient            *k8s.Client
+	k8sClient            *cluster.Client
 	llmClient            *llm.Client
 	maxSteps             int
 	supervisorCfg        supervisor.Config
@@ -43,7 +43,7 @@ func (a *Agent) logger() *zap.Logger {
 }
 
 // New 创建路由Agent
-func New(k8sClient *k8s.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) (*Agent, error) {
+func New(k8sClient *cluster.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) (*Agent, error) {
 	if maxSteps <= 0 {
 		maxSteps = 20
 	}

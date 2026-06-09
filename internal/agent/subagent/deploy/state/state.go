@@ -12,7 +12,7 @@ import (
 	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
 	"github.com/kubewise/kubewise/internal/utils/helm"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/agent/router/types"
 		"github.com/kubewise/kubewise/internal/agent/event"
@@ -42,7 +42,7 @@ type State struct {
 	// --- dependencies ---
 	LLM         *llm.Client
 	Helm        *helm.Client
-	K8s         *k8s.Client
+	K8s         *cluster.Client
 	Tools       *tool.Registry
 	Confirm     ConfirmHandler
 	Select      SelectionHandler
@@ -125,7 +125,7 @@ func New(ctx context.Context, query string, entities types.Entities, deps Deps) 
 type Deps struct {
 	LLM                   *llm.Client
 	Helm                  *helm.Client
-	K8s                   *k8s.Client
+	K8s                   *cluster.Client
 	Tools                 *tool.Registry
 	Confirm               ConfirmHandler
 	Select                SelectionHandler

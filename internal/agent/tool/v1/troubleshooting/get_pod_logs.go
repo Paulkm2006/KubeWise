@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // GetPodLogsTool 获取Pod日志工具
 type GetPodLogsTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewGetPodLogsTool 创建获取Pod日志工具实例
-func NewGetPodLogsTool(k8sClient *k8s.Client) *GetPodLogsTool {
+func NewGetPodLogsTool(k8sClient *cluster.Client) *GetPodLogsTool {
 	return &GetPodLogsTool{k8sClient: k8sClient}
 }
 

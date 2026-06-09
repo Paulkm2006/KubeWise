@@ -13,7 +13,7 @@ import (
 	routertypes "github.com/kubewise/kubewise/internal/agent/router/types"
 	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
 	"github.com/kubewise/kubewise/internal/utils/helm"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/agent/tool"
@@ -42,7 +42,7 @@ type Agent struct {
 	queryID          string
 	log              *zap.Logger
 	toolRegistry     *tool.Registry
-	k8sClient        *k8s.Client
+	k8sClient        *cluster.Client
 }
 
 // SetEventChannel sets the event channel and query ID for streaming progress.
@@ -87,7 +87,7 @@ func WithEventChannel(ch chan<- event.Event, queryID string) Option {
 }
 
 // New creates a Deploy Agent.
-func New(llmClient *llm.Client, helmClient *helm.Client, k8sClient *k8s.Client, opts ...Option) *Agent {
+func New(llmClient *llm.Client, helmClient *helm.Client, k8sClient *cluster.Client, opts ...Option) *Agent {
 	toolDep := tool.ToolDependency{K8sClient: k8sClient}
 	registry, err := tool.LoadGlobalRegistryByCategory(toolDep, "")
 	if err != nil {

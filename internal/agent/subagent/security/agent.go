@@ -9,7 +9,7 @@ import (
 	"github.com/kubewise/kubewise/internal/config"
 
 	"github.com/kubewise/kubewise/internal/agent/supervisor"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/agent/tool"
@@ -51,7 +51,7 @@ func WithSupervisorConfig(cfg supervisor.Config) Option {
 
 // Agent 安全审计Agent
 type Agent struct {
-	k8sClient     *k8s.Client
+	k8sClient     *cluster.Client
 	llmClient     *llm.Client
 	toolRegistry  *tool.Registry
 	eventCh       chan<- event.Event
@@ -83,7 +83,7 @@ func (a *Agent) emit(e event.Event) {
 }
 
 // New 创建安全审计Agent
-func New(k8sClient *k8s.Client, llmClient *llm.Client, opts ...Option) (*Agent, error) {
+func New(k8sClient *cluster.Client, llmClient *llm.Client, opts ...Option) (*Agent, error) {
 	toolDep := tool.ToolDependency{
 		K8sClient: k8sClient,
 	}

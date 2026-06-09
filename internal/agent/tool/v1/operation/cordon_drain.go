@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
@@ -27,11 +27,11 @@ func init() {
 
 // CordonDrainNodeTool cordons, uncordons, or drains a Kubernetes node.
 type CordonDrainNodeTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewCordonDrainNodeTool creates a CordonDrainNodeTool with the given K8s client.
-func NewCordonDrainNodeTool(k8sClient *k8s.Client) *CordonDrainNodeTool {
+func NewCordonDrainNodeTool(k8sClient *cluster.Client) *CordonDrainNodeTool {
 	return &CordonDrainNodeTool{k8sClient: k8sClient}
 }
 

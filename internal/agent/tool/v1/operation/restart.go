@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
@@ -27,11 +27,11 @@ func init() {
 
 // RestartResourceTool triggers a rolling restart of a Deployment, StatefulSet, or DaemonSet.
 type RestartResourceTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewRestartResourceTool creates a RestartResourceTool with the given K8s client.
-func NewRestartResourceTool(k8sClient *k8s.Client) *RestartResourceTool {
+func NewRestartResourceTool(k8sClient *cluster.Client) *RestartResourceTool {
 	return &RestartResourceTool{k8sClient: k8sClient}
 }
 

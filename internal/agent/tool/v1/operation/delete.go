@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -28,11 +28,11 @@ func init() {
 
 // DeleteResourceTool deletes a Kubernetes resource by GVR and name.
 type DeleteResourceTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewDeleteResourceTool creates a DeleteResourceTool with the given K8s client.
-func NewDeleteResourceTool(k8sClient *k8s.Client) *DeleteResourceTool {
+func NewDeleteResourceTool(k8sClient *cluster.Client) *DeleteResourceTool {
 	return &DeleteResourceTool{k8sClient: k8sClient}
 }
 

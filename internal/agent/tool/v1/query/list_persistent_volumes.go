@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // ListPersistentVolumesTool 列出PV工具
 type ListPersistentVolumesTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewListPersistentVolumesTool 创建列出PV工具实例
-func NewListPersistentVolumesTool(k8sClient *k8s.Client) *ListPersistentVolumesTool {
+func NewListPersistentVolumesTool(k8sClient *cluster.Client) *ListPersistentVolumesTool {
 	return &ListPersistentVolumesTool{k8sClient: k8sClient}
 }
 

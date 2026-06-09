@@ -7,17 +7,17 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // FindPodsUsingPVCTool 查找使用指定PVC的Pod工具
 type FindPodsUsingPVCTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewFindPodsUsingPVCTool 创建查找Pod工具实例
-func NewFindPodsUsingPVCTool(k8sClient *k8s.Client) *FindPodsUsingPVCTool {
+func NewFindPodsUsingPVCTool(k8sClient *cluster.Client) *FindPodsUsingPVCTool {
 	return &FindPodsUsingPVCTool{k8sClient: k8sClient}
 }
 

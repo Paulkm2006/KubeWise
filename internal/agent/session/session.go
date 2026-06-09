@@ -5,7 +5,7 @@ import (
 	"github.com/kubewise/kubewise/internal/agent/router"
 	"github.com/kubewise/kubewise/internal/agent/supervisor"
 	"github.com/kubewise/kubewise/internal/utils/helm"
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 )
 
@@ -21,14 +21,14 @@ type Config struct {
 // All shared resources are created once and injected into the component tree.
 type Session struct {
 	LLM    *llm.Client
-	K8s    *k8s.Client
+	K8s    *cluster.Client
 	Helm   *helm.Client
 	Router *router.Agent
 }
 
 // New creates a Session, wiring all dependencies.
 func New(cfg Config) (*Session, error) {
-	k8sClient, err := k8s.NewClient(cfg.KubeConfig)
+	k8sClient, err := cluster.NewClient(cfg.KubeConfig)
 	if err != nil {
 		return nil, err
 	}

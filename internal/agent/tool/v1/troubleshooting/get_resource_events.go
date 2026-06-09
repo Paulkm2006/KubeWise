@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // GetResourceEventsTool 获取资源事件工具
 type GetResourceEventsTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewGetResourceEventsTool 创建获取资源事件工具实例
-func NewGetResourceEventsTool(k8sClient *k8s.Client) *GetResourceEventsTool {
+func NewGetResourceEventsTool(k8sClient *cluster.Client) *GetResourceEventsTool {
 	return &GetResourceEventsTool{k8sClient: k8sClient}
 }
 

@@ -7,15 +7,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 type GetPodDetailTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
-func NewGetPodDetailTool(k8sClient *k8s.Client) *GetPodDetailTool {
+func NewGetPodDetailTool(k8sClient *cluster.Client) *GetPodDetailTool {
 	return &GetPodDetailTool{k8sClient: k8sClient}
 }
 

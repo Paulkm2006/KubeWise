@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -28,11 +28,11 @@ func init() {
 
 // LabelAnnotateResourceTool adds or updates labels and/or annotations on a Kubernetes resource.
 type LabelAnnotateResourceTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewLabelAnnotateResourceTool creates a LabelAnnotateResourceTool with the given K8s client.
-func NewLabelAnnotateResourceTool(k8sClient *k8s.Client) *LabelAnnotateResourceTool {
+func NewLabelAnnotateResourceTool(k8sClient *cluster.Client) *LabelAnnotateResourceTool {
 	return &LabelAnnotateResourceTool{k8sClient: k8sClient}
 }
 

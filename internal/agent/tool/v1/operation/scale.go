@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
@@ -27,11 +27,11 @@ func init() {
 
 // ScaleResourceTool scales a Deployment or StatefulSet to a specified replica count.
 type ScaleResourceTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewScaleResourceTool creates a ScaleResourceTool with the given K8s client.
-func NewScaleResourceTool(k8sClient *k8s.Client) *ScaleResourceTool {
+func NewScaleResourceTool(k8sClient *cluster.Client) *ScaleResourceTool {
 	return &ScaleResourceTool{k8sClient: k8sClient}
 }
 

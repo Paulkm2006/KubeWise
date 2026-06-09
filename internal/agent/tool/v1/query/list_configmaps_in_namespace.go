@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // ListConfigMapsInNamespaceTool 列出指定命名空间下的ConfigMap工具
 type ListConfigMapsInNamespaceTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewListConfigMapsInNamespaceTool 创建列出ConfigMap工具实例
-func NewListConfigMapsInNamespaceTool(k8sClient *k8s.Client) *ListConfigMapsInNamespaceTool {
+func NewListConfigMapsInNamespaceTool(k8sClient *cluster.Client) *ListConfigMapsInNamespaceTool {
 	return &ListConfigMapsInNamespaceTool{k8sClient: k8sClient}
 }
 

@@ -7,17 +7,17 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // ListPersistentVolumeClaimsTool 列出PVC工具
 type ListPersistentVolumeClaimsTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewListPersistentVolumeClaimsTool 创建列出PVC工具实例
-func NewListPersistentVolumeClaimsTool(k8sClient *k8s.Client) *ListPersistentVolumeClaimsTool {
+func NewListPersistentVolumeClaimsTool(k8sClient *cluster.Client) *ListPersistentVolumeClaimsTool {
 	return &ListPersistentVolumeClaimsTool{k8sClient: k8sClient}
 }
 

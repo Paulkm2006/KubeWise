@@ -9,17 +9,17 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // AuditRBACTool RBAC安全审计工具
 type AuditRBACTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewAuditRBACTool 创建RBAC审计工具实例
-func NewAuditRBACTool(k8sClient *k8s.Client) *AuditRBACTool {
+func NewAuditRBACTool(k8sClient *cluster.Client) *AuditRBACTool {
 	return &AuditRBACTool{k8sClient: k8sClient}
 }
 

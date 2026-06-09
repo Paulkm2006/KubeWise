@@ -7,17 +7,17 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 // GetNodeStatusTool 获取节点状态工具
 type GetNodeStatusTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewGetNodeStatusTool 创建获取节点状态工具实例
-func NewGetNodeStatusTool(k8sClient *k8s.Client) *GetNodeStatusTool {
+func NewGetNodeStatusTool(k8sClient *cluster.Client) *GetNodeStatusTool {
 	return &GetNodeStatusTool{k8sClient: k8sClient}
 }
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 	"sigs.k8s.io/yaml"
 )
@@ -28,11 +28,11 @@ func init() {
 
 // ApplyResourceTool applies a Kubernetes resource from YAML content via Server-Side Apply.
 type ApplyResourceTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
 // NewApplyResourceTool creates an ApplyResourceTool with the given K8s client.
-func NewApplyResourceTool(k8sClient *k8s.Client) *ApplyResourceTool {
+func NewApplyResourceTool(k8sClient *cluster.Client) *ApplyResourceTool {
 	return &ApplyResourceTool{k8sClient: k8sClient}
 }
 

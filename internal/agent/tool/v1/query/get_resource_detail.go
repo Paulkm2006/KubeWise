@@ -7,15 +7,15 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/kubewise/kubewise/internal/utils/k8s"
+	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/agent/tool"
 )
 
 type GetResourceDetailTool struct {
-	k8sClient *k8s.Client
+	k8sClient *cluster.Client
 }
 
-func NewGetResourceDetailTool(k8sClient *k8s.Client) *GetResourceDetailTool {
+func NewGetResourceDetailTool(k8sClient *cluster.Client) *GetResourceDetailTool {
 	return &GetResourceDetailTool{k8sClient: k8sClient}
 }
 
