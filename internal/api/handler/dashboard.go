@@ -5,41 +5,59 @@ import (
 	"net/http"
 	"time"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/utils/log"
 	"github.com/labstack/echo/v5"
 )
 
 func (h *Handler) ListClusters(c *echo.Context) error {
-	if h.clusterManager == nil {
-		return c.JSON(http.StatusOK, []any{})
-	}
 	ctx := c.Request().Context()
-	summaries := h.clusterManager.ListClusters(ctx)
-	return c.JSON(http.StatusOK, summaries)
+	if h.clusterManager == nil {
+		log.Ctx(ctx).Warn("cluster manager not available")
+		return c.JSON(http.StatusOK, []cluster.ClusterSummary{})
+	}
+
+	clusters := h.clusterManager.ListClusters(ctx)
+	log.Ctx(ctx).Info("listed clusters",
+		zap.Int("count", len(clusters)),
+	)
+	return c.JSON(http.StatusOK, clusters)
 }
 
 func (h *Handler) ListIssues(c *echo.Context) error {
+	ctx := c.Request().Context()
 	name := c.Param("name")
 	if name == "" {
 		return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "cluster name required"})
 	}
 
-	ctx := c.Request().Context()
 	cc, err := h.clusterManager.GetClient(ctx, name)
 	if err != nil {
+		log.Ctx(ctx).Error("failed to get cluster client for issues",
+			zap.String("cluster", name),
+			zap.Error(err),
+		)
 		return c.JSON(http.StatusNotFound, ErrorResponse{Error: fmt.Sprintf("cluster %q not found", name)})
 	}
 
 	cs := cc.Clientset()
 	if cs == nil {
+		log.Ctx(ctx).Error("cluster client not connected",
+			zap.String("cluster", name),
+		)
 		return c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: fmt.Sprintf("cluster %q is offline", name)})
 	}
 
 	pods, err := cs.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
 	if err != nil {
+		log.Ctx(ctx).Error("failed to list issues for cluster",
+			zap.String("cluster", name),
+			zap.Error(err),
+		)
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 	}
 
@@ -71,6 +89,11 @@ func (h *Handler) ListIssues(c *echo.Context) error {
 			Age:       age,
 		})
 	}
+
+	log.Ctx(ctx).Info("listed cluster issues",
+		zap.String("cluster", name),
+		zap.Int("count", len(issues)),
+	)
 	return c.JSON(http.StatusOK, issues)
 }
 
@@ -87,19 +110,38 @@ func countContainers(p corev1.Pod) int {
 }
 
 func (h *Handler) ListClusterEvents(c *echo.Context) error {
-	name := c.Param("name")
 	ctx := c.Request().Context()
+	name := c.Param("name")
+
 	cc, err := h.clusterManager.GetClient(ctx, name)
 	if err != nil {
+		log.Ctx(ctx).Error("failed to get cluster client for events",
+			zap.String("cluster", name),
+			zap.Error(err),
+		)
 		return c.JSON(http.StatusNotFound, ErrorResponse{Error: "cluster not found"})
 	}
+
 	cs := cc.Clientset()
 	if cs == nil {
+		log.Ctx(ctx).Error("cluster client not connected",
+			zap.String("cluster", name),
+		)
 		return c.JSON(http.StatusServiceUnavailable, ErrorResponse{Error: "cluster offline"})
 	}
+
 	events, err := cs.CoreV1().Events(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
 	if err != nil {
+		log.Ctx(ctx).Error("failed to list cluster events",
+			zap.String("cluster", name),
+			zap.Error(err),
+		)
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 	}
+
+	log.Ctx(ctx).Info("listed cluster events",
+		zap.String("cluster", name),
+		zap.Int("count", len(events.Items)),
+	)
 	return c.JSON(http.StatusOK, events.Items)
 }

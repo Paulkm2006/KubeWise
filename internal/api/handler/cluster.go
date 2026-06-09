@@ -5,9 +5,12 @@ import (
 	"net/http"
 	"time"
 
+	"go.uber.org/zap"
 	"github.com/labstack/echo/v5"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/kubewise/kubewise/internal/utils/log"
 )
 
 // ClusterStatusResponse is the JSON body for GET /api/v1/cluster/status.
@@ -42,7 +45,10 @@ func (h *Handler) ClusterStatus(c *echo.Context) error {
 	pods := PodCounts{}
 	nsCount := 0
 
+	log.Ctx(ctx).Debug("cluster status requested")
+
 	if h.k8sClient == nil {
+		log.Ctx(ctx).Info("cluster status: no k8s client available, reporting offline")
 		return c.JSON(http.StatusOK, ClusterStatusResponse{
 			Version: version, Health: "offline",
 		})
@@ -50,6 +56,8 @@ func (h *Handler) ClusterStatus(c *echo.Context) error {
 
 	if v, err := h.k8sClient.ServerVersion(ctx); err == nil {
 		version = v
+	} else {
+		log.Ctx(ctx).Error("cluster status: failed to get server version", zap.Error(err))
 	}
 	if nodeList, err := h.k8sClient.ListNodes(ctx); err == nil {
 		nodes.Total = len(nodeList)
@@ -60,6 +68,8 @@ func (h *Handler) ClusterStatus(c *echo.Context) error {
 				nodes.NotReady++
 			}
 		}
+	} else {
+		log.Ctx(ctx).Error("cluster status: failed to list nodes", zap.Error(err))
 	}
 	if podList, err := h.k8sClient.ListPods(ctx, metav1.NamespaceAll); err == nil {
 		pods.Total = len(podList)
@@ -75,9 +85,13 @@ func (h *Handler) ClusterStatus(c *echo.Context) error {
 				pods.Succeeded++
 			}
 		}
+	} else {
+		log.Ctx(ctx).Error("cluster status: failed to list pods", zap.Error(err))
 	}
 	if nsList, err := h.k8sClient.ListNamespaces(ctx); err == nil {
 		nsCount = len(nsList)
+	} else {
+		log.Ctx(ctx).Error("cluster status: failed to list namespaces", zap.Error(err))
 	}
 
 	health := "critical"
@@ -90,10 +104,14 @@ func (h *Handler) ClusterStatus(c *echo.Context) error {
 		health = "degraded"
 	}
 
-	return c.JSON(http.StatusOK, ClusterStatusResponse{
+	resp := ClusterStatusResponse{
 		Version: version, Nodes: nodes, Pods: pods,
 		Namespaces: nsCount, Health: health,
-	})
+	}
+	log.Ctx(ctx).Info("cluster status retrieved",
+		zap.Any("summary", resp),
+	)
+	return c.JSON(http.StatusOK, resp)
 }
 
 func isNodeReady(node corev1.Node) bool {
