@@ -4,7 +4,9 @@ import (
 	"net/http"
 
 	"github.com/kubewise/kubewise/internal/agent/session"
+	"github.com/kubewise/kubewise/internal/utils/log"
 	"github.com/labstack/echo/v5"
+	"go.uber.org/zap"
 	"time"
 )
 
@@ -21,8 +23,12 @@ type SessionListResponse struct {
 }
 
 func (h *Handler) ListSessions(c *echo.Context) error {
+	ctx := c.Request().Context()
+	log.Ctx(ctx).Debug("listing sessions")
+
 	sessions, err := h.sessionStore.LoadRecent(50)
 	if err != nil {
+		log.Ctx(ctx).Error("failed to list sessions", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to load sessions"})
 	}
 	resp := make([]SessionResponse, 0, len(sessions))
@@ -35,6 +41,7 @@ func (h *Handler) ListSessions(c *echo.Context) error {
 			MessageCount: len(s.Messages),
 		})
 	}
+	log.Ctx(ctx).Info("listed sessions", zap.Int("count", len(resp)))
 	return c.JSON(http.StatusOK, SessionListResponse{Sessions: resp})
 }
 
@@ -43,6 +50,9 @@ type CreateSessionRequest struct {
 }
 
 func (h *Handler) CreateSession(c *echo.Context) error {
+	ctx := c.Request().Context()
+	log.Ctx(ctx).Debug("creating session")
+
 	var req CreateSessionRequest
 	_ = c.Bind(&req)
 
@@ -51,8 +61,10 @@ func (h *Handler) CreateSession(c *echo.Context) error {
 		sess.Title = req.Title
 	}
 	if err := h.sessionStore.Save(sess); err != nil {
+		log.Ctx(ctx).Error("failed to create session", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to create session"})
 	}
+	log.Ctx(ctx).Info("session created", zap.String("session_id", sess.ID))
 	return c.JSON(http.StatusCreated, SessionResponse{
 		ID:        sess.ID,
 		Title:     sess.Title,
@@ -70,9 +82,13 @@ type SessionDetailResponse struct {
 }
 
 func (h *Handler) GetSession(c *echo.Context) error {
+	ctx := c.Request().Context()
 	id := c.Param("id")
+	log.Ctx(ctx).Debug("getting session", zap.String("session_id", id))
+
 	sessions, err := h.sessionStore.LoadRecent(200)
 	if err != nil {
+		log.Ctx(ctx).Error("failed to get session", zap.String("session_id", id), zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "failed to load sessions"})
 	}
 	for _, s := range sessions {
@@ -85,6 +101,7 @@ func (h *Handler) GetSession(c *echo.Context) error {
 					Timestamp: m.Timestamp,
 				})
 			}
+			log.Ctx(ctx).Info("session retrieved", zap.String("session_id", id))
 			return c.JSON(http.StatusOK, SessionDetailResponse{
 				ID:        s.ID,
 				Title:     s.Title,
@@ -94,13 +111,19 @@ func (h *Handler) GetSession(c *echo.Context) error {
 			})
 		}
 	}
+	log.Ctx(ctx).Warn("session not found", zap.String("session_id", id))
 	return c.JSON(http.StatusNotFound, ErrorResponse{Error: "session not found"})
 }
 
 func (h *Handler) DeleteSession(c *echo.Context) error {
+	ctx := c.Request().Context()
 	id := c.Param("id")
+	log.Ctx(ctx).Debug("deleting session", zap.String("session_id", id))
+
 	if err := h.sessionStore.Delete(id); err != nil {
+		log.Ctx(ctx).Error("failed to delete session", zap.String("session_id", id), zap.Error(err))
 		return c.JSON(http.StatusNotFound, ErrorResponse{Error: "session not found"})
 	}
+	log.Ctx(ctx).Info("session deleted", zap.String("session_id", id))
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
 }
