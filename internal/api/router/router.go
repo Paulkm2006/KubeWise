@@ -8,7 +8,7 @@ import (
 )
 
 func InitRouter(e *echo.Echo, h *handler.Handler) {
-	e.Use(middleware.RequestLogger())
+	e.Use(middlewares.ZapLogger())
 	e.Use(middleware.Recover())
 	e.Use(middlewares.CORSMiddleware())
 	e.GET("/health", h.Health)
