@@ -12,6 +12,7 @@ func TestOpenAndMigrate(t *testing.T) {
 	d, err := Open(dir)
 	if err != nil {
 		t.Fatalf("Open() err = %v", err)
+		return
 	}
 	defer d.Close()
 
