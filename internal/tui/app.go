@@ -14,6 +14,7 @@ import (
 	"github.com/kubewise/kubewise/internal/agent/session"
 	"github.com/kubewise/kubewise/internal/agent/session/store"
 	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/config"
 	"github.com/kubewise/kubewise/internal/tui/model"
 	tuistyles "github.com/kubewise/kubewise/internal/tui/styles"
 )
@@ -59,7 +60,7 @@ type App struct {
 
 // NewApp creates the App, loading recent sessions from disk.
 func NewApp(sess *session.Session) (*App, error) {
-	store, err := store.NewFileStore()
+	store, err := store.NewFileStore(config.Global.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
 	}

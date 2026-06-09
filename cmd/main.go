@@ -135,6 +135,7 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认 $HOME/.kubewise.yaml)")
+	rootCmd.PersistentFlags().String("data-dir", "", "数据目录 (默认 ~/.kubewise)")
 	rootCmd.PersistentFlags().StringP("kubeconfig", "k", "", "kubeconfig文件路径")
 	rootCmd.PersistentFlags().StringP("model", "m", "glm-5.1", "LLM模型名称")
 	rootCmd.PersistentFlags().StringP("api-key", "a", "", "LLM API Key")

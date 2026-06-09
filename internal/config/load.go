@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -44,6 +45,7 @@ func Load(cfgFile string) error {
 // explicitly provided.  Must be called after Load().
 func ApplyFlags(fs *pflag.FlagSet) {
 	tryOverride(fs, "kubeconfig", func(v string) { Global.KubeConfig = v })
+	tryOverride(fs, "data-dir", func(v string) { Global.DataDir = v })
 	tryOverride(fs, "model", func(v string) { Global.LLM.Model = v })
 	tryOverride(fs, "api-key", func(v string) { Global.LLM.APIKey = v })
 	tryOverride(fs, "api-base", func(v string) { Global.LLM.APIBase = v })
@@ -74,6 +76,7 @@ func ApplyFlags(fs *pflag.FlagSet) {
 
 func setDefaults() {
 	Global = &Config{
+		DataDir:  "", // resolved below
 		Verbose: false,
 		Log: LogConfig{
 			Level: "info",
@@ -97,6 +100,13 @@ func setDefaults() {
 		API: APIConfig{
 			Addr: ":8080",
 		},
+	}
+
+	// Resolve DataDir default to ~/.kubewise
+	if Global.DataDir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			Global.DataDir = filepath.Join(home, ".kubewise")
+		}
 	}
 }
 
@@ -145,6 +155,7 @@ func applyEnvVars() {
 	}
 
 	setStr("kubeconfig", &Global.KubeConfig)
+	setStr("data_dir", &Global.DataDir)
 	setStr("llm.model", &Global.LLM.Model)
 	setStr("llm.api_key", &Global.LLM.APIKey)
 	setStr("llm.api_base", &Global.LLM.APIBase)

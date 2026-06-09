@@ -25,6 +25,7 @@ func L() *zap.Logger {
 // Config is the root configuration structure.
 type Config struct {
 	KubeConfig string      `json:"kubeconfig" yaml:"kubeconfig"`
+	DataDir    string      `json:"data_dir"   yaml:"data_dir"`
 	Verbose    bool        `json:"verbose"    yaml:"verbose"`
 	Log        LogConfig   `json:"log"        yaml:"log"`
 	LLM        LLMConfig   `json:"llm"        yaml:"llm"`

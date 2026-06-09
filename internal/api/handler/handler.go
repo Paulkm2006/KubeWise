@@ -63,7 +63,7 @@ func NewHandler() (*Handler, error) {
 	}
 
 	routerAgent := sess.Router
-	store, err := store.NewFileStore()
+	store, err := store.NewFileStore(config.Global.DataDir)
 	if err != nil {
 		return nil, err
 	}

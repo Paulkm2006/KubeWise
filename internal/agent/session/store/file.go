@@ -17,13 +17,9 @@ type FileStore struct {
 	Dir string
 }
 
-// NewFileStore creates a FileStore pointed at ~/.kubewise/sessions/.
-func NewFileStore() (*FileStore, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("get home dir: %w", err)
-	}
-	dir := filepath.Join(home, ".kubewise", "sessions")
+// NewFileStore creates a FileStore pointed at baseDir/sessions/.
+func NewFileStore(baseDir string) (*FileStore, error) {
+	dir := filepath.Join(baseDir, "sessions")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create sessions dir: %w", err)
 	}
