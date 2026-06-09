@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS diagnoses (
     impact      TEXT,
     duration_ms INTEGER,
 
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     resolved    INTEGER NOT NULL DEFAULT 0
 );
 
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS activities (
     text        TEXT NOT NULL,
     cluster_display TEXT,
     diagnosis_id TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 
 CREATE INDEX idx_diagnoses_cluster ON diagnoses(cluster_fingerprint);
