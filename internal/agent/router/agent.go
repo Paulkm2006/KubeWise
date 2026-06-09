@@ -19,6 +19,7 @@ import (
 	"github.com/kubewise/kubewise/internal/config"
 	"github.com/kubewise/kubewise/internal/utils/helm"
 	"github.com/kubewise/kubewise/internal/utils/llm"
+	"github.com/kubewise/kubewise/internal/utils/log"
 	"go.uber.org/zap"
 )
 
@@ -82,10 +83,18 @@ func New(k8sClient *cluster.Client, llmClient *llm.Client, maxSteps int, supervi
 func (a *Agent) HandleQuery(userQuery string) (string, error) {
 	ctx := context.Background()
 
+	log.Ctx(context.Background()).Info("agent handle query",
+		zap.String("event", "agent.handle_query"),
+	)
+
 	// 1. 意图分类
 	intent, err := a.classifyIntent(ctx, userQuery)
 	if err != nil {
 		a.logger().Error("intent classification failed", zap.Error(err))
+		log.Ctx(context.Background()).Error("agent handle query failed",
+			zap.String("event", "agent.error"),
+			zap.Error(err),
+		)
 		return "", fmt.Errorf("意图分类失败: %w", err)
 	}
 	a.logger().Info("intent classified",
@@ -111,6 +120,10 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 	case types.TaskTypeDeploy:
 		return a.deployAgent.HandleQuery(ctx, userQuery, intent.Entities)
 	default:
+		log.Ctx(context.Background()).Error("agent handle query failed",
+			zap.String("event", "agent.error"),
+			zap.Error(fmt.Errorf("不支持的任务类型: %s", intent.TaskType)),
+		)
 		return "", fmt.Errorf("不支持的任务类型: %s", intent.TaskType)
 	}
 }
@@ -140,6 +153,11 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	a.logger().Info("intent classified",
 		zap.String("task_type", string(intent.TaskType)),
 		zap.Float64("confidence", intent.Confidence),
+	)
+
+	log.Ctx(ctx).Info("routing to sub-agent",
+		zap.String("event", "agent.routed"),
+		zap.String("task_type", string(intent.TaskType)),
 	)
 
 	// 2. Route to the appropriate sub-agent (fresh instance with eventCh).
@@ -238,6 +256,11 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	}
 
 	if err != nil {
+		log.Ctx(ctx).Error("agent stream query failed",
+			zap.String("event", "agent.error"),
+			zap.String("task_type", string(intent.TaskType)),
+			zap.Error(err),
+		)
 		emit(event.StreamErr{QueryID: queryID, Err: err})
 		return err
 	}
@@ -291,6 +314,12 @@ func (a *Agent) classifyIntent(ctx context.Context, userQuery string) (*types.In
 		a.logger().Error("failed to parse intent JSON", zap.Error(err), zap.String("content", content))
 		return nil, fmt.Errorf("解析意图结果失败: %w，原始内容: %s", err, content)
 	}
+
+	log.Ctx(ctx).Info("intent classified",
+		zap.String("event", "agent.intent"),
+		zap.String("task_type", string(intent.TaskType)),
+		zap.Float64("confidence", intent.Confidence),
+	)
 
 	return &intent, nil
 }
