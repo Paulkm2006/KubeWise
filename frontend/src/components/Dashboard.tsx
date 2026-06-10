@@ -185,6 +185,7 @@ export default function Dashboard({
         <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
           {sortedClusters.map((c) => {
             const isFiltered = focusCluster === c.name;
+            const isActive = activeCluster === c.name;
             return (
               <button
                 key={c.fingerprint || c.name}
@@ -197,8 +198,13 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                   }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className={`text-sm font-semibold ${isFiltered ? 'text-accent' : 'text-text'}`}>
-                    {c.name}
+                  <span className="flex items-center gap-1.5 text-sm font-semibold">
+                    {isActive && (
+                      <span className="text-accent leading-none">◆</span>
+                    )}
+                    <span className={isFiltered ? 'text-accent' : 'text-text'}>
+                      {c.name}
+                    </span>
                   </span>
                   <span className={`w-2.5 h-2.5 rounded-full ${healthDot[c.health] || 'bg-text-muted'} shrink-0`} />
                 </div>
