@@ -381,42 +381,83 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
             </div>
           )}
 
-          {/* Stats — reflects current cluster */}
-          {currentCluster ? (
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: 'Pods', value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text' },
-                { label: 'Issues', value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text' },
-                { label: 'Nodes', value: currentCluster.nodes, color: 'text-text' },
-                { label: 'Namespaces', value: currentCluster.namespaces, color: 'text-text' },
-              ].map((s) => (
-                <div key={s.label} className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer">
-                  <p className={`text-2xl font-semibold font-mono ${s.color}`}>{s.value}</p>
-                  <p className="text-sm text-text-muted mt-1">{s.label}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="border border-border rounded-sm p-6 text-center bg-surface">
-              <p className="text-sm text-text-muted">No cluster data</p>
-            </div>
-          )}
+          {/* Stats */}
+          {focusCluster && currentCluster ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'Pods', value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text' },
+                  { label: 'Issues', value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text' },
+                  { label: 'Nodes', value: currentCluster.nodes, color: 'text-text' },
+                  { label: 'Namespaces', value: currentCluster.namespaces, color: 'text-text' },
+                ].map((s) => (
+                  <div key={s.label} className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer">
+                    <p className={`text-2xl font-semibold font-mono ${s.color}`}>{s.value}</p>
+                    <p className="text-sm text-text-muted mt-1">{s.label}</p>
+                  </div>
+                ))}
+              </div>
 
-          {/* Version info */}
-          {currentCluster && (
-            <div className="border border-border rounded-sm p-4 bg-surface">
-              <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">Cluster Info</p>
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="text-text-muted">Version</span>
-                  <span className="text-text-secondary font-mono">{currentCluster.version || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-text-muted">Fingerprint</span>
-                  <span className="text-text-secondary font-mono text-[10px]">{currentCluster.fingerprint.slice(0, 16)}...</span>
+              {/* Version info */}
+              <div className="border border-border rounded-sm p-4 bg-surface">
+                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">Cluster Info</p>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-text-muted">Version</span>
+                    <span className="text-text-secondary font-mono">{currentCluster.version || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-text-muted">Fingerprint</span>
+                    <span className="text-text-secondary font-mono text-[10px]">{currentCluster.fingerprint.slice(0, 16)}...</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </>
+          ) : (
+            <>
+              {/* Aggregate stats for all clusters */}
+              <div className="grid grid-cols-2 gap-3">
+                {(() => {
+                  const total = clusters.length;
+                  const healthy = clusters.filter(c => c.health === 'healthy').length;
+                  const degraded = clusters.filter(c => c.health === 'degraded').length;
+                  const offline = clusters.filter(c => c.health === 'offline').length;
+                  const totalPodsReady = clusters.reduce((s, c) => s + c.pods_ready, 0);
+                  const totalPods = clusters.reduce((s, c) => s + c.pods_total, 0);
+                  const totalIssues = clusters.reduce((s, c) => s + c.issues_count, 0);
+                  const totalNodes = clusters.reduce((s, c) => s + c.nodes, 0);
+                  const totalNs = clusters.reduce((s, c) => s + c.namespaces, 0);
+                  return [
+                    { label: 'Clusters', value: `${total} (${healthy}✓ ${degraded}⚠ ${offline}✗)`, color: 'text-text' },
+                    { label: 'Pods', value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber' },
+                    { label: 'Issues', value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text' },
+                    { label: 'Nodes / NS', value: `${totalNodes} / ${totalNs}`, color: 'text-text' },
+                  ].map((s) => (
+                    <div key={s.label} className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer">
+                      <p className={`text-lg font-semibold font-mono ${s.color}`}>{s.value}</p>
+                      <p className="text-sm text-text-muted mt-1">{s.label}</p>
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              {/* All clusters summary */}
+              <div className="border border-border rounded-sm p-4 bg-surface">
+                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">All Clusters</p>
+                <div className="space-y-1.5">
+                  {clusters.map(c => (
+                    <div key={c.name} className="flex justify-between text-xs">
+                      <span className="flex items-center gap-1">
+                        {activeCluster === c.name && <span className="text-accent">◆</span>}
+                        <span className="text-text-muted">{c.name}</span>
+                        <span className={`w-2 h-2 rounded-full ${healthDot[c.health] || 'bg-text-muted'}`} />
+                      </span>
+                      <span className="text-text-secondary font-mono">{c.pods_ready}/{c.pods_total}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
