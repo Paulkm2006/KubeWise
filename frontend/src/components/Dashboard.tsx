@@ -115,16 +115,27 @@ export default function Dashboard({
   useEffect(() => { setPage(1); }, [focusCluster, sortedIssues.length]);
 
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCluster = useRef<string | null>(null);
+
+  // Cleanup timer on unmount
+  useEffect(() => () => { if (clickTimer.current) clearTimeout(clickTimer.current); }, []);
 
   const handleClusterClick = (name: string) => {
-    if (clickTimer.current) {
+    // If timer is pending for the SAME cluster, this is a double-click — suppress
+    if (clickTimer.current && pendingCluster.current === name) {
       clearTimeout(clickTimer.current);
       clickTimer.current = null;
+      pendingCluster.current = null;
       return;
     }
-
+    // Different cluster clicked while timer pending — reset timer for new cluster
+    if (clickTimer.current) {
+      clearTimeout(clickTimer.current);
+    }
+    pendingCluster.current = name;
     clickTimer.current = setTimeout(() => {
       clickTimer.current = null;
+      pendingCluster.current = null;
       if (focusCluster === name) {
         onFocusChange(null);
       } else {
@@ -137,6 +148,7 @@ export default function Dashboard({
     if (clickTimer.current) {
       clearTimeout(clickTimer.current);
       clickTimer.current = null;
+      pendingCluster.current = null;
     }
     onFocusChange(name);
     onClusterChange(name);
