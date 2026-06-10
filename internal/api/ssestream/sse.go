@@ -37,6 +37,23 @@ func (s *SSEWriter) WriteEvent(event string, data interface{}) error {
 	return nil
 }
 
+// WriteEventWithID writes an SSE event with an explicit event ID for
+// Last-Event-ID / reconnect support. Browser EventSource will
+// automatically send Last-Event-ID on reconnection.
+func (s *SSEWriter) WriteEventWithID(event string, id int, data interface{}) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("marshal SSE data: %w", err)
+	}
+	if event != "" {
+		fmt.Fprintf(s.w, "event: %s\n", event)
+	}
+	fmt.Fprintf(s.w, "id: %d\n", id)
+	fmt.Fprintf(s.w, "data: %s\n\n", jsonData)
+	s.flush.Flush()
+	return nil
+}
+
 func (s *SSEWriter) WriteComment(text string) {
 	fmt.Fprintf(s.w, ": %s\n\n", text)
 	s.flush.Flush()
