@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kubewise/kubewise/internal/agent/event"
@@ -78,23 +79,18 @@ func (h *Handler) StartDiagnose(c *echo.Context) error {
 func (h *Handler) GetDiagnosis(c *echo.Context) error {
 	ctx := c.Request().Context()
 	id := c.Param("id")
-	if h.diagnosisRunner == nil {
-		log.Ctx(ctx).Error("diagnosis runner not available", zap.String("diagnosis_id", id))
-		return c.JSON(http.StatusNotFound, ErrorResponse{Error: "diagnosis not found"})
-	}
+
 	buf := h.diagnosisRunner.GetBuffer(id)
 	if buf == nil {
-		log.Ctx(ctx).Warn("diagnosis buffer not found", zap.String("diagnosis_id", id))
+		log.Ctx(ctx).Warn("diagnosis not found",
+			zap.String("diagnosis_id", id),
+		)
 		return c.JSON(http.StatusNotFound, ErrorResponse{Error: "diagnosis not found"})
 	}
-	log.Ctx(ctx).Info("diagnosis retrieved",
-		zap.String("diagnosis_id", id),
-		zap.String("status", "running"),
-	)
-	return c.JSON(http.StatusOK, map[string]any{
-		"id":     id,
-		"status": "running",
-		"events": buf.Drain(),
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"diagnosis_id": id,
+		"status":       "running",
 	})
 }
 
@@ -108,31 +104,47 @@ func (h *Handler) StreamDiagnosisEvents(c *echo.Context) error {
 	ctx := c.Request().Context()
 	id := c.QueryParam("id")
 	if id == "" {
-		log.Ctx(ctx).Warn("diagnosis stream: missing id parameter")
-		return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "id query parameter required"})
+		return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "id parameter is required"})
 	}
-
-	log.Ctx(ctx).Debug("diagnosis events requested",
-		zap.String("diagnosis_id", id),
-	)
 
 	sse, err := ssestream.NewSSEWriter(c.Response())
 	if err != nil {
-		log.Ctx(ctx).Error("failed to create SSE writer", zap.Error(err))
-		return err
+		log.Ctx(ctx).Error("diagnosis stream: failed to create SSE writer", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 	}
 
-	if h.diagnosisRunner != nil {
-		buf := h.diagnosisRunner.GetBuffer(id)
-		if buf != nil {
-			for _, ev := range buf.Drain() {
+	log.Ctx(ctx).Debug("diagnosis events streaming started",
+		zap.String("diagnosis_id", id),
+	)
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	sent := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Ctx(ctx).Debug("diagnosis stream: context cancelled")
+			return nil
+		case <-ticker.C:
+			buf := h.diagnosisRunner.GetBuffer(id)
+			if buf == nil {
+				log.Ctx(ctx).Debug("diagnosis stream: buffer gone, closing")
+				return nil
+			}
+
+			events := buf.ReadSince(sent)
+			for _, ev := range events {
 				if err := sse.WriteEvent("diagnosis_event", ev); err != nil {
-					log.Ctx(ctx).Warn("SSE write error during diagnosis stream", zap.Error(err))
+					log.Ctx(ctx).Warn("diagnosis stream: write error, closing", zap.Error(err))
+					return nil
+				}
+				sent++
+				if ev.Type == "stream_done" || ev.Type == "error" {
 					return nil
 				}
 			}
 		}
 	}
-
-	return nil
 }
