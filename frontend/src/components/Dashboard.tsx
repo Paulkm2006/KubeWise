@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api/client';
 import type { ClusterSummary, Issue, DiagnosisSummary } from '../api/types';
 
@@ -114,8 +114,32 @@ export default function Dashboard({
   // Reset page on filter or data change
   useEffect(() => { setPage(1); }, [focusCluster, sortedIssues.length]);
 
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleClusterClick = (name: string) => {
-    onFocusChange(focusCluster === name ? null : name);
+    if (clickTimer.current) {
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      return;
+    }
+
+    clickTimer.current = setTimeout(() => {
+      clickTimer.current = null;
+      if (focusCluster === name) {
+        onFocusChange(null);
+      } else {
+        onFocusChange(name);
+      }
+    }, 200);
+  };
+
+  const handleClusterDoubleClick = (name: string) => {
+    if (clickTimer.current) {
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+    }
+    onFocusChange(name);
+    onClusterChange(name);
   };
 
   const handleDiagnoseClick = async (cluster: string, namespace: string, pod: string) => {
@@ -153,6 +177,7 @@ export default function Dashboard({
               <button
                 key={c.fingerprint || c.name}
                 onClick={() => handleClusterClick(c.name)}
+onDoubleClick={() => handleClusterDoubleClick(c.name)}
                 className={`group flex-shrink-0 w-52 text-left rounded-sm transition-all duration-150 cursor-pointer
                   ${isFiltered
                     ? 'bg-accent-dim/15 border-l-[3px] border-accent pl-[13px] pr-4 pt-4 pb-4'
