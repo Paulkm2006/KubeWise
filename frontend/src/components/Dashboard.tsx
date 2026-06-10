@@ -7,7 +7,7 @@ interface DashboardProps {
   focusCluster: string | null;
   onClusterChange: (name: string) => void;
   onFocusChange: (focus: string | null) => void;
-  onDiagnose: (cluster: string, namespace: string, pod: string) => void;
+  onDiagnose: (cluster: string, namespace: string, pod: string) => Promise<void>;
   diagnosedPods: Set<string>;
 }
 
@@ -327,7 +327,7 @@ export default function Dashboard({
 
         {/* Right side */}
         <div className="space-y-6">
-          {/* Recent Diagnoses (replaces Quick Actions) */}
+          {/* Recent Diagnoses */}
           {diagnoses.length > 0 && (
             <div className="border border-border rounded-sm p-5 bg-surface">
               <h3 className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-3">Recent Diagnoses</h3>
