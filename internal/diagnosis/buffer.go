@@ -8,6 +8,7 @@ type RingBuffer struct {
 	size   int
 	cursor int
 	count  int
+	total  int
 }
 
 func NewRingBuffer(capacity int) *RingBuffer {
@@ -28,6 +29,7 @@ func (rb *RingBuffer) Push(e StreamEvent) bool {
 	if rb.count < rb.size {
 		rb.count++
 	}
+	rb.total++
 
 	return !evicted
 }
@@ -48,4 +50,24 @@ func (rb *RingBuffer) Drain() []StreamEvent {
 		out = append(out, rb.data[idx])
 	}
 	return out
+}
+
+// ReadSince returns all events appended after the given total count.
+// Useful for incremental polling — caller tracks how many it has seen.
+func (rb *RingBuffer) ReadSince(total int) []StreamEvent {
+	rb.mu.RLock()
+	defer rb.mu.RUnlock()
+	if total >= rb.total || rb.count == 0 {
+		return nil
+	}
+	available := rb.total - total
+	if available > rb.count {
+		available = rb.count
+	}
+	result := make([]StreamEvent, 0, available)
+	for i := 0; i < available; i++ {
+		idx := (total + i) % rb.size
+		result = append(result, rb.data[idx])
+	}
+	return result
 }
