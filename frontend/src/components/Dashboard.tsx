@@ -419,16 +419,13 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
               <div className="grid grid-cols-2 gap-3">
                 {(() => {
                   const total = clusters.length;
-                  const healthy = clusters.filter(c => c.health === 'healthy').length;
-                  const degraded = clusters.filter(c => c.health === 'degraded').length;
-                  const offline = clusters.filter(c => c.health === 'offline').length;
                   const totalPodsReady = clusters.reduce((s, c) => s + c.pods_ready, 0);
                   const totalPods = clusters.reduce((s, c) => s + c.pods_total, 0);
                   const totalIssues = clusters.reduce((s, c) => s + c.issues_count, 0);
                   const totalNodes = clusters.reduce((s, c) => s + c.nodes, 0);
                   const totalNs = clusters.reduce((s, c) => s + c.namespaces, 0);
                   return [
-                    { label: 'Clusters', value: `${total} (${healthy}✓ ${degraded}⚠ ${offline}✗)`, color: 'text-text' },
+                    { label: 'Clusters', value: total, color: 'text-text' },
                     { label: 'Pods', value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber' },
                     { label: 'Issues', value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text' },
                     { label: 'Nodes / NS', value: `${totalNodes} / ${totalNs}`, color: 'text-text' },
