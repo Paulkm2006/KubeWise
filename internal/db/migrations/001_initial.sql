@@ -27,6 +27,6 @@ CREATE TABLE IF NOT EXISTS activities (
     created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 
-CREATE INDEX idx_diagnoses_cluster ON diagnoses(cluster_fingerprint);
-CREATE INDEX idx_diagnoses_created ON diagnoses(created_at DESC);
-CREATE INDEX idx_activities_created ON activities(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_diagnoses_cluster ON diagnoses(cluster_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_diagnoses_created ON diagnoses(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_created ON activities(created_at DESC);
