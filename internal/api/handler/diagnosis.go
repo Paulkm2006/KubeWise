@@ -53,6 +53,7 @@ func (h *Handler) StartDiagnose(c *echo.Context) error {
 		diagCtx := context.Background()
 
 		err := h.querier.HandleQueryStream(diagCtx, query, queryID, eventCh)
+		close(eventCh)
 		if err != nil {
 			h.diagnosisRunner.PushEvent(diagCtx, diagID, diagnosis.StreamEvent{
 				Type: "error", Message: "Agent error", Detail: err.Error(),
