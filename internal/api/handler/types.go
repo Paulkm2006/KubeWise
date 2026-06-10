@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/kubewise/kubewise/internal/diagnosis"
 	"time"
 )
 
@@ -19,6 +20,19 @@ type ErrorResponse struct {
 type DiagnoseResponse struct {
 	DiagnosisID string `json:"diagnosis_id"`
 	Status      string `json:"status"`
+}
+
+type DiagnosisStatusResponse struct {
+	DiagnosisID string                   `json:"diagnosis_id"`
+	Status      string                   `json:"status"`
+	Target      diagnosis.DiagnosisTarget `json:"target"`
+	Events      []diagnosis.EventRecord   `json:"events"`
+	Result      *diagnosis.DiagnosisResult `json:"result,omitempty"`
+}
+
+type DiagnosisListResponse struct {
+	Diagnoses []diagnosis.Diagnosis `json:"diagnoses"`
+	Total     int                   `json:"total"`
 }
 
 type Message struct {
