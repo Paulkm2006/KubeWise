@@ -7,9 +7,9 @@ CREATE TABLE IF NOT EXISTS diagnoses (
     pod_uid     TEXT,
     symptom_hash TEXT,
 
-    root_cause  TEXT NOT NULL,
+    root_cause  TEXT,
     confidence  TEXT,
-    evidence    TEXT NOT NULL,
+    evidence    TEXT,
     fix_actions TEXT,
     impact      TEXT,
     duration_ms INTEGER,
