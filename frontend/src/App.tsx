@@ -19,6 +19,7 @@ const TAB_CONFIG = [
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [activeCluster, setActiveCluster] = useState('');
+  const [focusCluster, setFocusCluster] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   const [diagnosedPods, setDiagnosedPods] = useState<Set<string>>(new Set());
@@ -107,6 +108,9 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <Dashboard
               activeCluster={activeCluster}
+              focusCluster={focusCluster}
+              onClusterChange={handleClusterChange}
+              onFocusChange={setFocusCluster}
               onDiagnose={handleDiagnose}
               refreshKey={refreshKey}
               diagnosedPods={diagnosedPods}
