@@ -239,20 +239,6 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
             <div className="text-sm text-text-muted py-4">No clusters found. Check connection.</div>
           )}
         </div>
-        {focusCluster && (
-          <div className="mt-3 flex items-center gap-2 animate-fade-in">
-            <span className="text-xs text-text-muted">Filtered by:</span>
-            <span className="text-xs text-accent font-medium px-2 py-0.5 rounded-sm bg-accent-dim/15 border border-accent/20">
-              {focusCluster}
-            </span>
-            <button
-              onClick={() => onFocusChange(null)}
-              className="text-xs text-text-muted hover:text-text cursor-pointer bg-transparent border-none transition-colors"
-            >
-              ✕ clear
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Issues + side content */}
