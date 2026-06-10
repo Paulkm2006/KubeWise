@@ -4,7 +4,9 @@ import type { ClusterSummary, Issue, DiagnosisSummary } from '../api/types';
 
 interface DashboardProps {
   activeCluster: string;
+  focusCluster: string | null;
   onClusterChange: (name: string) => void;
+  onFocusChange: (focus: string | null) => void;
   onDiagnose: (cluster: string, namespace: string, pod: string) => void;
   diagnosedPods: Set<string>;
 }
@@ -29,26 +31,21 @@ const severityRank: Record<string, number> = {
   low: 2,
 };
 
-export default function Dashboard({ activeCluster, onClusterChange, onDiagnose, diagnosedPods }: DashboardProps) {
+export default function Dashboard({
+  activeCluster,
+  focusCluster,
+  onFocusChange,
+  onClusterChange,
+  onDiagnose,
+  diagnosedPods
+}: DashboardProps) {
   const [page, setPage] = useState(1);
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
   const [allIssues, setAllIssues] = useState<Issue[]>([]);
   const [diagnoses, setDiagnoses] = useState<DiagnosisSummary[]>([]);
   const [diagnosingPods, setDiagnosingPods] = useState<Set<string>>(new Set());
-  const [filterCluster, setFilterCluster] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Fetch clusters
-  const fetchClusters = useCallback(async () => {
-    try {
-      const data = await api.clusters.list();
-      setClusters(data);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to fetch clusters');
-    }
-  }, []);
 
   // Fetch issues for a specific cluster
   const fetchIssuesForCluster = useCallback(async (name: string): Promise<Issue[]> => {
@@ -72,13 +69,13 @@ export default function Dashboard({ activeCluster, onClusterChange, onDiagnose, 
         setError(null);
 
         // Fetch issues for all clusters (or just filtered one)
-        const names = filterCluster ? [filterCluster] : clusterData.map((c) => c.name);
+        const names = focusCluster ? [focusCluster] : clusterData.map((c) => c.name);
         const results = await Promise.allSettled(names.map((n) => fetchIssuesForCluster(n)));
         if (!mounted) return;
 
         const all: Issue[] = [];
         results.forEach((r) => {
-          if (r.status === 'fulfilled') all.push(...r.value);
+          if (r.status === 'fulfilled' && Array.isArray(r.value)) all.push(...r.value);
         });
         setAllIssues(all);
 
@@ -97,28 +94,28 @@ export default function Dashboard({ activeCluster, onClusterChange, onDiagnose, 
     fetchAll();
     const interval = setInterval(fetchAll, 15000);
     return () => { mounted = false; clearInterval(interval); };
-  }, [filterCluster, fetchIssuesForCluster]);
+  }, [focusCluster, fetchIssuesForCluster]);
 
   // Sort issues by severity (high > medium > low)
   const sortedIssues = useMemo(() => {
     return [...allIssues].sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
   }, [allIssues]);
 
+  // Sort clusters by name for stable ordering
+  const sortedClusters = useMemo(() => {
+    return [...clusters].sort((a, b) => a.name.localeCompare(b.name));
+  }, [clusters]);
+
   const totalPages = Math.max(1, Math.ceil(sortedIssues.length / PAGE_SIZE));
   const pagedIssues = sortedIssues.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const currentCluster = clusters.find((c) => c.name === activeCluster);
+  const currentCluster = clusters.find((c) => c.name === (focusCluster || ''));
 
   // Reset page on filter or data change
-  useEffect(() => { setPage(1); }, [filterCluster, sortedIssues.length]);
+  useEffect(() => { setPage(1); }, [focusCluster, sortedIssues.length]);
 
   const handleClusterClick = (name: string) => {
-    if (filterCluster === name) {
-      setFilterCluster(null);
-    } else {
-      setFilterCluster(name);
-    }
-    onClusterChange(name);
+    onFocusChange(focusCluster === name ? null : name);
   };
 
   const handleDiagnoseClick = async (cluster: string, namespace: string, pod: string) => {
@@ -150,21 +147,20 @@ export default function Dashboard({ activeCluster, onClusterChange, onDiagnose, 
           {error && <span className="text-xs text-red ml-2">{error}</span>}
         </div>
         <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
-          {clusters.map((c) => {
-            const isActive = c.name === activeCluster;
-            const isFiltered = filterCluster === c.name;
+          {sortedClusters.map((c) => {
+            const isFiltered = focusCluster === c.name;
             return (
               <button
                 key={c.fingerprint || c.name}
                 onClick={() => handleClusterClick(c.name)}
                 className={`group flex-shrink-0 w-52 text-left rounded-sm transition-all duration-150 cursor-pointer
-                  ${isActive || isFiltered
+                  ${isFiltered
                     ? 'bg-accent-dim/15 border-l-[3px] border-accent pl-[13px] pr-4 pt-4 pb-4'
                     : 'bg-surface border border-border hover:bg-elevated p-4'
                   }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className={`text-sm font-semibold ${isActive || isFiltered ? 'text-accent' : 'text-text'}`}>
+                  <span className={`text-sm font-semibold ${isFiltered ? 'text-accent' : 'text-text'}`}>
                     {c.name}
                   </span>
                   <span className={`w-2.5 h-2.5 rounded-full ${healthDot[c.health] || 'bg-text-muted'} shrink-0`} />
@@ -189,7 +185,7 @@ export default function Dashboard({ activeCluster, onClusterChange, onDiagnose, 
                     <span className="text-sm text-text-muted">0 issues</span>
                   )}
                 </div>
-                <div className={`mt-3 pt-3 border-t border-border/30 flex gap-3 text-xs text-text-muted ${isActive || isFiltered ? '' : 'opacity-0 group-hover:opacity-100 transition-opacity'}`}>
+                <div className={`mt-3 pt-3 border-t border-border/30 flex gap-3 text-xs text-text-muted ${isFiltered ? '' : 'opacity-0 group-hover:opacity-100 transition-opacity'}`}>
                   <span>◈ {c.nodes} nodes</span>
                   <span>▣ {c.namespaces} namespaces</span>
                 </div>
@@ -200,14 +196,14 @@ export default function Dashboard({ activeCluster, onClusterChange, onDiagnose, 
             <div className="text-sm text-text-muted py-4">No clusters found. Check connection.</div>
           )}
         </div>
-        {filterCluster && (
+        {focusCluster && (
           <div className="mt-3 flex items-center gap-2 animate-fade-in">
             <span className="text-xs text-text-muted">Filtered by:</span>
             <span className="text-xs text-accent font-medium px-2 py-0.5 rounded-sm bg-accent-dim/15 border border-accent/20">
-              {filterCluster}
+              {focusCluster}
             </span>
             <button
-              onClick={() => setFilterCluster(null)}
+              onClick={() => onFocusChange(null)}
               className="text-xs text-text-muted hover:text-text cursor-pointer bg-transparent border-none transition-colors"
             >
               ✕ clear
@@ -225,7 +221,7 @@ export default function Dashboard({ activeCluster, onClusterChange, onDiagnose, 
               <h2 className="text-sm font-semibold text-text tracking-wide">Issues</h2>
               <span className="text-sm text-red/80 font-mono font-medium">
                 {sortedIssues.length > 0
-                  ? `${sortedIssues.length} total${filterCluster ? ` on ${filterCluster}` : ' across all clusters'}`
+                  ? `${sortedIssues.length} total${focusCluster ? ` on ${focusCluster}` : ' across all clusters'}`
                   : 'none'}
               </span>
             </div>
@@ -278,7 +274,7 @@ export default function Dashboard({ activeCluster, onClusterChange, onDiagnose, 
               <p className="text-xs text-text-muted mt-1">All clusters are running normally</p>
             </div>
           ) : (
-            <div key={`issues-${filterCluster || 'all'}-${page}`} className="border border-border rounded-sm overflow-hidden flex-1 flex flex-col animate-fade-in">
+            <div key={`issues-${focusCluster || 'all'}-${page}`} className="border border-border rounded-sm overflow-hidden flex-1 flex flex-col animate-fade-in">
               <table className="w-full">
                 <thead>
                   <tr className="bg-elevated/50">
