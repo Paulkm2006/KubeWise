@@ -1,5 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
-import { diagnosisSteps, mockDiagnosisResult, DiagnosisResult } from '../data/mock';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { diagnosisSteps } from '../data/mock';
+import type { DiagnosisResult } from '../data/mock';
+import { api } from '../api/client';
+import { subscribeDiagnosis } from '../api/sse';
+import type { StreamEvent } from '../api/types';
 
 interface DiagnosisOverlayProps {
   open: boolean;
@@ -10,68 +14,81 @@ interface DiagnosisOverlayProps {
   onActivity: (type: string, text: string, cluster?: string) => void;
 }
 
-interface CachedEntry {
-  result: DiagnosisResult;
-  ts: number;
-}
-
 export default function DiagnosisOverlay({ open, cluster, namespace, pod, onClose, onActivity }: DiagnosisOverlayProps) {
   const [phase, setPhase] = useState<'idle' | 'running' | 'done'>('idle');
   const [currentStep, setCurrentStep] = useState(0);
+  const [statusText, setStatusText] = useState('');
   const [result, setResult] = useState<DiagnosisResult | null>(null);
   const [copied, setCopied] = useState(false);
-  const cacheRef = useRef<Map<string, CachedEntry>>(new Map());
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  const cacheKey = `${cluster}/${namespace}/${pod}`;
+  const handleStreamEvent = useCallback((ev: StreamEvent) => {
+    if (ev.type === 'phase' && ev.message) {
+      const msg = ev.message.toLowerCase();
+      if (msg.includes('classifying') || msg.includes('collect')) setCurrentStep(1);
+      if (msg.includes('troubleshooting') || msg.includes('analyz')) setCurrentStep(2);
+      if (msg.includes('verif')) setCurrentStep(3);
+      if (msg.includes('complete') || msg.includes('report') || msg.includes('done')) setCurrentStep(4);
+    }
+    if (ev.type === 'thought' && ev.message) {
+      setStatusText(ev.message.slice(0, 80));
+    }
+    if (ev.type === 'tool' && ev.message) {
+      setStatusText(`Running: ${ev.message}...`);
+    }
+    if (ev.type === 'tool_done' && ev.message) {
+      setStatusText(`${ev.message} done`);
+    }
+  }, []);
+
+  const startDiagnosis = useCallback(async () => {
+    setPhase('running');
+    setCurrentStep(0);
+    setStatusText('');
+    onActivity('pending', `Diagnosing ${pod}...`, cluster);
+
+    try {
+      const { diagnosis_id } = await api.diagnoses.create(cluster, namespace, pod);
+
+      const unsub = subscribeDiagnosis(diagnosis_id, handleStreamEvent, async () => {
+        try {
+          const detail = await api.diagnoses.get(diagnosis_id);
+          setResult({
+            rootCause: detail.root_cause || 'Analysis complete',
+            confidence: detail.confidence || 'N/A',
+            evidence: detail.evidence || [],
+            fixCommand: detail.fix_actions?.[0]?.command || '',
+            impact: detail.impact || '',
+            duration: detail.duration_ms ? `${Math.round(detail.duration_ms / 1000)}s` : 'N/A',
+          });
+        } catch {
+          // fallback
+        }
+        setPhase('done');
+        onActivity('done', `${pod} diagnosis complete`, cluster);
+      });
+      unsubscribeRef.current = unsub;
+    } catch (err) {
+      setPhase('idle');
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      onActivity('issue', `Diagnosis failed for ${pod}: ${msg}`, cluster);
+    }
+  }, [cluster, namespace, pod, onActivity, handleStreamEvent]);
 
   useEffect(() => {
     if (open) {
-      // Check cache
-      const cached = cacheRef.current.get(cacheKey);
-      if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
-        setResult(cached.result);
-        setPhase('done');
-        return;
-      }
       startDiagnosis();
     } else {
-      // Reset on close
       setPhase('idle');
       setCurrentStep(0);
+      setStatusText('');
       setResult(null);
-      if (timerRef.current) clearTimeout(timerRef.current);
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
     }
   }, [open]);
-
-  const startDiagnosis = () => {
-    setPhase('running');
-    setCurrentStep(0);
-    setResult(null);
-    onActivity('pending', `Diagnosing ${pod}...`, cluster);
-
-    // Simulate step progression
-    const delays = [1200, 2800, 4500, 6000];
-    diagnosisSteps.forEach((_, i) => {
-      timerRef.current = setTimeout(() => {
-        setCurrentStep(i + 1);
-        if (i === diagnosisSteps.length - 1) {
-          // Done — show report
-          setTimeout(() => {
-            setPhase('done');
-            setResult(mockDiagnosisResult);
-            cacheRef.current.set(cacheKey, { result: mockDiagnosisResult, ts: Date.now() });
-            onActivity('done', `${pod} diagnosis: OOMKilled`, cluster);
-          }, 800);
-        }
-      }, delays[i]);
-    });
-  };
-
-  const handleRediagnose = () => {
-    cacheRef.current.delete(cacheKey);
-    startDiagnosis();
-  };
 
   const handleCopy = async () => {
     if (!result) return;
@@ -110,19 +127,6 @@ export default function DiagnosisOverlay({ open, cluster, namespace, pod, onClos
         </div>
 
         <div className="p-6 space-y-5">
-          {/* Cached notice */}
-          {phase === 'done' && cacheRef.current.has(cacheKey) && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-sm bg-elevated border border-border/50 text-sm text-text-secondary">
-              <span>◇ From cache</span>
-              <button
-                onClick={handleRediagnose}
-                className="ml-auto text-xs text-accent hover:text-accent/80 transition-colors cursor-pointer bg-transparent border-none"
-              >
-                ⟳ Re-diagnose
-              </button>
-            </div>
-          )}
-
           {/* Progress (show during running or idle) */}
           {phase !== 'done' && (
             <div className="space-y-3">
@@ -150,7 +154,7 @@ export default function DiagnosisOverlay({ open, cluster, namespace, pod, onClos
                         {step.label}
                       </p>
                       <p className={`text-xs mt-0.5 font-mono ${isActive ? 'text-accent' : 'text-text-muted'}`}>
-                        {isActive ? step.detail : isDone ? 'Complete' : 'Waiting...'}
+                        {isActive ? (statusText || step.detail) : isDone ? 'Complete' : 'Waiting...'}
                       </p>
                     </div>
                     {isActive && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-ping" />}
