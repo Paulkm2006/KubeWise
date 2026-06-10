@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/api/ssestream"
+	"github.com/kubewise/kubewise/internal/diagnosis"
 	"github.com/kubewise/kubewise/internal/utils/log"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
@@ -23,19 +27,14 @@ func (h *Handler) StartDiagnose(c *echo.Context) error {
 		log.Ctx(ctx).Warn("diagnose: invalid request body", zap.Error(err))
 		return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invalid request", Detail: err.Error()})
 	}
+
 	if req.Cluster == "" || req.Namespace == "" || req.Pod == "" {
-		log.Ctx(ctx).Warn("diagnose: missing required fields",
-			zap.String("cluster", req.Cluster),
-			zap.String("namespace", req.Namespace),
-			zap.String("pod", req.Pod),
-		)
+		log.Ctx(ctx).Warn("diagnose: missing required fields")
 		return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "cluster, namespace, and pod are required"})
 	}
 
 	diagID := uuid.New().String()
-	if h.diagnosisRunner != nil {
-		h.diagnosisRunner.Start(ctx, diagID)
-	}
+	h.diagnosisRunner.Start(ctx, diagID)
 
 	log.Ctx(ctx).Info("diagnosis started",
 		zap.String("event", "diagnosis.started"),
@@ -45,9 +44,34 @@ func (h *Handler) StartDiagnose(c *echo.Context) error {
 		zap.String("pod", req.Pod),
 	)
 
-	return c.JSON(http.StatusAccepted, map[string]string{
-		"diagnosis_id": diagID,
-		"status":       "pending",
+	// Async: run diagnosis via troubleshooting agent
+	go func() {
+		eventCh := make(chan event.Event, 64)
+		queryID := fmt.Sprintf("diag-%s", uuid.New().String()[:8])
+		query := fmt.Sprintf("I see pod '%s' in namespace '%s' on cluster '%s' is unhealthy. Diagnose the issue.", req.Pod, req.Namespace, req.Cluster)
+		diagCtx := context.Background()
+
+		err := h.querier.HandleQueryStream(diagCtx, query, queryID, eventCh)
+		if err != nil {
+			h.diagnosisRunner.PushEvent(diagCtx, diagID, diagnosis.StreamEvent{
+				Type: "error", Message: "Agent error", Detail: err.Error(),
+			})
+			h.diagnosisRunner.Finish(diagCtx, diagID)
+			return
+		}
+
+		for ev := range eventCh {
+			if se := bridgeAgentEventToDiagnosis(ev); se != nil {
+				h.diagnosisRunner.PushEvent(diagCtx, diagID, *se)
+			}
+		}
+
+		h.diagnosisRunner.Finish(diagCtx, diagID)
+	}()
+
+	return c.JSON(http.StatusAccepted, DiagnoseResponse{
+		DiagnosisID: diagID,
+		Status:      "running",
 	})
 }
 

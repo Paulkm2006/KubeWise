@@ -16,6 +16,11 @@ type ErrorResponse struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+type DiagnoseResponse struct {
+	DiagnosisID string `json:"diagnosis_id"`
+	Status      string `json:"status"`
+}
+
 type Message struct {
 	Role      string    `json:"role"`
 	Content   string    `json:"content"`
