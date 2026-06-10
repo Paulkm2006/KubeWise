@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -6,6 +6,9 @@ import SecurityAudit from './components/SecurityAudit';
 import Chat from './components/Chat';
 import DiagnosisOverlay from './components/DiagnosisOverlay';
 import { initialActivities, Activity } from './data/mock';
+import { api } from './api/client';
+import { DiagnosisStore, StoredDiagnosis } from './stores/diagnosisStore';
+import type { DiagnosisTarget } from './api/types';
 
 const TAB_CONFIG = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈' },
@@ -15,16 +18,20 @@ const TAB_CONFIG = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [activeCluster, setActiveCluster] = useState('prod-us');
+  const [activeCluster, setActiveCluster] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   const [diagnosedPods, setDiagnosedPods] = useState<Set<string>>(new Set());
   const [diagOpen, setDiagOpen] = useState(false);
   const [diagTarget, setDiagTarget] = useState({ cluster: '', namespace: '', pod: '' });
+  const storeRef = useRef(new DiagnosisStore());
+  const [activeDiagnosis, setActiveDiagnosis] = useState<StoredDiagnosis | null>(null);
+  const [, forceUpdate] = useState(0);
 
-  const addActivity = useCallback((type: Activity['type'], text: string, cluster?: string) => {
+  const addActivity = useCallback((type: string, text: string, cluster?: string) => {
     const now = new Date();
     const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    setActivities((prev) => [{ type, text, cluster, time }, ...prev.slice(0, 19)]);
+    setActivities((prev) => [{ type: type as Activity['type'], text, cluster, time }, ...prev.slice(0, 19)]);
   }, []);
 
   const handleTabChange = (tab: string) => {
@@ -37,17 +44,44 @@ export default function App() {
     addActivity('info', `Switched to ${name}`, name);
   };
 
-  const handleDiagnose = (cluster: string, namespace: string, pod: string) => {
+  const handleRefresh = () => {
+    setRefreshKey((k) => k + 1);
+    addActivity('info', 'Views refreshed', activeCluster);
+  };
+
+  const handleDiagnose = async (cluster: string, namespace: string, pod: string) => {
+    addActivity('pending', `Diagnosing ${pod}...`, cluster);
+
+    const target: DiagnosisTarget = { cluster, cluster_display: cluster, namespace, pod };
     setDiagTarget({ cluster, namespace, pod });
-    setDiagOpen(true);
+
+    // Check if we already have a running diagnosis for this pod
+    const existing = storeRef.current.findExisting(target);
+    if (existing) {
+      setActiveDiagnosis(existing);
+      setDiagOpen(true);
+      return;
+    }
+
+    try {
+      const res = await api.diagnoses.create(cluster, namespace, pod);
+      storeRef.current.add(res.diagnosis_id, target, () => forceUpdate(n => n + 1));
+      setActiveDiagnosis(storeRef.current.get(res.diagnosis_id) || null);
+      setDiagOpen(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      addActivity('issue', `Diagnosis failed for ${pod}: ${msg}`, cluster);
+    }
   };
 
   const handleDiagClose = () => {
     setDiagOpen(false);
+    // SSE stays alive in store — don't close it
   };
 
   const handleDiagDone = () => {
-    const key = `${diagTarget.cluster}/${diagTarget.namespace}/${diagTarget.pod}`;
+    if (!activeDiagnosis) return;
+    const key = `${activeDiagnosis.target.cluster}/${activeDiagnosis.target.namespace}/${activeDiagnosis.target.pod}`;
     setDiagnosedPods((prev) => new Set(prev).add(key));
   };
 
@@ -60,8 +94,8 @@ export default function App() {
         onTabChange={handleTabChange}
         tabs={TAB_CONFIG}
         activeCluster={activeCluster}
+        onRefresh={handleRefresh}
         onClusterChange={handleClusterChange}
-        onActivity={addActivity}
       />
 
       <div className="flex flex-1 min-h-0">
@@ -73,8 +107,8 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <Dashboard
               activeCluster={activeCluster}
-              onClusterChange={handleClusterChange}
               onDiagnose={handleDiagnose}
+              refreshKey={refreshKey}
               diagnosedPods={diagnosedPods}
             />
           )}
@@ -85,12 +119,10 @@ export default function App() {
 
       <DiagnosisOverlay
         open={diagOpen}
-        cluster={diagTarget.cluster}
-        namespace={diagTarget.namespace}
-        pod={diagTarget.pod}
+        diagnosis={activeDiagnosis}
         onClose={handleDiagClose}
         onActivity={(type, text, cluster) => {
-          addActivity(type as Activity['type'], text, cluster);
+          addActivity(type, text, cluster);
           if (type === 'done') handleDiagDone();
         }}
       />
