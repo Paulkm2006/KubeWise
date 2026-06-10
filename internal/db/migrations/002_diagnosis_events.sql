@@ -1,7 +1,7 @@
--- Add status column to existing diagnoses table
-ALTER TABLE diagnoses ADD COLUMN status TEXT NOT NULL DEFAULT 'pending';
-
 -- Create event log table
+-- Note: ALTER TABLE diagnoses ADD COLUMN status is handled in Go code
+-- (ensureDiagnosisStatusColumn) because SQLite doesn't support IF NOT EXISTS
+
 CREATE TABLE IF NOT EXISTS diagnosis_events (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     diagnosis_id TEXT NOT NULL REFERENCES diagnoses(id) ON DELETE CASCADE,

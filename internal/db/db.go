@@ -41,6 +41,7 @@ func Open(dir string) (*Wrapper, error) {
 }
 
 func (w *Wrapper) migrate() error {
+	// Run idempotent migrations (CREATE TABLE IF NOT EXISTS, CREATE INDEX IF NOT EXISTS)
 	files := []string{"migrations/001_initial.sql", "migrations/002_diagnosis_events.sql"}
 	for _, f := range files {
 		data, err := migrations.ReadFile(f)
@@ -49,6 +50,24 @@ func (w *Wrapper) migrate() error {
 		}
 		if _, err := w.Exec(string(data)); err != nil {
 			return fmt.Errorf("exec migration %s: %w", f, err)
+		}
+	}
+
+	// Non-idempotent migrations: SQLite doesn't support ALTER TABLE ADD COLUMN IF NOT EXISTS,
+	// so we check column existence in Go first.
+	return w.ensureDiagnosisStatusColumn()
+}
+
+// ensureDiagnosisStatusColumn adds the status column if it doesn't exist yet.
+// Safe to call on every startup — the PRAGMA check + conditional ALTER is idempotent.
+func (w *Wrapper) ensureDiagnosisStatusColumn() error {
+	var count int
+	if err := w.QueryRow("SELECT COUNT(*) FROM pragma_table_info('diagnoses') WHERE name='status'").Scan(&count); err != nil {
+		return fmt.Errorf("check status column: %w", err)
+	}
+	if count == 0 {
+		if _, err := w.Exec("ALTER TABLE diagnoses ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"); err != nil {
+			return fmt.Errorf("add status column: %w", err)
 		}
 	}
 	return nil
