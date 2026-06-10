@@ -156,7 +156,9 @@ interface DashboardProps {
 1. 在全部视图中发现 prod-us 有异常
 2. 单击 prod-us → 聚焦查看详情，确认 3 个 issue
 3. 双击 prod-us → ◆ 标记跟随过来，Header 同步切换
-4. 发起诊断 → 诊断目标自动是 prod-us（`activeCluster`）
+4. 在 issue 列表中点击某条 issue → 发起诊断 → 诊断目标使用 issue 自带绑定的 `cluster` 字段，与 `activeCluster` 无关
+
+> **说明**：`activeCluster` 影响的是没有明确集群上下文的操作入口（如 Chat 输入框中直接发命令）。从 issue 列表发起的诊断，目标永远跟随 issue 本身的集群绑定。
 
 ### 场景三：对比数据 + 切换目标
 
