@@ -25,14 +25,11 @@ export interface Issue {
 export interface DiagnosisSummary {
   id: string;
   cluster_fingerprint: string;
-  cluster_display: string;
-  disconnected: boolean;
+  cluster_display?: string;
   namespace: string;
   pod: string;
-  root_cause: string;
-  confidence: string;
+  status: string;
   created_at: string;
-  resolved: number;
 }
 
 export interface FixAction {
@@ -68,4 +65,41 @@ export interface StreamEvent {
   type: string;
   message?: string;
   detail?: string;
+}
+
+/** A single diagnosis event from the backend (maps to Go EventRecord) */
+export interface DiagnosisEvent {
+  diagnosis_id: string;
+  seq_num: number;
+  event_type: string;
+  message?: string;
+  detail?: string;
+  token_in?: number;
+  token_out?: number;
+  elapsed_ms?: number;
+  created_at?: number;
+}
+
+export interface DiagnosisTarget {
+  cluster: string;
+  cluster_display: string;
+  namespace: string;
+  pod: string;
+}
+
+export interface DiagnosisResult {
+  root_cause: string;
+  confidence?: string;
+  evidence?: { num: number; text: string }[];
+  fix_actions?: { type: string; description: string; command?: string; risk?: string }[];
+  impact?: string;
+  duration_ms?: number;
+}
+
+export interface DiagnosisStatus {
+  diagnosis_id: string;
+  status: 'running' | 'completed' | 'failed';
+  target: DiagnosisTarget;
+  events: DiagnosisEvent[];
+  result?: DiagnosisResult;
 }
