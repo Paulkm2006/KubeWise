@@ -112,7 +112,6 @@ export default function App() {
               onClusterChange={handleClusterChange}
               onFocusChange={setFocusCluster}
               onDiagnose={handleDiagnose}
-              refreshKey={refreshKey}
               diagnosedPods={diagnosedPods}
             />
           )}
