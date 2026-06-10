@@ -16,7 +16,6 @@ import (
 	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/config"
 	"github.com/kubewise/kubewise/internal/db"
-	"github.com/kubewise/kubewise/internal/diagnosis"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/labstack/echo/v5"
 )
@@ -50,7 +49,6 @@ func NewServer() *Server {
 	}
 
 	// --- Domain services ---
-	diagRunner := diagnosis.NewRunner()
 	var activitySvc *activity.Service
 	if sqldb != nil {
 		activitySvc = activity.NewService(sqldb)
@@ -89,9 +87,7 @@ func NewServer() *Server {
 		sess.Router,
 		sessionStore,
 		cm,
-		diagRunner,
 		activitySvc,
-		sqldb,
 	)
 
 	router.InitRouter(e, h)

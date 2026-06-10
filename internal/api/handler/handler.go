@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -14,7 +13,6 @@ import (
 	"github.com/kubewise/kubewise/internal/agent/supervisor"
 	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/config"
-	"github.com/kubewise/kubewise/internal/diagnosis"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 )
 
@@ -34,9 +32,7 @@ type Handler struct {
 	sessionStore        store.Store
 	k8sClient           *cluster.Client // for single-cluster status API
 	clusterManager      *cluster.ClusterClientManager
-	diagnosisRunner     *diagnosis.Runner
 	activityService     *activity.Service
-	db                  *sql.DB
 	mu                  sync.RWMutex
 	pendingInteractions map[string]*pendingInteraction
 }
@@ -79,9 +75,7 @@ func NewHandler() (*Handler, error) {
 		k8sClient:           sess.K8s,
 		sessionStore:        store,
 		clusterManager:      nil,
-		diagnosisRunner:     nil,
 		activityService:     nil,
-		db:                  nil,
 		pendingInteractions: make(map[string]*pendingInteraction),
 	}, nil
 }
@@ -95,22 +89,18 @@ func NewHandlerWithDeps(querier StreamQuerier, store store.Store) *Handler {
 	}
 }
 
-// NewHandlerWithCluster creates a Handler with multi-cluster and diagnosis support.
+// NewHandlerWithCluster creates a Handler with multi-cluster and activity support.
 func NewHandlerWithCluster(
 	querier StreamQuerier,
 	sessionStore store.Store,
 	clusterManager *cluster.ClusterClientManager,
-	diagnosisRunner *diagnosis.Runner,
 	activityService *activity.Service,
-	db *sql.DB,
 ) *Handler {
 	return &Handler{
 		querier:             querier,
 		sessionStore:        sessionStore,
 		clusterManager:      clusterManager,
-		diagnosisRunner:     diagnosisRunner,
 		activityService:     activityService,
-		db:                  db,
 		pendingInteractions: make(map[string]*pendingInteraction),
 	}
 }
