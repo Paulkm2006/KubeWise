@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kubewise/kubewise/internal/agent/event"
 	"github.com/kubewise/kubewise/internal/api/ssestream"
+		"github.com/kubewise/kubewise/internal/diagnosis"
 	"github.com/kubewise/kubewise/internal/utils/log"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
@@ -131,4 +132,36 @@ func (h *Handler) handleStreamInteractionSSE(sse *ssestream.SSEWriter, e event.I
 	}
 
 	return sse.WriteEvent("interaction_request", data)
+}
+
+// bridgeAgentEventToDiagnosis converts agent event.Event types to
+// diagnosis.StreamEvent for SSE streaming to the DiagnosisOverlay.
+func bridgeAgentEventToDiagnosis(ev event.Event) *diagnosis.StreamEvent {
+	switch e := ev.(type) {
+	case event.Phase:
+		return &diagnosis.StreamEvent{Type: "phase", Message: e.Phase}
+	case event.AgentStart:
+		return &diagnosis.StreamEvent{Type: "phase", Message: e.AgentName + " started"}
+	case event.AgentDone:
+		return &diagnosis.StreamEvent{Type: "done", Message: e.Result}
+	case event.ToolCall:
+		return &diagnosis.StreamEvent{Type: "tool", Message: e.ToolName}
+	case event.ToolDone:
+		return &diagnosis.StreamEvent{Type: "tool_done", Message: e.ToolName,
+			Detail: fmt.Sprintf("%.0fms", e.Elapsed.Seconds()*1000)}
+	case event.ToolFail:
+		return &diagnosis.StreamEvent{Type: "tool_fail", Message: e.ToolName, Detail: e.Err}
+	case event.LLMTextDelta:
+		return &diagnosis.StreamEvent{Type: "thought", Message: e.Delta}
+	case event.StreamDone:
+		return &diagnosis.StreamEvent{Type: "stream_done", Message: "completed"}
+	case event.StreamErr:
+		msg := ""
+		if e.Err != nil {
+			msg = e.Err.Error()
+		}
+		return &diagnosis.StreamEvent{Type: "error", Message: msg}
+	default:
+		return nil
+	}
 }
