@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/platform/agentruntime"
-	"github.com/kubewise/kubewise/internal/platform/agentruntime/audit"
+	auditsubagent "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/audit"
 	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
 	"github.com/kubewise/kubewise/internal/platform/cluster"
 	"github.com/kubewise/kubewise/internal/utils/log"
@@ -17,21 +16,6 @@ func (a *Agent) AuditClusterStream(ctx context.Context, clusterName, queryID str
 	a.streamMu.Lock()
 	defer a.streamMu.Unlock()
 
-	se := event.NewEmitter(eventCh, queryID)
-	emit := func(ev event.Event) {
-		_ = se.Emit(ctx, ev)
-	}
-
-	emit(event.Phase{
-		QueryID: queryID,
-		Phase:   "starting cluster audit",
-		Summary: "running deterministic security scan",
-		Payload: &event.Payload{
-			Kind: event.PayloadKindTarget,
-			Data: map[string]string{"cluster": clusterName},
-		},
-	})
-
 	k8sClient, err := a.auditK8sClient(ctx, clusterName)
 	if err != nil {
 		log.Ctx(ctx).Error("cluster audit selection failed",
@@ -39,34 +23,23 @@ func (a *Agent) AuditClusterStream(ctx context.Context, clusterName, queryID str
 			zap.String("cluster", clusterName),
 			zap.Error(err),
 		)
-		emit(event.StreamErr{QueryID: queryID, Err: err})
+		se := event.NewEmitter(eventCh, queryID)
+		_ = se.Emit(ctx, event.StreamErr{QueryID: queryID, Err: err})
 		return err
 	}
 
-	progressCh := make(chan agentruntime.ProgressEvent, 32)
-	done := make(chan error, 1)
-	go func() {
-		done <- audit.NewRunner(k8sClient).Run(ctx, clusterName, queryID, progressCh)
-		close(progressCh)
-	}()
-
-	for pe := range progressCh {
-		if mapped, ok := auditProgressToEvent(queryID, pe); ok {
-			emit(mapped)
-		}
-	}
-
-	if err := <-done; err != nil {
+	auditAgent := auditsubagent.NewAgent(k8sClient, a.llmClient, a.maxSteps, a.supervisorCfg)
+	if err := auditAgent.RunClusterAudit(ctx, clusterName, queryID, eventCh); err != nil {
 		log.Ctx(ctx).Error("cluster audit failed",
 			zap.String("event", "agent.error"),
 			zap.String("cluster", clusterName),
 			zap.Error(err),
 		)
-		emit(event.StreamErr{QueryID: queryID, Err: err})
 		return err
 	}
 
-	emit(event.StreamDone{QueryID: queryID})
+	se := event.NewEmitter(eventCh, queryID)
+	_ = se.Emit(ctx, event.StreamDone{QueryID: queryID})
 	return nil
 }
 
@@ -84,27 +57,7 @@ func (a *Agent) auditK8sClient(ctx context.Context, clusterName string) (*cluste
 	return cluster.NewClientFromClusterClient(cc)
 }
 
-func auditProgressToEvent(queryID string, pe agentruntime.ProgressEvent) (event.Event, bool) {
-	switch pe.Type {
-	case "phase_start":
-		return event.Phase{QueryID: queryID, Phase: pe.Message, Summary: pe.Summary}, true
-	case "phase_done":
-		return event.ToolDone{
-			QueryID: queryID, ToolName: pe.Message, Summary: pe.Summary,
-			Payload: &event.Payload{Kind: pe.PayloadKind, Data: decodePayload(pe.PayloadJSON)},
-		}, true
-	case "phase_fail":
-		return event.ToolFail{QueryID: queryID, ToolName: pe.Message, Err: pe.Detail}, true
-	case "audit_complete":
-		return event.AgentDone{
-			QueryID: queryID, Summary: pe.Summary,
-			Payload: &event.Payload{Kind: pe.PayloadKind, Data: decodePayload(pe.PayloadJSON)},
-		}, true
-	default:
-		return nil, false
-	}
-}
-
+// decodePayload kept for tests or future adapters.
 func decodePayload(raw string) any {
 	if raw == "" {
 		return nil

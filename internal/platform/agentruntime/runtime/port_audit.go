@@ -35,17 +35,28 @@ func (r *Runtime) AuditCluster(ctx context.Context, cluster, queryID string, out
 
 func toAuditProgressEvent(ev event.Event) (agentruntime.ProgressEvent, bool) {
 	switch e := ev.(type) {
+	case event.AgentStart:
+		return agentruntime.ProgressEvent{
+			Type: "agent_start", Message: e.AgentName, Summary: "audit agent started",
+		}, true
 	case event.Phase:
+		if e.Phase == "starting cluster audit" {
+			return agentruntime.ProgressEvent{Type: "phase_start", Message: e.Phase, Summary: e.Summary}, true
+		}
 		return agentruntime.ProgressEvent{Type: "phase_start", Message: e.Phase, Summary: e.Summary}, true
+	case event.ToolCall:
+		return agentruntime.ProgressEvent{Type: "tool_call", Message: e.ToolName}, true
 	case event.ToolDone:
 		return withPayload(agentruntime.ProgressEvent{
 			Type: "phase_done", Message: e.ToolName, Summary: e.Summary,
+			ElapsedMs: int(e.Elapsed.Milliseconds()),
 		}, e.Payload), true
 	case event.ToolFail:
 		return agentruntime.ProgressEvent{Type: "phase_fail", Message: e.ToolName, Detail: e.Err}, true
 	case event.AgentDone:
 		return withPayload(agentruntime.ProgressEvent{
-			Type: "audit_complete", Summary: e.Summary, ElapsedMs: int(e.Duration.Milliseconds()),
+			Type: "audit_complete", Summary: e.Summary,
+			ElapsedMs: int(e.Duration.Milliseconds()),
 		}, e.Payload), true
 	case event.StreamDone:
 		return agentruntime.ProgressEvent{Type: "stream_done"}, true

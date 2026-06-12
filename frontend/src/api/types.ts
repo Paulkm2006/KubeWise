@@ -297,3 +297,111 @@ export interface AuditDerivedState {
   completedCount: number;
   totalPhases: number;
 }
+
+// --- Chat stream ---
+
+export type ChatInteractionKind = 'operation_step' | 'chart_select' | 'deploy_confirm';
+
+export interface ChatToolLine {
+  name: string;
+  step: number;
+  done: boolean;
+  failed: boolean;
+  elapsedMs?: number;
+}
+
+export interface ChatProgressPhase {
+  id: string;
+  label: string;
+  tools: ChatToolLine[];
+  reasoningText: string;
+  done: boolean;
+  expanded: boolean;
+}
+
+export interface ChatPendingInteraction {
+  interactionId: string;
+  kind: ChatInteractionKind;
+  payload: Record<string, unknown>;
+  totalSteps?: number;
+  resolved: boolean;
+}
+
+export interface ChatProgressCard {
+  queryId: string;
+  agentName: string;
+  phases: ChatProgressPhase[];
+  done: boolean;
+  failed: boolean;
+  errorMsg?: string;
+  finalReport: string;
+  durationMs?: number;
+  inTokens?: number;
+  outTokens?: number;
+  detailsExpanded: boolean;
+  awaitingInteraction?: ChatPendingInteraction;
+}
+
+export interface ChatTurn {
+  id: string;
+  role: 'user' | 'assistant' | 'error';
+  text: string;
+  cluster: string;
+  timestamp: string;
+  card?: ChatProgressCard;
+}
+
+export interface OperationStep {
+  step_index: number;
+  operation_type: string;
+  resource_kind: string;
+  resource_name: string;
+  namespace?: string;
+  replicas?: number;
+  action?: string;
+  generated_yaml?: string;
+  description: string;
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+}
+
+export interface ChartCandidate {
+  RepoName?: string;
+  RepoURL?: string;
+  ChartName?: string;
+  DefaultNamespace?: string;
+  Description?: string;
+  LatestVersion?: string;
+  Source?: string;
+  Stars?: number;
+}
+
+export interface DeployPlan {
+  ChartInfo?: ChartCandidate;
+  DefaultValues?: string;
+  CustomValues?: string;
+  ReleaseName?: string;
+  Namespace?: string;
+  IsUpgrade?: boolean;
+  Warnings?: { Severity: string; Message: string }[];
+}
+
+export type ChatSSEEvent =
+  | { type: 'agent_start'; agent_name?: string; query_id?: string }
+  | { type: 'agent_done'; result?: string; duration?: number; in_tokens?: number; out_tokens?: number; query_id?: string }
+  | { type: 'phase'; phase?: string; query_id?: string }
+  | { type: 'tool_call'; tool_name?: string; step?: number; query_id?: string }
+  | { type: 'tool_done'; tool_name?: string; step?: number; elapsed?: number; query_id?: string }
+  | { type: 'tool_fail'; tool_name?: string; step?: number; elapsed?: number; error?: string; query_id?: string }
+  | { type: 'llm_text_delta'; delta?: string; query_id?: string }
+  | { type: 'supervisor'; reason?: string; decision?: string; detail?: string; query_id?: string }
+  | {
+      type: 'interaction_request';
+      interaction_id?: string;
+      kind?: string;
+      payload?: Record<string, unknown>;
+      total_steps?: number;
+      query_id?: string;
+    }
+  | { type: 'stream_done'; query_id?: string }
+  | { type: 'stream_err'; error?: string; query_id?: string };

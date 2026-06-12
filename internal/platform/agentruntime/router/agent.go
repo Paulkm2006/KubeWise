@@ -15,6 +15,7 @@ import (
 	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/operation"
 	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/query"
 	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/security"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/troubleshooting"
 	"github.com/kubewise/kubewise/internal/platform/agentruntime/supervisor"
 	"github.com/kubewise/kubewise/internal/platform/cluster"
 	"github.com/kubewise/kubewise/internal/utils/helm"
@@ -30,9 +31,10 @@ type Agent struct {
 	llmClient      *llm.Client
 	maxSteps       int
 	supervisorCfg  supervisor.Config
-	queryAgent     *query.Agent
-	diagnoseAgent  *diagnose.Agent
-	securityAgent  *security.Agent
+	queryAgent            *query.Agent
+	diagnoseAgent         *diagnose.Agent
+	troubleshootingAgent  *troubleshooting.Agent
+	securityAgent         *security.Agent
 	operationAgent *operation.Agent
 	deployAgent    *deploy.Agent
 	helmClient     *helm.Client
@@ -66,6 +68,10 @@ func New(cfg Config) (*Agent, error) {
 		return nil, fmt.Errorf("初始化查询Agent失败: %w", err)
 	}
 	diagnoseAgent := diagnose.NewAgent(k8sClient, llmClient)
+	troubleshootingAgent, err := troubleshooting.New(k8sClient, llmClient, troubleshooting.WithMaxSteps(maxSteps), troubleshooting.WithSupervisorConfig(supervisorCfg))
+	if err != nil {
+		return nil, fmt.Errorf("初始化故障排查Agent失败: %w", err)
+	}
 	securityAgent, err := security.New(k8sClient, llmClient, security.WithMaxSteps(maxSteps), security.WithSupervisorConfig(supervisorCfg))
 	if err != nil {
 		return nil, fmt.Errorf("初始化安全审计Agent失败: %w", err)
@@ -82,9 +88,10 @@ func New(cfg Config) (*Agent, error) {
 		llmClient:      llmClient,
 		maxSteps:       maxSteps,
 		supervisorCfg:  supervisorCfg,
-		queryAgent:     queryAgent,
-		diagnoseAgent:  diagnoseAgent,
-		securityAgent:  securityAgent,
+		queryAgent:           queryAgent,
+		diagnoseAgent:        diagnoseAgent,
+		troubleshootingAgent: troubleshootingAgent,
+		securityAgent:        securityAgent,
 		operationAgent: operationAgent,
 		deployAgent:    deployAgent,
 		helmClient:     helmClient,
@@ -94,13 +101,23 @@ func New(cfg Config) (*Agent, error) {
 // HandleQuery 处理用户查询
 func (a *Agent) HandleQuery(userQuery string) (string, error) {
 	ctx := context.Background()
+	clusterName, cleanQuery := parseClusterFromQuery(userQuery)
+	k8sClient, err := a.k8sClientForCluster(ctx, clusterName)
+	if err != nil {
+		return "", fmt.Errorf("cluster %q: %w", clusterName, err)
+	}
+	agents, err := a.agentsForRequest(k8sClient)
+	if err != nil {
+		return "", err
+	}
 
 	log.Ctx(context.Background()).Info("agent handle query",
 		zap.String("event", "agent.handle_query"),
+		zap.String("cluster", clusterName),
 	)
 
 	// 1. 意图分类
-	intent, err := a.classifyIntent(ctx, userQuery)
+	intent, err := a.classifyIntent(ctx, cleanQuery)
 	if err != nil {
 		a.logger().Error("intent classification failed", zap.Error(err))
 		log.Ctx(context.Background()).Error("agent handle query failed",
@@ -122,15 +139,16 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 	// 2. 路由到对应的Agent处理
 	switch intent.TaskType {
 	case types.TaskTypeQuery:
-		return a.queryAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		return agents.query.HandleQuery(ctx, cleanQuery, intent.Entities)
 	case types.TaskTypeOperation:
-		return a.operationAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		return agents.operation.HandleQuery(ctx, cleanQuery, intent.Entities)
 	case types.TaskTypeTroubleshooting:
-		return a.diagnoseAgent.HandleQuery(ctx, userQuery, intent.Entities, "sync", nil)
+		agents.troubleshooting.SetEventChannel(nil, "")
+		return agents.troubleshooting.HandleQuery(ctx, cleanQuery, intent.Entities)
 	case types.TaskTypeSecurity:
-		return a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		return agents.security.HandleQuery(ctx, cleanQuery, intent.Entities)
 	case types.TaskTypeDeploy:
-		return a.deployAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		return agents.deploy.HandleQuery(ctx, cleanQuery, intent.Entities)
 	default:
 		log.Ctx(context.Background()).Error("agent handle query failed",
 			zap.String("event", "agent.error"),
@@ -154,9 +172,24 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		_ = se.Emit(ctx, ev)
 	}
 
+	clusterName, cleanQuery := parseClusterFromQuery(userQuery)
+	k8sClient, err := a.k8sClientForCluster(ctx, clusterName)
+	if err != nil {
+		emit(event.StreamErr{QueryID: queryID, Err: fmt.Errorf("cluster %q: %w", clusterName, err)})
+		return err
+	}
+	agents, err := a.agentsForRequest(k8sClient)
+	if err != nil {
+		emit(event.StreamErr{QueryID: queryID, Err: err})
+		return err
+	}
+	if clusterName != "" {
+		emit(event.Phase{QueryID: queryID, Phase: fmt.Sprintf("cluster: %s", clusterName)})
+	}
+
 	// 1. Classify intent.
 	emit(event.Phase{QueryID: queryID, Phase: "classifying intent"})
-	intent, err := a.classifyIntent(ctx, userQuery)
+	intent, err := a.classifyIntent(ctx, cleanQuery)
 	if err != nil {
 		a.logger().Error("intent classification failed", zap.Error(err))
 		emit(event.StreamErr{QueryID: queryID, Err: err})
@@ -177,19 +210,18 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 	emit(event.Phase{QueryID: queryID, Phase: phaseLabel})
 	switch intent.TaskType {
 	case types.TaskTypeQuery:
-		a.queryAgent.SetEventChannel(eventCh, queryID)
-		_, err = a.queryAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		agents.query.SetEventChannel(eventCh, queryID)
+		_, err = agents.query.HandleQuery(ctx, cleanQuery, intent.Entities)
 
 	case types.TaskTypeTroubleshooting:
-		_, err = a.diagnoseAgent.HandleQuery(ctx, userQuery, intent.Entities, queryID, eventCh)
+		agents.troubleshooting.SetEventChannel(eventCh, queryID)
+		_, err = agents.troubleshooting.HandleQuery(ctx, cleanQuery, intent.Entities)
 
 	case types.TaskTypeSecurity:
-		a.securityAgent.SetEventChannel(eventCh, queryID)
-		_, err = a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		agents.security.SetEventChannel(eventCh, queryID)
+		_, err = agents.security.HandleQuery(ctx, cleanQuery, intent.Entities)
 
 	case types.TaskTypeDeploy:
-		// Bridge goroutine: 将 Deploy Agent 的同步 ConfirmHandler / SelectionHandler
-		// 转换为通过 eventCh 发送 RequestEvent → TUI → 接收 DoneMsg → 解阻塞 Agent。
 		bridgeCtx, bridgeCancel := context.WithCancel(ctx)
 		defer bridgeCancel()
 
@@ -204,15 +236,14 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			bridgeCtx: bridgeCtx,
 		}
 
-		a.deployAgent.SetEventChannel(eventCh, queryID)
-		a.deployAgent.SetSelectionHandler(selectionHandler)
-		a.deployAgent.SetConfirmHandler(confirmHandler)
-		_, err = a.deployAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		agents.deploy.SetEventChannel(eventCh, queryID)
+		agents.deploy.SetSelectionHandler(selectionHandler)
+		agents.deploy.SetConfirmHandler(confirmHandler)
+		_, err = agents.deploy.HandleQuery(ctx, cleanQuery, intent.Entities)
 
 	case types.TaskTypeOperation:
 		handler := operation.NewChannelConfirmationHandler()
 
-		// Bridge goroutine: forwards InteractionRequest → operation responses.
 		bridgeCtx, bridgeCancel := context.WithCancel(ctx)
 		defer bridgeCancel()
 		go func() {
@@ -257,9 +288,9 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 			}
 		}()
 
-		a.operationAgent.SetConfirmationHandler(handler)
-		a.operationAgent.SetEventChannel(eventCh, queryID)
-		_, err = a.operationAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		agents.operation.SetConfirmationHandler(handler)
+		agents.operation.SetEventChannel(eventCh, queryID)
+		_, err = agents.operation.HandleQuery(ctx, cleanQuery, intent.Entities)
 
 	default:
 		a.logger().Error("unsupported task type", zap.String("task_type", string(intent.TaskType)))

@@ -2,13 +2,11 @@ package router
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/kubewise/kubewise/internal/platform/agentruntime"
 	"github.com/kubewise/kubewise/internal/platform/agentruntime/diagnose"
 	"github.com/kubewise/kubewise/internal/platform/agentruntime/diagnose/runtime"
 	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
-	"github.com/kubewise/kubewise/internal/platform/cluster"
 	"github.com/kubewise/kubewise/internal/utils/log"
 	"go.uber.org/zap"
 )
@@ -32,7 +30,7 @@ func (a *Agent) DiagnosePodStream(ctx context.Context, params agentruntime.Diagn
 			Data: params,
 		},
 	})
-	k8sClient, err := a.diagnosisK8sClient(ctx, params.Cluster)
+	k8sClient, err := a.k8sClientForCluster(ctx, params.Cluster)
 	if err != nil {
 		log.Ctx(ctx).Error("pod diagnosis cluster selection failed",
 			zap.String("event", "agent.error"),
@@ -65,17 +63,3 @@ func (a *Agent) DiagnosePodStream(ctx context.Context, params agentruntime.Diagn
 	return nil
 }
 
-func (a *Agent) diagnosisK8sClient(ctx context.Context, clusterName string) (*cluster.Client, error) {
-	if clusterName == "" || a.clusterManager == nil {
-		if a.k8sClient == nil {
-			return nil, fmt.Errorf("single-context Kubernetes client is not configured")
-		}
-		return a.k8sClient, nil
-	}
-
-	cc, err := a.clusterManager.GetClient(ctx, clusterName)
-	if err != nil {
-		return nil, err
-	}
-	return cluster.NewClientFromClusterClient(cc)
-}

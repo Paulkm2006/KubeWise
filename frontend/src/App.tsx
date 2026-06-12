@@ -220,7 +220,7 @@ export default function App() {
               onStoreUpdate={() => forceUpdate((n) => n + 1)}
             />
           )}
-          {activeTab === 'chat' && <Chat />}
+          {activeTab === 'chat' && <Chat activeCluster={activeCluster} />}
         </main>
       </div>
 
