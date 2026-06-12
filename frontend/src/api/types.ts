@@ -28,24 +28,37 @@ export interface DiagnosisSummary {
   cluster_display?: string;
   namespace: string;
   pod: string;
-  status: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   created_at: string;
 }
 
+export interface DiagnosisListResponse {
+  diagnoses: DiagnosisSummary[];
+  total: number;
+}
+
 export interface FixAction {
-  type: string;
+  priority?: string;
+  type?: string;
   description: string;
   command?: string;
   risk?: string;
 }
 
 export interface Evidence {
-  num: number;
-  text: string;
+  id?: string;
+  source?: string;
+  signal?: string;
+  strength?: string;
+  summary?: string;
+  detail?: string;
+  num?: number;
+  text?: string;
 }
 
 export interface DiagnosisDetail extends DiagnosisSummary {
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  root_cause?: string;
+  confidence?: string;
   evidence?: Evidence[];
   fix_actions?: FixAction[];
   impact?: string;
@@ -67,13 +80,15 @@ export interface StreamEvent {
   detail?: string;
 }
 
-/** A single diagnosis event from the backend (maps to Go EventRecord) */
 export interface DiagnosisEvent {
   diagnosis_id: string;
   seq_num: number;
   event_type: string;
   message?: string;
+  summary?: string;
   detail?: string;
+  payload_kind?: string;
+  payload_json?: string;
   token_in?: number;
   token_out?: number;
   elapsed_ms?: number;
@@ -87,19 +102,103 @@ export interface DiagnosisTarget {
   pod: string;
 }
 
+export type DiagnosisVerdict = 'confirmed' | 'likely' | 'inconclusive';
+
+export interface DiagnosisRootCause {
+  category?: string;
+  title?: string;
+  confidence_score?: number;
+  confidence_label?: string;
+  summary: string;
+}
+
+export interface StructuredEvidence {
+  id: string;
+  source?: string;
+  signal?: string;
+  strength?: string;
+  summary: string;
+  detail?: string;
+  raw_excerpt?: string;
+}
+
+export interface StructuredHypothesis {
+  id: string;
+  category?: string;
+  title: string;
+  status: string;
+  rationale?: string;
+  supporting_evidence?: string[];
+  refuting_evidence?: string[];
+}
+
+export interface DiagnosisAction {
+  priority?: string;
+  description: string;
+  command?: string;
+  risk?: string;
+}
+
+export interface DiagnosisImpact {
+  severity?: string;
+  description: string;
+}
+
+export interface DiagnosisEnrichment {
+  status: 'full' | 'degraded';
+  degraded_steps?: string[];
+  message?: string;
+}
+
 export interface DiagnosisResult {
-  root_cause: string;
-  confidence?: string;
-  evidence?: { num: number; text: string }[];
-  fix_actions?: { type: string; description: string; command?: string; risk?: string }[];
-  impact?: string;
+  verdict: DiagnosisVerdict;
+  root_cause: DiagnosisRootCause;
+  evidence?: StructuredEvidence[];
+  hypotheses?: StructuredHypothesis[];
+  actions?: DiagnosisAction[];
+  impact?: DiagnosisImpact;
+  limitations?: string[];
+  enrichment?: DiagnosisEnrichment;
+  markdown?: string;
   duration_ms?: number;
 }
 
+export type DiagnosisLifecycleStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
 export interface DiagnosisStatus {
   diagnosis_id: string;
-  status: 'running' | 'completed' | 'failed';
+  status: DiagnosisLifecycleStatus;
+  created_at?: string;
   target: DiagnosisTarget;
   events: DiagnosisEvent[];
   result?: DiagnosisResult;
+}
+
+export const DIAGNOSIS_STAGES = [
+  { id: 'intake', label: 'Intake', detail: 'Normalize target context' },
+  { id: 'collect', label: 'Collect', detail: 'Gather pod state, events, logs' },
+  { id: 'analyze', label: 'Analyze', detail: 'Build evidence and hypotheses' },
+  { id: 'verify', label: 'Verify', detail: 'Check hypotheses against evidence' },
+  { id: 'report', label: 'Report', detail: 'Assemble structured diagnosis' },
+] as const;
+
+export type DiagnosisStageId = (typeof DIAGNOSIS_STAGES)[number]['id'];
+
+export interface DiagnosisStageState {
+  id: DiagnosisStageId;
+  status: 'pending' | 'running' | 'completed';
+  summary?: string;
+}
+
+export interface DiagnosisDerivedState {
+  stages: DiagnosisStageState[];
+  currentStage?: DiagnosisStageId;
+  toolEvents: DiagnosisEvent[];
+  liveEvidenceCount: number;
+  liveHypothesisCount: number;
 }

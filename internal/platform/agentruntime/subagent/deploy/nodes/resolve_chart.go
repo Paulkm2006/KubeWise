@@ -5,9 +5,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
-	chartcore "github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/chart"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/state"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
+	chartcore "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/chart"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/state"
 )
 
 // ResolveChart searches Artifact Hub and applies selection policy.

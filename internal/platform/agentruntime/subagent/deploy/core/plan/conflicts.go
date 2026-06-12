@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
 	"github.com/kubewise/kubewise/internal/utils/helm"
 )
 

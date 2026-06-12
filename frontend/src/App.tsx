@@ -16,14 +16,21 @@ const TAB_CONFIG = [
   { id: 'chat', label: 'Chat', icon: '○' },
 ] as const;
 
+type DiagPhase = 'idle' | 'loading' | 'ready' | 'error';
+
+function podKey(cluster: string, namespace: string, pod: string) {
+  return `${cluster}/${namespace}/${pod}`;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [activeCluster, setActiveCluster] = useState('');
   const [focusCluster, setFocusCluster] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   const [diagnosedPods, setDiagnosedPods] = useState<Set<string>>(new Set());
   const [diagOpen, setDiagOpen] = useState(false);
+  const [diagPhase, setDiagPhase] = useState<DiagPhase>('idle');
+  const [diagError, setDiagError] = useState<string | null>(null);
   const [diagTarget, setDiagTarget] = useState({ cluster: '', namespace: '', pod: '' });
   const storeRef = useRef(new DiagnosisStore());
   const [activeDiagnosis, setActiveDiagnosis] = useState<StoredDiagnosis | null>(null);
@@ -33,6 +40,32 @@ export default function App() {
     const now = new Date();
     const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     setActivities((prev) => [{ type: type as Activity['type'], text, cluster, time }, ...prev.slice(0, 19)]);
+  }, []);
+
+  const storeCallbacks = useCallback(
+    () => ({
+      onUpdate: () => forceUpdate((n) => n + 1),
+      onTerminal: (stored: StoredDiagnosis) => {
+        const key = podKey(stored.target.cluster, stored.target.namespace, stored.target.pod);
+        setDiagnosedPods((prev) => new Set(prev).add(key));
+        addActivity(
+          stored.status === 'failed' ? 'issue' : 'done',
+          `${stored.target.pod} diagnosis ${stored.status}`,
+          stored.target.cluster,
+        );
+      },
+    }),
+    [addActivity],
+  );
+
+  const clearDoneBadge = useCallback((cluster: string, namespace: string, pod: string) => {
+    const key = podKey(cluster, namespace, pod);
+    setDiagnosedPods((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
   }, []);
 
   const handleTabChange = (tab: string) => {
@@ -45,45 +78,107 @@ export default function App() {
     addActivity('info', `Switched to ${name}`, name);
   };
 
-  const handleRefresh = () => {
-    setRefreshKey((k) => k + 1);
-    addActivity('info', 'Views refreshed', activeCluster);
+  const openDiagnosisById = async (id: string) => {
+    setDiagOpen(true);
+    setDiagPhase('loading');
+    setDiagError(null);
+    setActiveDiagnosis(null);
+
+    try {
+      const status = await api.diagnoses.get(id);
+      const { cluster, namespace, pod } = status.target;
+      clearDoneBadge(cluster, namespace, pod);
+      setDiagTarget({ cluster, namespace, pod });
+      const stored = storeRef.current.restoreFromStatus(status, storeCallbacks());
+      setActiveDiagnosis(stored);
+      setDiagPhase('ready');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setDiagPhase('error');
+      setDiagError(msg);
+      addActivity('issue', `Failed to open diagnosis: ${msg}`);
+    }
   };
 
-  const handleDiagnose = async (cluster: string, namespace: string, pod: string) => {
-    addActivity('pending', `Diagnosing ${pod}...`, cluster);
+  const openDiagnosisForPod = async (cluster: string, namespace: string, pod: string) => {
+    clearDoneBadge(cluster, namespace, pod);
+    setDiagTarget({ cluster, namespace, pod });
+    setDiagOpen(true);
+    setDiagPhase('loading');
+    setDiagError(null);
+    setActiveDiagnosis(null);
 
     const target: DiagnosisTarget = { cluster, cluster_display: cluster, namespace, pod };
-    setDiagTarget({ cluster, namespace, pod });
+    const callbacks = storeCallbacks();
 
-    // Check if we already have a running diagnosis for this pod
-    const existing = storeRef.current.findExisting(target);
-    if (existing) {
-      setActiveDiagnosis(existing);
-      setDiagOpen(true);
+    try {
+      const latest = await api.diagnoses.latest({ cluster, namespace, pod });
+      const stored = storeRef.current.restoreFromStatus(latest, callbacks);
+      setActiveDiagnosis(stored);
+      setDiagPhase('ready');
       return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      if (!msg.includes('404')) {
+        setDiagPhase('error');
+        setDiagError(msg);
+        addActivity('issue', `Diagnosis lookup failed for ${pod}: ${msg}`, cluster);
+        return;
+      }
     }
 
     try {
+      addActivity('pending', `Diagnosing ${pod}...`, cluster);
       const res = await api.diagnoses.create(cluster, namespace, pod);
-      storeRef.current.add(res.diagnosis_id, target, () => forceUpdate(n => n + 1));
-      setActiveDiagnosis(storeRef.current.get(res.diagnosis_id) || null);
-      setDiagOpen(true);
+      const stored = storeRef.current.add(res.diagnosis_id, target, callbacks);
+      setActiveDiagnosis(stored);
+      setDiagPhase('ready');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
+      setDiagPhase('error');
+      setDiagError(msg);
       addActivity('issue', `Diagnosis failed for ${pod}: ${msg}`, cluster);
+    }
+  };
+
+  const handleRerun = async () => {
+    if (!activeDiagnosis) return;
+    const { cluster, namespace, pod } = activeDiagnosis.target;
+    clearDoneBadge(cluster, namespace, pod);
+    setDiagPhase('loading');
+    setDiagError(null);
+
+    const target: DiagnosisTarget = {
+      cluster,
+      cluster_display: activeDiagnosis.target.cluster_display || cluster,
+      namespace,
+      pod,
+    };
+    const callbacks = storeCallbacks();
+
+    try {
+      if (activeDiagnosis.status === 'running') {
+        await api.diagnoses.cancel(activeDiagnosis.id);
+        storeRef.current.closeSSE(activeDiagnosis.id);
+      }
+
+      addActivity('pending', `Re-diagnosing ${pod}...`, cluster);
+      const res = await api.diagnoses.create(cluster, namespace, pod);
+      const stored = storeRef.current.add(res.diagnosis_id, target, callbacks);
+      setActiveDiagnosis(stored);
+      setDiagPhase('ready');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setDiagPhase('error');
+      setDiagError(msg);
+      addActivity('issue', `Re-diagnosis failed for ${pod}: ${msg}`, cluster);
     }
   };
 
   const handleDiagClose = () => {
     setDiagOpen(false);
-    // SSE stays alive in store — don't close it
-  };
-
-  const handleDiagDone = () => {
-    if (!activeDiagnosis) return;
-    const key = `${activeDiagnosis.target.cluster}/${activeDiagnosis.target.namespace}/${activeDiagnosis.target.pod}`;
-    setDiagnosedPods((prev) => new Set(prev).add(key));
+    setDiagPhase('idle');
+    setDiagError(null);
   };
 
   return (
@@ -95,8 +190,8 @@ export default function App() {
         onTabChange={handleTabChange}
         tabs={TAB_CONFIG}
         activeCluster={activeCluster}
-        onRefresh={handleRefresh}
         onClusterChange={handleClusterChange}
+        onActivity={addActivity}
       />
 
       <div className="flex flex-1 min-h-0">
@@ -111,7 +206,8 @@ export default function App() {
               focusCluster={focusCluster}
               onClusterChange={handleClusterChange}
               onFocusChange={setFocusCluster}
-              onDiagnose={handleDiagnose}
+              onDiagnose={openDiagnosisForPod}
+              onOpenDiagnosis={openDiagnosisById}
               diagnosedPods={diagnosedPods}
             />
           )}
@@ -122,12 +218,12 @@ export default function App() {
 
       <DiagnosisOverlay
         open={diagOpen}
+        phase={diagPhase}
+        error={diagError}
+        target={diagTarget}
         diagnosis={activeDiagnosis}
         onClose={handleDiagClose}
-        onActivity={(type, text, cluster) => {
-          addActivity(type, text, cluster);
-          if (type === 'done') handleDiagDone();
-        }}
+        onRerun={handleRerun}
       />
     </div>
   );

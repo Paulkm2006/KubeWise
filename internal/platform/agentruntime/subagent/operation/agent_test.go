@@ -3,6 +3,8 @@ package operation
 import (
 	"context"
 	"testing"
+
+	toolv2 "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/v2"
 )
 
 func TestStepToToolCall(t *testing.T) {
@@ -132,12 +134,12 @@ func TestExecuteConfirmPath(t *testing.T) {
 	handler := NewChannelConfirmationHandler()
 	called := false
 	writeReg := &mockRegistry{
-		executeFn: func(name string, args map[string]any) (string, error) {
+		executeFn: func(name string, args map[string]any) (toolv2.ToolResult, error) {
 			called = true
 			if name != "scale_resource" {
 				t.Errorf("expected scale_resource, got %s", name)
 			}
-			return "ok", nil
+			return toolv2.TextResult(toolv2.TextMeta(name, "v2", "test tool", nil, toolv2.CapabilityWrite, toolv2.RiskHigh, toolv2.ConfirmRequired), "ok"), nil
 		},
 	}
 
@@ -172,9 +174,9 @@ func TestExecuteSkipPath(t *testing.T) {
 	handler := NewChannelConfirmationHandler()
 	called := false
 	writeReg := &mockRegistry{
-		executeFn: func(name string, args map[string]any) (string, error) {
+		executeFn: func(name string, args map[string]any) (toolv2.ToolResult, error) {
 			called = true
-			return "ok", nil
+			return toolv2.TextResult(toolv2.TextMeta(name, "v2", "test tool", nil, toolv2.CapabilityWrite, toolv2.RiskHigh, toolv2.ConfirmRequired), "ok"), nil
 		},
 	}
 
@@ -203,18 +205,22 @@ func TestExecuteSkipPath(t *testing.T) {
 
 // mockRegistry satisfies the writeRegistryI interface.
 type mockRegistry struct {
-	executeFn func(name string, args map[string]any) (string, error)
+	executeFn func(name string, args map[string]any) (toolv2.ToolResult, error)
 }
 
-func (m *mockRegistry) GetTool(name string) (toolExecutor, bool) {
+func (m *mockRegistry) Get(name string) (toolv2.Tool, bool) {
 	return &mockTool{name: name, fn: m.executeFn}, true
 }
 
 type mockTool struct {
 	name string
-	fn   func(name string, args map[string]any) (string, error)
+	fn   func(name string, args map[string]any) (toolv2.ToolResult, error)
 }
 
-func (m *mockTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+func (m *mockTool) Meta() toolv2.ToolMeta {
+	return toolv2.TextMeta(m.name, "v2", "test tool", nil, toolv2.CapabilityWrite, toolv2.RiskHigh, toolv2.ConfirmRequired)
+}
+
+func (m *mockTool) Execute(ctx context.Context, args map[string]any) (toolv2.ToolResult, error) {
 	return m.fn(m.name, args)
 }

@@ -7,14 +7,14 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/router/types"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/values"
-	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
-	"github.com/kubewise/kubewise/internal/agent/tool"
-	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/router/types"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/plan"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/values"
+	deploytypes "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/types"
+	toolv2 "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/v2"
+	"github.com/kubewise/kubewise/internal/platform/cluster"
 	"github.com/kubewise/kubewise/internal/utils/helm"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 )
@@ -43,7 +43,7 @@ type State struct {
 	LLM         *llm.Client
 	Helm        *helm.Client
 	K8s         *cluster.Client
-	Tools       *tool.Registry
+	Tools       *toolv2.Registry
 	Confirm     ConfirmHandler
 	Select      SelectionHandler
 	BuildReport func(ctx context.Context, rel *helm.Release, chart *catalog.ChartInfo, namespace, releaseName string) string
@@ -126,7 +126,7 @@ type Deps struct {
 	LLM                   *llm.Client
 	Helm                  *helm.Client
 	K8s                   *cluster.Client
-	Tools                 *tool.Registry
+	Tools                 *toolv2.Registry
 	Confirm               ConfirmHandler
 	Select                SelectionHandler
 	BuildReport           func(ctx context.Context, rel *helm.Release, chart *catalog.ChartInfo, namespace, releaseName string) string

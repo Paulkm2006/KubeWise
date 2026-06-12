@@ -8,18 +8,17 @@ import (
 	"github.com/kubewise/kubewise/internal/config"
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
-	routertypes "github.com/kubewise/kubewise/internal/agent/router/types"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/report"
-	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
-	"github.com/kubewise/kubewise/internal/agent/tool"
-	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
+	routertypes "github.com/kubewise/kubewise/internal/platform/agentruntime/router/types"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/report"
+	deploytypes "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/types"
+	toolquery "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/query"
+	tooltroubleshooting "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/troubleshooting"
+	toolv2 "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/v2"
+	"github.com/kubewise/kubewise/internal/platform/cluster"
 	"github.com/kubewise/kubewise/internal/utils/helm"
 	"github.com/kubewise/kubewise/internal/utils/llm"
-
-	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/query"
-	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/troubleshooting"
 )
 
 // DeployConfirmationHandler presents a deploy plan and waits for user decision.
@@ -41,7 +40,7 @@ type Agent struct {
 	eventCh          chan<- event.Event
 	queryID          string
 	log              *zap.Logger
-	toolRegistry     *tool.Registry
+	toolRegistry     *toolv2.Registry
 	k8sClient        *cluster.Client
 }
 
@@ -89,11 +88,9 @@ func WithEventChannel(ch chan<- event.Event, queryID string) Option {
 
 // New creates a Deploy Agent.
 func New(llmClient *llm.Client, helmClient *helm.Client, k8sClient *cluster.Client, opts ...Option) *Agent {
-	toolDep := tool.ToolDependency{K8sClient: k8sClient}
-	registry, err := tool.LoadGlobalRegistryByCategory(toolDep, "")
-	if err != nil {
-		registry, _ = tool.LoadGlobalRegistryByCategory(tool.ToolDependency{}, "none")
-	}
+	registry := toolv2.NewRegistry()
+	_ = toolquery.RegisterQueryTools(registry, k8sClient)
+	_ = tooltroubleshooting.RegisterTools(registry, k8sClient)
 
 	a := &Agent{
 		llmClient:    llmClient,

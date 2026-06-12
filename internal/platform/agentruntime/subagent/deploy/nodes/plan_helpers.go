@@ -6,10 +6,10 @@ import (
 
 	"go.uber.org/zap"
 
-	chartcore "github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/chart"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/state"
-	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
+	chartcore "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/chart"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/plan"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/state"
+	deploytypes "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/types"
 )
 
 func validatePlan(st *state.State, stage string) error {

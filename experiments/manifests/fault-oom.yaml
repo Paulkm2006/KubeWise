@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fault-oom
+  labels:
+    experiment: oom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      experiment: oom
+  template:
+    metadata:
+      labels:
+        experiment: oom
+    spec:
+      containers:
+        - name: stress
+          image: progrium/stress:latest
+          command:
+            - stress
+            - --vm
+            - "1"
+            - --vm-bytes
+            - "300M"
+            - --vm-hang
+            - "0"
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              cpu: 50m
+              memory: 50Mi
+      restartPolicy: Always

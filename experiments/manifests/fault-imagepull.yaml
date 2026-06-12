@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fault-imagepull
+  labels:
+    experiment: imagepull
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      experiment: imagepull
+  template:
+    metadata:
+      labels:
+        experiment: imagepull
+    spec:
+      containers:
+        - name: app
+          image: nonexistent.example.com/fake-app:v99.9.9
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 50m
+              memory: 32Mi

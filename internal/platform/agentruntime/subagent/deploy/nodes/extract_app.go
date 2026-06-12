@@ -5,9 +5,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/appname"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/state"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/appname"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/plan"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/state"
 )
 
 // ExtractApp derives the deployment target name from entities or query text.

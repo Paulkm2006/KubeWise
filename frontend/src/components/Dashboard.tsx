@@ -8,6 +8,7 @@ interface DashboardProps {
   onClusterChange: (name: string) => void;
   onFocusChange: (focus: string | null) => void;
   onDiagnose: (cluster: string, namespace: string, pod: string) => Promise<void>;
+  onOpenDiagnosis: (id: string) => void;
   diagnosedPods: Set<string>;
 }
 
@@ -37,13 +38,13 @@ export default function Dashboard({
   onFocusChange,
   onClusterChange,
   onDiagnose,
+  onOpenDiagnosis,
   diagnosedPods
 }: DashboardProps) {
   const [page, setPage] = useState(1);
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
   const [allIssues, setAllIssues] = useState<Issue[]>([]);
   const [diagnoses, setDiagnoses] = useState<DiagnosisSummary[]>([]);
-  const [diagnosingPods, setDiagnosingPods] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -154,19 +155,8 @@ export default function Dashboard({
     onClusterChange(name);
   };
 
-  const handleDiagnoseClick = async (cluster: string, namespace: string, pod: string) => {
-    const key = `${cluster}/${namespace}/${pod}`;
-    if (diagnosedPods.has(key) || diagnosingPods.has(key)) return;
-    setDiagnosingPods((prev) => new Set(prev).add(key));
-    try {
-      await onDiagnose(cluster, namespace, pod);
-    } finally {
-      setDiagnosingPods((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-    }
+  const handleDiagnoseClick = (cluster: string, namespace: string, pod: string) => {
+    void onDiagnose(cluster, namespace, pod);
   };
 
   return (
@@ -318,7 +308,6 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                 <tbody>
                   {pagedIssues.map((iss, i) => {
                     const isDone = diagnosedPods.has(`${iss.cluster}/${iss.namespace}/${iss.pod}`);
-                    const isDiagnosing = diagnosingPods.has(`${iss.cluster}/${iss.namespace}/${iss.pod}`);
                     return (
                       <tr key={`${iss.cluster}/${iss.namespace}/${iss.pod}-${i}`} className="group border-t border-border/30 hover:bg-hover/50 transition-colors">
                         <td className="py-3 px-4">
@@ -333,16 +322,13 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                         <td className="py-3 px-4 text-right">
                           <button
                             onClick={() => handleDiagnoseClick(iss.cluster, iss.namespace, iss.pod)}
-                            disabled={isDone || isDiagnosing}
                             className={`text-xs font-medium px-3 py-1.5 rounded-sm border transition-colors cursor-pointer
                               ${isDone
-                                ? 'border-green/30 text-green bg-green-dim/10'
-                                : isDiagnosing
-                                ? 'border-accent/30 text-accent bg-accent-dim/10'
+                                ? 'border-green/30 text-green bg-green-dim/10 hover:bg-green-dim/20'
                                 : 'border-border hover:text-accent hover:border-accent/40 text-text-muted bg-transparent'
                               }`}
                           >
-                            {isDone ? '✓ Done' : isDiagnosing ? '⟳ ...' : 'Diagnose →'}
+                            {isDone ? '✓ Done' : 'Diagnose →'}
                           </button>
                         </td>
                       </tr>
@@ -362,20 +348,42 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
               <h3 className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-3">Recent Diagnoses</h3>
               <div className="space-y-2 max-h-[240px] overflow-y-auto">
                 {diagnoses.slice(0, 10).map((d) => (
-                  <div key={d.id} className="flex items-start gap-2 px-3 py-2 rounded-sm hover:bg-hover/50 transition-colors">
-                    <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${d.resolved ? 'bg-green' : 'bg-amber'}`} />
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => onOpenDiagnosis(d.id)}
+                    className="w-full flex items-start gap-2 px-3 py-2 rounded-sm text-left
+                               hover:bg-hover/60 hover:border-accent/20 border border-transparent
+                               transition-colors cursor-pointer bg-transparent group"
+                  >
+                    <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
+                      d.status === 'completed' ? 'bg-green' :
+                      d.status === 'failed' ? 'bg-red' :
+                      d.status === 'cancelled' ? 'bg-text-muted' :
+                      'bg-amber'
+                    }`} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm text-text-secondary leading-snug truncate">
+                      <p className="text-sm text-text-secondary leading-snug truncate group-hover:text-text transition-colors">
                         <span className="font-mono text-xs text-text-muted">{d.cluster_display || d.cluster_fingerprint.slice(0, 8)}</span>
                         {' '}{d.pod}
                       </p>
-                      <p className="text-xs text-text-muted truncate mt-0.5">{d.root_cause || 'Pending...'}</p>
-                      <p className="text-[10px] text-text-muted font-mono mt-0.5">{d.created_at}</p>
+                      <p className="text-xs text-text-muted truncate mt-0.5 capitalize">{d.status}</p>
+                      <p className="text-[10px] text-text-muted font-mono mt-0.5">
+                        {typeof d.created_at === 'string' ? new Date(d.created_at).toLocaleString() : d.created_at}
+                      </p>
                     </div>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-mono shrink-0 ${d.confidence === 'high' ? 'text-green bg-green-dim/20' : 'text-amber bg-amber-dim/20'}`}>
-                      {d.confidence}
+                    <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5">
+                      →
                     </span>
-                  </div>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-mono shrink-0 ${
+                      d.status === 'completed' ? 'text-green bg-green-dim/20' :
+                      d.status === 'failed' ? 'text-red bg-red-dim/20' :
+                      d.status === 'cancelled' ? 'text-text-muted bg-elevated' :
+                      'text-amber bg-amber-dim/20'
+                    }`}>
+                      {d.status}
+                    </span>
+                  </button>
                 ))}
               </div>
             </div>

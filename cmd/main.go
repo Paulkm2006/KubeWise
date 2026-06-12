@@ -8,10 +8,10 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/session"
-	"github.com/kubewise/kubewise/internal/agent/supervisor"
 	"github.com/kubewise/kubewise/internal/api"
 	"github.com/kubewise/kubewise/internal/config"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/runtime"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/supervisor"
 	"github.com/kubewise/kubewise/internal/tui"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/utils/log"
@@ -44,7 +44,7 @@ var chatCmd = &cobra.Command{
 		}
 		userQuery := strings.Join(args, " ")
 
-		sess, err := session.New(session.Config{
+		sess, err := runtime.New(runtime.Config{
 			LLM: llm.Config{
 				Model:   config.Global.LLM.Model,
 				APIKey:  config.Global.LLM.APIKey,
@@ -83,7 +83,7 @@ var tuiCmd = &cobra.Command{
 	  Tab       切换焦点（侧边栏 ↔ 输入框）
 	  /resume   重发被中断的消息`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		sess, err := session.New(session.Config{
+		sess, err := runtime.New(runtime.Config{
 			LLM: llm.Config{
 				Model:   config.Global.LLM.Model,
 				APIKey:  config.Global.LLM.APIKey,

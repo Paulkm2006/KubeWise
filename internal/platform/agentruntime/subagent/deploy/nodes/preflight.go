@@ -5,9 +5,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/state"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/plan"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/state"
 )
 
 const toolPreflight = "helm preflight"

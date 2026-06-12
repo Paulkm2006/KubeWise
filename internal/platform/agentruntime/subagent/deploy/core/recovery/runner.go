@@ -8,11 +8,11 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/plan"
-	"github.com/kubewise/kubewise/internal/agent/subagent/troubleshooting"
-	"github.com/kubewise/kubewise/internal/agent/tool"
-	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/loop"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/plan"
+	toolv2 "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/v2"
+	"github.com/kubewise/kubewise/internal/platform/cluster"
 	"github.com/kubewise/kubewise/internal/utils/helm"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 )
@@ -42,7 +42,7 @@ type Result struct {
 
 // LLMClient is the minimal LLM interface for recovery.
 type LLMClient interface {
-	ChatCompletion(ctx context.Context, messages []llm.Message, functions []llm.FunctionDefinition, onChunk func(llm.StreamChunk)) (*llm.Message, error)
+	llm.ClientPort
 }
 
 // HelmClient reads release status for diagnostics snapshots.
@@ -63,7 +63,7 @@ type Runner struct {
 	QueryID string
 	LLM     LLMClient
 	Helm    HelmClient
-	Tools   *tool.Registry
+	Tools   *toolv2.Registry
 	Log     Logger
 	K8s     *cluster.Client
 }
@@ -150,12 +150,8 @@ Namespace: %s
 %s`, failureErr.Error(), in.CurrentValues))
 	}
 
-	tools := troubleshooting.RecoveryToolDefinitions(r.Tools)
+	tools := r.Tools.Definitions(r.Tools.Names())
 	tools = append(tools, submitReportFn, submitValuesFn)
-
-	currentValues := in.CurrentValues
-	lastToolBatchSig := ""
-	toolRepeatStreak := 0
 
 	r.logInfo("recovery loop started",
 		zap.String("app", in.AppName),
@@ -164,70 +160,64 @@ Namespace: %s
 		zap.Error(failureErr),
 	)
 
-	for step := 0; step < maxRecoverSteps; step++ {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-
-		r.logDebug("recovery step", zap.Int("step", step+1), zap.Int("messages", recoveryCtx.Len()))
-
-		resp, err := r.LLM.ChatCompletion(ctx, recoveryCtx.Messages(), tools, nil)
-		if err != nil {
-			r.logError("recover LLM call failed", zap.Int("step", step+1), zap.Error(err))
-			return nil, fmt.Errorf("诊断修复过程出错: %w", err)
-		}
-
-		if len(resp.ToolCalls) == 0 {
-			r.logDebug("recovery LLM returned text only", zap.Int("step", step+1), zap.Int("content_len", len(resp.Content)))
-			recoveryCtx.AppendAssistant(llm.Message{Role: "assistant", Content: resp.Content})
-			continue
-		}
-
-		sig := summarizeToolCallsForLoopDetect(resp.ToolCalls)
-		if sig != "" && sig == lastToolBatchSig {
-			toolRepeatStreak++
-			if toolRepeatStreak >= recoveryLoopRepeatsAbort {
-				r.logWarn("recovery repeated identical tool batches", zap.Int("steps", toolRepeatStreak))
-				return &Result{
-					Action:   ActionAbort,
-					Reason:   "诊断循环卡住",
-					Details:  fmt.Sprintf("连续 %d 次模型发起了相同的工具调用组合，可能存在循环；诊断已中止。请换一种方式描述问题或手动检查集群。", toolRepeatStreak),
-					Messages: recoveryCtx.Messages(),
-				}, nil
-			}
-		} else if sig != "" {
-			lastToolBatchSig = sig
-			toolRepeatStreak = 1
-		}
-
-		recoveryCtx.AppendAssistant(llm.Message{Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls})
-
-		for _, funcCall := range resp.ToolCalls {
-			r.logInfo("recovery tool call", zap.String("tool", funcCall.Function.Name), zap.Int("step", step+1))
-			toolResult, done, result, err := r.handleToolCall(
-				ctx, funcCall, in.Chart, in.DefaultValues, &currentValues,
-				in.TargetNS, in.AppName,
-			)
-			if err != nil {
-				return nil, err
-			}
-			if done {
-				if result != nil {
-					result.Messages = recoveryCtx.Messages()
+	currentValues := in.CurrentValues
+	var terminalResult *Result
+	lastToolBatchSig := ""
+	toolRepeatStreak := 0
+	loopResult, err := loop.Run(ctx, loop.Config{
+		QueryID:        r.QueryID,
+		LLM:            r.LLM,
+		Messages:       recoveryCtx.Messages(),
+		Tools:          tools,
+		Executor:       toolv2.NewExecutor(r.Tools),
+		Policy:         toolv2.ExecutePolicy{AllowedCapabilities: []toolv2.Capability{toolv2.CapabilityRead, toolv2.CapabilityCompute}, AllowedTools: r.Tools.Names(), MaxOutputBytes: maxRecoveryToolOutput},
+		MaxSteps:       maxRecoverSteps,
+		ContinueOnText: true,
+		RepeatCheck: func(step int, calls []llm.ToolCall) error {
+			sig := summarizeToolCallsForLoopDetect(calls)
+			if sig != "" && sig == lastToolBatchSig {
+				toolRepeatStreak++
+				if toolRepeatStreak >= recoveryLoopRepeatsAbort {
+					r.logWarn("recovery repeated identical tool batches", zap.Int("steps", toolRepeatStreak))
+					return fmt.Errorf("连续 %d 次模型发起了相同的工具调用组合，可能存在循环；诊断已中止。请换一种方式描述问题或手动检查集群。", toolRepeatStreak)
 				}
-				return result, nil
+			} else if sig != "" {
+				lastToolBatchSig = sig
+				toolRepeatStreak = 1
 			}
-			recoveryCtx.AppendToolResult(funcCall.ID, toolResult)
-		}
+			return nil
+		},
+		TerminalTools: map[string]loop.TerminalHandler{
+			"submit_report": func(_ context.Context, call llm.ToolCall, messages []llm.Message) (loop.TerminalResult, error) {
+				args := call.Function.Arguments
+				reason, _ := args["reason"].(string)
+				details, _ := args["details"].(string)
+				terminalResult = &Result{Action: ActionAbort, Reason: reason, Details: details, Messages: messages}
+				return loop.TerminalResult{Done: true, Data: terminalResult, Content: details}, nil
+			},
+			"submit_values": func(_ context.Context, call llm.ToolCall, messages []llm.Message) (loop.TerminalResult, error) {
+				toolResult, done, result, err := r.handleSubmitValues(call, in.Chart, in.DefaultValues, &currentValues, in.TargetNS, in.AppName)
+				if err != nil {
+					return loop.TerminalResult{}, err
+				}
+				if done {
+					result.Messages = messages
+					terminalResult = result
+					return loop.TerminalResult{Done: true, Data: result, Content: result.Summary}, nil
+				}
+				return loop.TerminalResult{ToolMessage: toolResult}, nil
+			},
+		},
+	})
+	if err != nil {
+		r.logWarn("recovery loop ended with error", zap.Error(err))
+		return &Result{Action: ActionAbort, Reason: "诊断达到最大步数", Details: err.Error(), Messages: loopResult.Messages}, nil
 	}
-
+	if terminalResult != nil {
+		return terminalResult, nil
+	}
 	r.logWarn("recovery loop exhausted", zap.String("app", in.AppName))
-	return &Result{
-		Action:   ActionAbort,
-		Reason:   "诊断达到最大步数",
-		Details:  fmt.Sprintf("诊断修复已达到最大步数（%d步），未能完成修复。请手动检查集群状态。", maxRecoverSteps),
-		Messages: recoveryCtx.Messages(),
-	}, nil
+	return &Result{Action: ActionAbort, Reason: "诊断达到最大步数", Details: fmt.Sprintf("诊断修复已达到最大步数（%d步），未能完成修复。请手动检查集群状态。", maxRecoverSteps), Messages: loopResult.Messages}, nil
 }
 
 func summarizeToolCallsForLoopDetect(calls []llm.ToolCall) string {
@@ -292,13 +282,14 @@ func (r *Runner) handleToolCall(
 		return r.handleSubmitValues(funcCall, chartInfo, defaultValues, currentValues, targetNS, appName)
 
 	default:
-		t, ok := r.Tools.GetTool(name)
-		if !ok {
-			r.logWarn("recovery unknown tool", zap.String("tool", name))
-			return fmt.Sprintf("未知工具: %s（仅允许诊断类只读工具）", name), false, nil, nil
-		}
+		exec := toolv2.NewExecutor(r.Tools)
 		out, execErr := r.runDiagnosticTool(ctx, name, func(ctx context.Context) (string, error) {
-			return t.Execute(ctx, funcCall.Function.Arguments)
+			result, err := exec.Execute(ctx, name, funcCall.Function.Arguments, toolv2.ExecutePolicy{
+				AllowedCapabilities: []toolv2.Capability{toolv2.CapabilityRead},
+				AllowedTools:        r.Tools.Names(),
+				MaxOutputBytes:      maxRecoveryToolOutput,
+			})
+			return toolv2.ToolResultToLLMMessage(result), err
 		})
 		if execErr != nil {
 			r.logWarn("recovery diagnostic tool failed", zap.String("tool", name), zap.Error(execErr))

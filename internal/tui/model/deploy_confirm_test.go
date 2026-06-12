@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
+	deploytypes "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/types"
 	"github.com/kubewise/kubewise/internal/tui/model"
 )
 

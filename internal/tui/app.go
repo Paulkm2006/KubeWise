@@ -8,13 +8,14 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/router"
-	"github.com/kubewise/kubewise/internal/agent/session"
-	"github.com/kubewise/kubewise/internal/agent/session/store"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
 	"github.com/kubewise/kubewise/internal/config"
+	"github.com/kubewise/kubewise/internal/conversation/domain"
+	"github.com/kubewise/kubewise/internal/conversation/infrastructure/filestore"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/router"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/runtime"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
+	deploytypes "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/types"
 	"github.com/kubewise/kubewise/internal/tui/model"
 	tuistyles "github.com/kubewise/kubewise/internal/tui/styles"
 )
@@ -41,9 +42,9 @@ type App struct {
 	streamChartResp         chan<- json.RawMessage // chart_select InteractionRequest
 	streamChartCandidates   []catalog.ChartInfo
 
-	sessions []*session.Conversation
-	active   *session.Conversation
-	store    store.Store
+	sessions []*domain.Conversation
+	active   *domain.Conversation
+	store    filestore.Store
 
 	eventCh  chan event.Event
 	cancelFn context.CancelFunc
@@ -59,8 +60,8 @@ type App struct {
 }
 
 // NewApp creates the App, loading recent sessions from disk.
-func NewApp(sess *session.Session) (*App, error) {
-	store, err := store.NewFileStore(config.Global.DataDir)
+func NewApp(sess *runtime.Runtime) (*App, error) {
+	store, err := filestore.NewFileStore(config.Global.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("init session store: %w", err)
 	}
@@ -70,7 +71,7 @@ func NewApp(sess *session.Session) (*App, error) {
 		recentSessions = nil
 	}
 
-	activeSession := session.NewConversation()
+	activeSession := domain.NewConversation()
 
 	return &App{
 		sidebar:     model.NewSidebarModel(),
@@ -411,11 +412,11 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 
 	// Set session title from first message
 	if len(a.active.Messages) == 0 {
-		a.active.Title = session.TitleFromFirstMessage(text)
+		a.active.Title = domain.TitleFromFirstMessage(text)
 	}
 
 	a.chat.AddUserMessage(text)
-	a.active.Messages = append(a.active.Messages, session.Message{
+	a.active.Messages = append(a.active.Messages, domain.Message{
 		Role:      "user",
 		Content:   text,
 		Timestamp: a.active.UpdatedAt,
@@ -451,15 +452,15 @@ func (a *App) handleSubmit(text string) (tea.Model, tea.Cmd) {
 
 func (a *App) newSession() {
 	a.saveSession()
-	a.active = session.NewConversation()
+	a.active = domain.NewConversation()
 	a.chat = model.NewChatModel(a.width-tuistyles.SidebarWidth, a.height-5)
 	if !containsSession(a.sessions, a.active.ID) {
-		a.sessions = append([]*session.Conversation{a.active}, a.sessions...)
+		a.sessions = append([]*domain.Conversation{a.active}, a.sessions...)
 	}
 	a.sidebar.SetSessions(a.sessions)
 }
 
-func (a *App) loadSession(s *session.Conversation) {
+func (a *App) loadSession(s *domain.Conversation) {
 	a.saveSession()
 	a.active = s
 	a.chat.SetMessages(s.Messages)
@@ -543,7 +544,7 @@ func (a App) View() string {
 }
 
 // Run starts the bubbletea program.
-func Run(sess *session.Session) error {
+func Run(sess *runtime.Runtime) error {
 	app, err := NewApp(sess)
 	if err != nil {
 		return err
@@ -566,7 +567,7 @@ func Run(sess *session.Session) error {
 	return err
 }
 
-func containsSession(sessions []*session.Conversation, id string) bool {
+func containsSession(sessions []*domain.Conversation, id string) bool {
 	for _, s := range sessions {
 		if s.ID == id {
 			return true

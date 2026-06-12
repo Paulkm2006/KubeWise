@@ -7,16 +7,16 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/router/types"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy"
-	"github.com/kubewise/kubewise/internal/agent/subagent/operation"
-	"github.com/kubewise/kubewise/internal/agent/subagent/query"
-	"github.com/kubewise/kubewise/internal/agent/subagent/security"
-	"github.com/kubewise/kubewise/internal/agent/subagent/troubleshooting"
-	"github.com/kubewise/kubewise/internal/agent/supervisor"
-	"github.com/kubewise/kubewise/internal/cluster"
 	"github.com/kubewise/kubewise/internal/config"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/diagnose"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/router/types"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/operation"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/query"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/security"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/supervisor"
+	"github.com/kubewise/kubewise/internal/platform/cluster"
 	"github.com/kubewise/kubewise/internal/utils/helm"
 	"github.com/kubewise/kubewise/internal/utils/llm"
 	"github.com/kubewise/kubewise/internal/utils/log"
@@ -25,17 +25,26 @@ import (
 
 // Agent 路由Agent
 type Agent struct {
-	k8sClient            *cluster.Client
-	llmClient            *llm.Client
-	maxSteps             int
-	supervisorCfg        supervisor.Config
-	queryAgent           *query.Agent
-	troubleshootingAgent *troubleshooting.Agent
-	securityAgent        *security.Agent
-	operationAgent       *operation.Agent
-	deployAgent          *deploy.Agent
-	helmClient           *helm.Client
-	streamMu             sync.Mutex
+	k8sClient      *cluster.Client
+	clusterManager *cluster.ClusterClientManager
+	llmClient      *llm.Client
+	maxSteps       int
+	supervisorCfg  supervisor.Config
+	queryAgent     *query.Agent
+	diagnoseAgent  *diagnose.Agent
+	securityAgent  *security.Agent
+	operationAgent *operation.Agent
+	deployAgent    *deploy.Agent
+	helmClient     *helm.Client
+	streamMu       sync.Mutex
+}
+
+type Config struct {
+	K8sClient      *cluster.Client
+	ClusterManager *cluster.ClusterClientManager
+	LLMClient      *llm.Client
+	MaxSteps       int
+	SupervisorCfg  supervisor.Config
 }
 
 func (a *Agent) logger() *zap.Logger {
@@ -43,7 +52,12 @@ func (a *Agent) logger() *zap.Logger {
 }
 
 // New 创建路由Agent
-func New(k8sClient *cluster.Client, llmClient *llm.Client, maxSteps int, supervisorCfg supervisor.Config) (*Agent, error) {
+func New(cfg Config) (*Agent, error) {
+	k8sClient := cfg.K8sClient
+	clusterManager := cfg.ClusterManager
+	llmClient := cfg.LLMClient
+	maxSteps := cfg.MaxSteps
+	supervisorCfg := cfg.SupervisorCfg
 	if maxSteps <= 0 {
 		maxSteps = 20
 	}
@@ -51,10 +65,7 @@ func New(k8sClient *cluster.Client, llmClient *llm.Client, maxSteps int, supervi
 	if err != nil {
 		return nil, fmt.Errorf("初始化查询Agent失败: %w", err)
 	}
-	troubleshootingAgent, err := troubleshooting.New(k8sClient, llmClient, troubleshooting.WithMaxSteps(maxSteps), troubleshooting.WithSupervisorConfig(supervisorCfg))
-	if err != nil {
-		return nil, fmt.Errorf("初始化故障排查Agent失败: %w", err)
-	}
+	diagnoseAgent := diagnose.NewAgent(k8sClient, llmClient)
 	securityAgent, err := security.New(k8sClient, llmClient, security.WithMaxSteps(maxSteps), security.WithSupervisorConfig(supervisorCfg))
 	if err != nil {
 		return nil, fmt.Errorf("初始化安全审计Agent失败: %w", err)
@@ -66,16 +77,17 @@ func New(k8sClient *cluster.Client, llmClient *llm.Client, maxSteps int, supervi
 	helmClient := helm.New("")
 	deployAgent := deploy.New(llmClient, helmClient, k8sClient)
 	return &Agent{
-		k8sClient:            k8sClient,
-		llmClient:            llmClient,
-		maxSteps:             maxSteps,
-		supervisorCfg:        supervisorCfg,
-		queryAgent:           queryAgent,
-		troubleshootingAgent: troubleshootingAgent,
-		securityAgent:        securityAgent,
-		operationAgent:       operationAgent,
-		deployAgent:          deployAgent,
-		helmClient:           helmClient,
+		k8sClient:      k8sClient,
+		clusterManager: clusterManager,
+		llmClient:      llmClient,
+		maxSteps:       maxSteps,
+		supervisorCfg:  supervisorCfg,
+		queryAgent:     queryAgent,
+		diagnoseAgent:  diagnoseAgent,
+		securityAgent:  securityAgent,
+		operationAgent: operationAgent,
+		deployAgent:    deployAgent,
+		helmClient:     helmClient,
 	}, nil
 }
 
@@ -114,7 +126,7 @@ func (a *Agent) HandleQuery(userQuery string) (string, error) {
 	case types.TaskTypeOperation:
 		return a.operationAgent.HandleQuery(ctx, userQuery, intent.Entities)
 	case types.TaskTypeTroubleshooting:
-		return a.troubleshootingAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		return a.diagnoseAgent.HandleQuery(ctx, userQuery, intent.Entities, "sync", nil)
 	case types.TaskTypeSecurity:
 		return a.securityAgent.HandleQuery(ctx, userQuery, intent.Entities)
 	case types.TaskTypeDeploy:
@@ -169,8 +181,7 @@ func (a *Agent) HandleQueryStream(ctx context.Context, userQuery, queryID string
 		_, err = a.queryAgent.HandleQuery(ctx, userQuery, intent.Entities)
 
 	case types.TaskTypeTroubleshooting:
-		a.troubleshootingAgent.SetEventChannel(eventCh, queryID)
-		_, err = a.troubleshootingAgent.HandleQuery(ctx, userQuery, intent.Entities)
+		_, err = a.diagnoseAgent.HandleQuery(ctx, userQuery, intent.Entities, queryID, eventCh)
 
 	case types.TaskTypeSecurity:
 		a.securityAgent.SetEventChannel(eventCh, queryID)

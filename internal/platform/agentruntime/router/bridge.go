@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
-	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
+	deploytypes "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/types"
 )
 
 // streamChartSelectionHandler sends chart selection as a unified stream interaction.

@@ -8,15 +8,14 @@ import (
 	"github.com/kubewise/kubewise/internal/config"
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/router/types"
-	"github.com/kubewise/kubewise/internal/agent/supervisor"
-	"github.com/kubewise/kubewise/internal/agent/tool"
-	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/loop"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/router/types"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/supervisor"
+	securitytools "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/security"
+	toolv2 "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/v2"
+	"github.com/kubewise/kubewise/internal/platform/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
-
-	// 加载安全审计工具，触发init函数注册
-	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/security"
 )
 
 // DefaultMaxSteps is the default maximum number of tool-calling rounds.
@@ -53,7 +52,6 @@ func WithSupervisorConfig(cfg supervisor.Config) Option {
 type Agent struct {
 	k8sClient     *cluster.Client
 	llmClient     *llm.Client
-	toolRegistry  *tool.Registry
 	eventCh       chan<- event.Event
 	queryID       string
 	log           *zap.Logger
@@ -84,17 +82,9 @@ func (a *Agent) emit(e event.Event) {
 
 // New 创建安全审计Agent
 func New(k8sClient *cluster.Client, llmClient *llm.Client, opts ...Option) (*Agent, error) {
-	toolDep := tool.ToolDependency{
-		K8sClient: k8sClient,
-	}
-	registry, err := tool.LoadGlobalRegistryByCategory(toolDep, "")
-	if err != nil {
-		return nil, fmt.Errorf("加载工具注册中心失败: %w", err)
-	}
 	a := &Agent{
 		k8sClient:     k8sClient,
 		llmClient:     llmClient,
-		toolRegistry:  registry,
 		maxSteps:      DefaultMaxSteps,
 		supervisorCfg: supervisor.DefaultConfig(),
 	}
@@ -143,119 +133,39 @@ func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities type
 		})
 	}()
 
-	functions := a.toolRegistry.GetAllFunctionDefinitions()
-
 	userMsg := userQuery
 	if len(entities.Namespace) > 0 {
 		userMsg = fmt.Sprintf("%s\\n\\n（目标命名空间：%s）", userQuery, entities.Namespace[0])
 	}
 
+	v2reg := toolv2.NewRegistry()
+	if err := securitytools.RegisterAuditTools(v2reg, a.k8sClient); err != nil {
+		return "", fmt.Errorf("加载安全审计工具失败: %w", err)
+	}
+	allowedTools := toolv2.NewBundleSet(securitytools.NewAuditBundle()).Tools(toolv2.BundleSecurityAudit)
 	messages := []llm.Message{
 		{Role: "system", Content: a.buildSystemPrompt()},
 		{Role: "user", Content: userMsg},
 	}
-
-	sv := supervisor.New(a.supervisorCfg, a.llmClient)
-	sv.Reset()
-	iterationsRemaining := a.maxSteps
-
-outer:
-	for iterationsRemaining > 0 {
-		for step := range iterationsRemaining {
-			a.emit(event.Phase{QueryID: a.queryID, Phase: "thinking"})
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, func(chunk llm.StreamChunk) {
-				if chunk.Content != "" {
-					a.emit(event.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
-				}
-			})
-			if err != nil {
-				return "", fmt.Errorf("LLM调用失败: %w", err)
-			}
-
-			if resp.Usage != nil {
-				inTokens += resp.Usage.PromptTokens
-				outTokens += resp.Usage.CompletionTokens
-			}
-
-			if len(resp.ToolCalls) == 0 {
-				return resp.Content, nil
-			}
-
-			// 执行所有工具调用（支持并行tool calls）
-			messages = append(messages, *resp)
-			for _, tc := range resp.ToolCalls {
-				funcCall := &tc.Function
-
-				t, exists := a.toolRegistry.GetTool(funcCall.Name)
-				if !exists {
-					messages = append(messages, llm.Message{
-						Role:       "tool",
-						Content:    fmt.Sprintf("未知工具: %s", funcCall.Name),
-						ToolCallID: tc.ID,
-					})
-					continue
-				}
-				a.emit(event.Phase{QueryID: a.queryID, Phase: fmt.Sprintf("running tool: %s", funcCall.Name)})
-				toolStart := time.Now()
-				a.emit(event.ToolCall{QueryID: a.queryID, ToolName: funcCall.Name, Step: step + 1})
-				result, err := t.Execute(ctx, funcCall.Arguments)
-				a.emit(event.ToolDone{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: step + 1})
-				if err != nil {
-					result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用工具。", err)
-				}
-
-				messages = append(messages, llm.Message{
-					Role:       "tool",
-					Content:    fmt.Sprintf("工具返回结果：\n%s", result),
-					ToolCallID: tc.ID,
-				})
-			}
-
-			// Supervisor: cheap loop check after tool execution
-			if triggered, loopResult := sv.CheckLoop(ctx, step, resp.ToolCalls, messages); triggered {
-				a.emit(event.Supervisor{
-					QueryID:  a.queryID,
-					Reason:   "loop detected",
-					Decision: string(loopResult.Decision),
-					Detail:   loopResult.Explanation,
-				})
-				switch loopResult.Decision {
-				case supervisor.DecisionContinue:
-					iterationsRemaining = loopResult.ExtraSteps
-					continue outer
-				case supervisor.DecisionReset:
-					messages = append(messages, llm.Message{Role: "user", Content: loopResult.Hint})
-					iterationsRemaining = a.maxSteps
-					sv.Reset()
-					continue outer
-				case supervisor.DecisionAbort:
-					return "", fmt.Errorf("supervisor: %s", loopResult.Explanation)
-				}
-			}
-		}
-
-		// Reached maxSteps boundary — ask supervisor to evaluate
-		result, err := sv.Evaluate(ctx, messages, iterationsRemaining, a.maxSteps)
-		if err != nil {
-			return "", fmt.Errorf("超过最大调用轮次（%d），无法完成安全审计，可通过 --max-steps 参数或 agent.max_steps 配置项调大", a.maxSteps)
-		}
-		a.emit(event.Supervisor{
-			QueryID:  a.queryID,
-			Reason:   "max steps reached",
-			Decision: string(result.Decision),
-			Detail:   result.Explanation,
-		})
-		switch result.Decision {
-		case supervisor.DecisionContinue:
-			iterationsRemaining = result.ExtraSteps
-		case supervisor.DecisionReset:
-			messages = append(messages, llm.Message{Role: "user", Content: result.Hint})
-			iterationsRemaining = a.maxSteps
-			sv.Reset()
-		case supervisor.DecisionAbort:
-			return "", fmt.Errorf("supervisor: %s", result.Explanation)
-		}
+	loopResult, err := loop.Run(ctx, loop.Config{
+		QueryID:  a.queryID,
+		LLM:      a.llmClient,
+		Messages: messages,
+		Tools:    v2reg.Definitions(allowedTools),
+		Executor: toolv2.NewExecutor(v2reg),
+		Policy: toolv2.ExecutePolicy{
+			AllowedCapabilities: []toolv2.Capability{toolv2.CapabilityAudit},
+			AllowedTools:        allowedTools,
+			MaxOutputBytes:      20_000,
+			EmitEvents:          true,
+		},
+		MaxSteps: a.maxSteps,
+		Emit:     a.emit,
+	})
+	if err != nil {
+		return "", fmt.Errorf("LLM调用失败: %w", err)
 	}
-
-	return "", fmt.Errorf("超过最大调用轮次，无法完成安全审计")
+	inTokens = loopResult.InTokens
+	outTokens = loopResult.OutTokens
+	return loopResult.Content, nil
 }

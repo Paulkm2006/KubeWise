@@ -4,7 +4,7 @@ package appname
 import (
 	"strings"
 
-	"github.com/kubewise/kubewise/internal/agent/router/types"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/router/types"
 )
 
 // FromEntities prefers explicit entity fields from the router.

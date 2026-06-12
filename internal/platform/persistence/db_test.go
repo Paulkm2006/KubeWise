@@ -1,4 +1,4 @@
-package db
+package persistence
 
 import (
 	"os"
@@ -12,11 +12,9 @@ func TestOpenAndMigrate(t *testing.T) {
 	d, err := Open(dir)
 	if err != nil {
 		t.Fatalf("Open() err = %v", err)
-		return
 	}
 	defer d.Close()
 
-	// Verify diagnoses table exists
 	var name string
 	err = d.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='diagnoses'").Scan(&name)
 	if err != nil {

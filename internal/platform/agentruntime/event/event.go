@@ -16,6 +16,8 @@ type Event interface {
 type Phase struct {
 	QueryID string
 	Phase   string
+	Summary string
+	Payload *Payload
 }
 
 func (Phase) isStreamEvent() {}
@@ -33,6 +35,8 @@ type AgentDone struct {
 	Duration  time.Duration
 	InTokens  int
 	OutTokens int
+	Summary   string
+	Payload   *Payload
 }
 
 func (AgentDone) isStreamEvent() {}
@@ -50,6 +54,8 @@ type ToolDone struct {
 	ToolName string
 	Step     int
 	Elapsed  time.Duration
+	Summary  string
+	Payload  *Payload
 }
 
 func (ToolDone) isStreamEvent() {}
@@ -94,6 +100,18 @@ type StreamErr struct {
 }
 
 func (StreamErr) isStreamEvent() {}
+
+// LLMStepDegraded records a diagnosis LLM step that failed and fell back.
+type LLMStepDegraded struct {
+	QueryID   string
+	Step      string
+	Phase     string
+	Err       string
+	Transient bool
+	Fallback  string
+}
+
+func (LLMStepDegraded) isStreamEvent() {}
 
 // --- Human-in-the-loop ---
 

@@ -1,7 +1,7 @@
 // Package types holds shared types for the deploy pipeline and its consumers.
 package types
 
-import "github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
+import "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
 
 // PlanWarning is a validation or policy advisory shown during deploy review.
 type PlanWarning struct {

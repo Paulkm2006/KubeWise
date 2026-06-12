@@ -10,35 +10,20 @@ import (
 	"github.com/kubewise/kubewise/internal/config"
 	"go.uber.org/zap"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
-	"github.com/kubewise/kubewise/internal/agent/router/types"
-	"github.com/kubewise/kubewise/internal/agent/supervisor"
-	"github.com/kubewise/kubewise/internal/agent/tool"
-	"github.com/kubewise/kubewise/internal/cluster"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/loop"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/router/types"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/supervisor"
+	operationtools "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/operation"
+	toolquery "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/query"
+	toolv2 "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/v2"
+	"github.com/kubewise/kubewise/internal/platform/cluster"
 	"github.com/kubewise/kubewise/internal/utils/llm"
-
-	// Trigger init() registration of all read tools
-	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/query"
-	// Trigger init() registration of all write tools
-	_ "github.com/kubewise/kubewise/internal/agent/tool/v1/operation"
 )
 
-// toolExecutor is the minimal interface needed from a registry tool.
-type toolExecutor interface {
-	Execute(ctx context.Context, args map[string]any) (string, error)
-}
-
-// writeRegistryI is satisfied by *tool.Registry and by mockRegistry in tests.
+// writeRegistryI is satisfied by *toolv2.Registry and by mockRegistry in tests.
 type writeRegistryI interface {
-	GetTool(name string) (toolExecutor, bool)
-}
-
-// toolRegistryAdapter wraps *tool.Registry to satisfy writeRegistryI.
-type toolRegistryAdapter struct{ reg *tool.Registry }
-
-func (a *toolRegistryAdapter) GetTool(name string) (toolExecutor, bool) {
-	t, ok := a.reg.GetTool(name)
-	return t, ok
+	Get(name string) (toolv2.Tool, bool)
 }
 
 // DefaultMaxSteps is the default maximum number of planning rounds.
@@ -88,7 +73,7 @@ type stepResult struct {
 type Agent struct {
 	k8sClient      *cluster.Client
 	llmClient      *llm.Client
-	readRegistry   *tool.Registry
+	readRegistry   *toolv2.Registry
 	writeRegistry  writeRegistryI
 	confirmHandler ConfirmationHandler
 	eventCh        chan<- event.Event
@@ -117,14 +102,12 @@ func (a *Agent) logger() *zap.Logger {
 	return config.L()
 }
 func New(k8sClient *cluster.Client, llmClient *llm.Client, opts ...Option) (*Agent, error) {
-	dep := tool.ToolDependency{K8sClient: k8sClient}
-
-	readReg, err := tool.LoadGlobalRegistryByCategory(dep, "")
-	if err != nil {
+	readReg := toolv2.NewRegistry()
+	if err := toolquery.RegisterQueryTools(readReg, k8sClient); err != nil {
 		return nil, fmt.Errorf("加载读工具注册中心失败: %w", err)
 	}
 
-	writeReg, err := tool.LoadGlobalRegistryByCategory(dep, "operation")
+	writeV2Reg, err := operationtools.NewOperationWriteRegistry(k8sClient)
 	if err != nil {
 		return nil, fmt.Errorf("加载写工具注册中心失败: %w", err)
 	}
@@ -133,7 +116,7 @@ func New(k8sClient *cluster.Client, llmClient *llm.Client, opts ...Option) (*Age
 		k8sClient:      k8sClient,
 		llmClient:      llmClient,
 		readRegistry:   readReg,
-		writeRegistry:  &toolRegistryAdapter{reg: writeReg},
+		writeRegistry:  writeV2Reg,
 		confirmHandler: NewStdinConfirmationHandler(),
 		maxSteps:       DefaultMaxSteps,
 		supervisorCfg:  supervisor.DefaultConfig(),
@@ -230,139 +213,43 @@ func (a *Agent) plan(ctx context.Context, userQuery string, _ types.Entities) ([
 		},
 	}
 
-	functions := a.readRegistry.GetAllFunctionDefinitions()
+	functions := a.readRegistry.Definitions(a.readRegistry.Names())
 	functions = append(functions, submitToolDef)
 
 	messages := []llm.Message{
 		{Role: "system", Content: a.buildPlanningSystemPrompt()},
 		{Role: "user", Content: userQuery},
 	}
-
-	sv := supervisor.New(a.supervisorCfg, a.llmClient)
-	sv.Reset()
-	iterationsRemaining := a.maxSteps
-
-outer:
-	for iterationsRemaining > 0 {
-		for round := range iterationsRemaining {
-			resp, err := a.llmClient.ChatCompletion(ctx, messages, functions, func(chunk llm.StreamChunk) {
-				if chunk.Content != "" {
-					a.emit(event.LLMTextDelta{QueryID: a.queryID, Delta: chunk.Content})
+	loopResult, err := loop.Run(ctx, loop.Config{
+		QueryID:    a.queryID,
+		LLM:        a.llmClient,
+		Messages:   messages,
+		Tools:      functions,
+		Executor:   toolv2.NewExecutor(a.readRegistry),
+		Policy:     toolv2.ExecutePolicy{AllowedCapabilities: []toolv2.Capability{toolv2.CapabilityRead}, AllowedTools: a.readRegistry.Names(), MaxOutputBytes: 20_000, EmitEvents: true},
+		MaxSteps:   a.maxSteps,
+		Emit:       a.emit,
+		Supervisor: supervisor.New(a.supervisorCfg, a.llmClient),
+		TerminalTools: map[string]loop.TerminalHandler{
+			"submit_operation_plan": func(_ context.Context, call llm.ToolCall, _ []llm.Message) (loop.TerminalResult, error) {
+				plan, err := parseOperationPlan(call.Function.Arguments)
+				if err != nil {
+					return loop.TerminalResult{ToolMessage: fmt.Sprintf("操作计划解析失败：%v\n请重新提交。", err)}, nil
 				}
-			})
-			if err != nil {
-				return nil, fmt.Errorf("LLM 调用失败: %w", err)
-			}
-			a.accumulate(resp)
-
-			if len(resp.ToolCalls) == 0 {
-				return nil, fmt.Errorf("规划未完成（LLM 未调用 submit_operation_plan），请重新描述您的操作需求")
-			}
-
-			// 执行所有工具调用（支持并行tool calls）
-			messages = append(messages, *resp)
-			var planResult []OperationStep
-			for _, tc := range resp.ToolCalls {
-				funcCall := &tc.Function
-
-				if funcCall.Name == "submit_operation_plan" {
-					plan, parseErr := parseOperationPlan(funcCall.Arguments)
-					if parseErr != nil {
-						messages = append(messages, llm.Message{
-							Role: "tool", Content: fmt.Sprintf("操作计划解析失败：%v\n请重新提交。", parseErr), ToolCallID: tc.ID,
-						})
-						continue
-					}
-					planResult = plan
-					continue
-				}
-
-				t, exists := a.readRegistry.GetTool(funcCall.Name)
-				if !exists {
-					messages = append(messages, llm.Message{
-						Role: "tool", Content: fmt.Sprintf("工具 %s 不存在，请选择可用工具", funcCall.Name), ToolCallID: tc.ID,
-					})
-					continue
-				}
-
-				toolStart := time.Now()
-				a.emit(event.ToolCall{QueryID: a.queryID, ToolName: funcCall.Name, Step: round + 1})
-				result, toolErr := t.Execute(ctx, funcCall.Arguments)
-				a.emit(event.ToolDone{QueryID: a.queryID, ToolName: funcCall.Name, Elapsed: time.Since(toolStart), Step: round + 1})
-				if toolErr != nil {
-					result = fmt.Sprintf("工具调用失败：%v\n请修正参数后重新调用。", toolErr)
-				}
-
-				messages = append(messages, llm.Message{
-					Role:       "tool",
-					Content:    fmt.Sprintf("工具返回结果：\n%s", result),
-					ToolCallID: tc.ID,
-				})
-			}
-
-			if planResult != nil {
-				return planResult, nil
-			}
-
-			// Supervisor: cheap loop check after tool execution
-			if triggered, loopResult := sv.CheckLoop(ctx, round, resp.ToolCalls, messages); triggered {
-				a.emit(event.Supervisor{
-					QueryID:  a.queryID,
-					Reason:   "loop detected",
-					Decision: string(loopResult.Decision),
-					Detail:   loopResult.Explanation,
-				})
-				switch loopResult.Decision {
-				case supervisor.DecisionContinue:
-					iterationsRemaining = loopResult.ExtraSteps
-					continue outer
-				case supervisor.DecisionReset:
-					hint := loopResult.Hint
-					if hint == "" {
-						hint = "你已经陷入循环，请根据已获取的信息提交你的计划（调用 submit_operation_plan），或换一种方式来获取信息。"
-					} else {
-						hint = hint + " 请提交你的计划（调用 submit_operation_plan）。"
-					}
-					messages = append(messages, llm.Message{Role: "user", Content: hint})
-					iterationsRemaining = a.maxSteps
-					sv.Reset()
-					continue outer
-				case supervisor.DecisionAbort:
-					return nil, fmt.Errorf("supervisor: %s", loopResult.Explanation)
-				}
-			}
-		}
-
-		// Reached maxSteps boundary — ask supervisor to evaluate
-		evalResult, err := sv.Evaluate(ctx, messages, iterationsRemaining, a.maxSteps)
-		if err != nil {
-			return nil, fmt.Errorf("超过最大规划轮次（%d），无法生成操作计划，可通过 --max-steps 参数或 agent.max_steps 配置项调大", a.maxSteps)
-		}
-		a.emit(event.Supervisor{
-			QueryID:  a.queryID,
-			Reason:   "max steps reached",
-			Decision: string(evalResult.Decision),
-			Detail:   evalResult.Explanation,
-		})
-		switch evalResult.Decision {
-		case supervisor.DecisionContinue:
-			iterationsRemaining = evalResult.ExtraSteps
-		case supervisor.DecisionReset:
-			hint := evalResult.Hint
-			if hint == "" {
-				hint = "你已经陷入循环，请根据已获取的信息提交你的计划（调用 submit_operation_plan），或换一种方式来获取信息。"
-			} else {
-				hint = hint + " 请提交你的计划（调用 submit_operation_plan）。"
-			}
-			messages = append(messages, llm.Message{Role: "user", Content: hint})
-			iterationsRemaining = a.maxSteps
-			sv.Reset()
-		case supervisor.DecisionAbort:
-			return nil, fmt.Errorf("supervisor: %s", evalResult.Explanation)
-		}
+				return loop.TerminalResult{Done: true, Data: plan, Content: fmt.Sprintf("submitted %d operation steps", len(plan))}, nil
+			},
+		},
+	})
+	a.inTokens += loopResult.InTokens
+	a.outTokens += loopResult.OutTokens
+	if err != nil {
+		return nil, fmt.Errorf("规划未完成（LLM 未调用 submit_operation_plan）: %w", err)
 	}
-
-	return nil, fmt.Errorf("超过最大规划轮次，无法生成操作计划")
+	steps, ok := loopResult.TerminalData.([]OperationStep)
+	if !ok || len(steps) == 0 {
+		return nil, fmt.Errorf("规划未完成（LLM 未调用 submit_operation_plan），请重新描述您的操作需求")
+	}
+	return steps, nil
 }
 
 // execute iterates steps with per-step confirmation. Supports correction-based replan.
@@ -385,7 +272,7 @@ func (a *Agent) execute(ctx context.Context, steps []OperationStep) (string, err
 					results = append(results, stepResult{step: step, status: "failed", detail: mappingErr.Error()})
 					break
 				}
-				t, exists := a.writeRegistry.GetTool(toolName)
+				t, exists := a.writeRegistry.Get(toolName)
 				if !exists {
 					results = append(results, stepResult{step: step, status: "failed", detail: fmt.Sprintf("写工具 %s 未注册", toolName)})
 					break
@@ -394,7 +281,7 @@ func (a *Agent) execute(ctx context.Context, steps []OperationStep) (string, err
 				if execErr != nil {
 					results = append(results, stepResult{step: step, status: "failed", detail: execErr.Error()})
 				} else {
-					results = append(results, stepResult{step: step, status: "executed", detail: execResult})
+					results = append(results, stepResult{step: step, status: "executed", detail: toolv2.ToolResultToLLMMessage(execResult)})
 				}
 				break
 			}

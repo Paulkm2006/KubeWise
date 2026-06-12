@@ -91,6 +91,24 @@ func NewClient(kubeconfigPath string) (*Client, error) {
 	return c, nil
 }
 
+// NewClientFromClusterClient creates the legacy Client facade around a
+// manager-selected cluster connection.
+func NewClientFromClusterClient(cc *ClusterClient) (*Client, error) {
+	if cc == nil {
+		return nil, fmt.Errorf("cluster client is nil")
+	}
+	cc.mu.RLock()
+	defer cc.mu.RUnlock()
+	if cc.clientset == nil || cc.dynamic == nil || cc.restConfig == nil {
+		return nil, fmt.Errorf("cluster %q is not connected", cc.ContextName)
+	}
+	return &Client{
+		clientset:     cc.clientset,
+		dynamicClient: cc.dynamic,
+		restConfig:    cc.restConfig,
+	}, nil
+}
+
 // ServerVersion returns the Kubernetes server version string (e.g. "v1.28.3").
 func (c *Client) ServerVersion(ctx context.Context) (string, error) {
 	v, err := c.clientset.Discovery().ServerVersion()

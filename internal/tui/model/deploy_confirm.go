@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	deploytypes "github.com/kubewise/kubewise/internal/agent/subagent/deploy/types"
+	deploytypes "github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/types"
 	"github.com/kubewise/kubewise/internal/utils/helm"
 )
 

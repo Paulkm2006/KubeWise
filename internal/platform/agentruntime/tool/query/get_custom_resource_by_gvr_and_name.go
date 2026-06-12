@@ -1,0 +1,197 @@
+package query
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	toolv2 "github.com/kubewise/kubewise/internal/platform/agentruntime/tool/v2"
+	"github.com/kubewise/kubewise/internal/platform/cluster"
+)
+
+// GetResourceByGvrAndNameTool 获取指定资源详情工具
+type GetResourceByGvrAndNameTool struct {
+	k8sClient *cluster.Client
+}
+
+type GetCustomResourceByGvrAndNameTool struct {
+	*GetResourceByGvrAndNameTool
+}
+
+// NewGetResourceByGvrAndNameTool 创建获取资源详情工具实例
+func NewGetResourceByGvrAndNameTool(k8sClient *cluster.Client) *GetResourceByGvrAndNameTool {
+	return &GetResourceByGvrAndNameTool{k8sClient: k8sClient}
+}
+
+func NewGetCustomResourceByGvrAndNameTool(k8sClient *cluster.Client) *GetCustomResourceByGvrAndNameTool {
+	return &GetCustomResourceByGvrAndNameTool{GetResourceByGvrAndNameTool: NewGetResourceByGvrAndNameTool(k8sClient)}
+}
+
+// Name 返回工具唯一标识
+func (t *GetResourceByGvrAndNameTool) Name() string {
+	return "get_resource_by_gvr_and_name"
+}
+
+// Description 返回工具功能描述
+func (t *GetResourceByGvrAndNameTool) Description() string {
+	return "根据GVR（Group/Version/Resource）和名称获取指定Kubernetes资源的详细内容，支持内置资源和自定义资源"
+}
+
+// Parameters 返回工具参数定义（JSON Schema格式）
+func (t *GetResourceByGvrAndNameTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"group": map[string]any{
+				"type":        "string",
+				"description": "资源的API组，核心API组为空字符串，例如：\"\"（核心API组）、\"apps\"、\"batch\"等",
+			},
+			"version": map[string]any{
+				"type":        "string",
+				"description": "资源的API版本，例如：\"v1\"、\"v1beta1\"等",
+			},
+			"resource": map[string]any{
+				"type":        "string",
+				"description": "资源类型的复数名称，例如：\"pods\"、\"services\"、\"deployments\"等",
+			},
+			"name": map[string]any{
+				"type":        "string",
+				"description": "资源的名称",
+			},
+			"namespace": map[string]any{
+				"type":        "string",
+				"description": "命名空间，集群级资源不需要提供，命名空间级资源必须提供",
+			},
+		},
+		"required": []string{"group", "version", "resource", "name"},
+	}
+}
+
+func (t *GetResourceByGvrAndNameTool) Meta() toolv2.ToolMeta {
+	return toolv2.TextMeta(t.Name(), "v1", t.Description(), t.Parameters(), toolv2.CapabilityRead, toolv2.RiskNone, toolv2.ConfirmNever, "query")
+}
+
+func (t *GetResourceByGvrAndNameTool) Execute(ctx context.Context, args map[string]any) (toolv2.ToolResult, error) {
+	meta := t.Meta()
+	text, err := t.executeText(ctx, args)
+	if err != nil {
+		return toolv2.ToolResult{}, err
+	}
+	return toolv2.TextResult(meta, text), nil
+}
+
+func (t *GetResourceByGvrAndNameTool) executeText(ctx context.Context, args map[string]any) (string, error) {
+	group, ok := args["group"].(string)
+	if !ok {
+		return "", fmt.Errorf("参数group必须为字符串")
+	}
+
+	version, ok := args["version"].(string)
+	if !ok || version == "" {
+		return "", fmt.Errorf("参数version不能为空")
+	}
+
+	resource, ok := args["resource"].(string)
+	if !ok || resource == "" {
+		return "", fmt.Errorf("参数resource不能为空")
+	}
+
+	name, ok := args["name"].(string)
+	if !ok || name == "" {
+		return "", fmt.Errorf("参数name不能为空")
+	}
+
+	namespace := ""
+	if ns, ok := args["namespace"].(string); ok {
+		namespace = ns
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    group,
+		Version:  version,
+		Resource: resource,
+	}
+
+	cr, err := t.k8sClient.GetCustomResource(ctx, gvr, namespace, name)
+	if err != nil {
+		return "", fmt.Errorf("获取自定义资源详情失败: %w", err)
+	}
+
+	// 格式化输出
+	var result strings.Builder
+	if namespace == "" {
+		if group == "" {
+			fmt.Fprintf(&result, "集群级资源 %s/%s/%s 的详情:\n", version, resource, name)
+		} else {
+			fmt.Fprintf(&result, "集群级资源 %s/%s/%s/%s 的详情:\n", group, version, resource, name)
+		}
+	} else {
+		if group == "" {
+			fmt.Fprintf(&result, "命名空间 %s 下的资源 %s/%s/%s 的详情:\n", namespace, version, resource, name)
+		} else {
+			fmt.Fprintf(&result, "命名空间 %s 下的资源 %s/%s/%s/%s 的详情:\n", namespace, group, version, resource, name)
+		}
+	}
+
+	// 转换为格式化JSON
+	jsonBytes, err := json.MarshalIndent(cr, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("格式化资源内容失败: %w", err)
+	}
+
+	result.WriteString(string(jsonBytes))
+	return result.String(), nil
+}
+
+func (t *GetCustomResourceByGvrAndNameTool) Name() string {
+	return "get_custom_resource_by_gvr_and_name"
+}
+
+func (t *GetCustomResourceByGvrAndNameTool) Description() string {
+	return "根据GVR（Group/Version/Resource）和名称获取指定自定义资源的详细内容（已废弃，请使用get_resource_by_gvr_and_name）"
+}
+
+func (t *GetCustomResourceByGvrAndNameTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"group": map[string]any{
+				"type":        "string",
+				"description": "资源的API组，核心API组为空字符串，例如：\"\"（核心API组）、\"apps\"、\"batch\"等",
+			},
+			"version": map[string]any{
+				"type":        "string",
+				"description": "资源的API版本，例如：\"v1\"、\"v1beta1\"等",
+			},
+			"resource": map[string]any{
+				"type":        "string",
+				"description": "资源类型的复数名称，例如：\"pods\"、\"services\"、\"deployments\"等",
+			},
+			"name": map[string]any{
+				"type":        "string",
+				"description": "资源的名称",
+			},
+			"namespace": map[string]any{
+				"type":        "string",
+				"description": "命名空间，集群级资源不需要提供，命名空间级资源必须提供",
+			},
+		},
+		"required": []string{"group", "version", "resource", "name"},
+	}
+}
+
+func (t *GetCustomResourceByGvrAndNameTool) Meta() toolv2.ToolMeta {
+	return toolv2.TextMeta(t.Name(), "v1", t.Description(), t.Parameters(), toolv2.CapabilityRead, toolv2.RiskNone, toolv2.ConfirmNever, "query")
+}
+
+func (t *GetCustomResourceByGvrAndNameTool) Execute(ctx context.Context, args map[string]any) (toolv2.ToolResult, error) {
+	meta := t.Meta()
+	text, err := t.executeText(ctx, args)
+	if err != nil {
+		return toolv2.ToolResult{}, err
+	}
+	return toolv2.TextResult(meta, text), nil
+}

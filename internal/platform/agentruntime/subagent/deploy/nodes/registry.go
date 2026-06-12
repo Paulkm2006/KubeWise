@@ -1,7 +1,7 @@
 package nodes
 
 import (
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/state"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/state"
 )
 
 // RunFunc executes one pipeline phase and mutates state (including Phase).

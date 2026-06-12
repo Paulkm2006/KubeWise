@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kubewise/kubewise/internal/agent/router/types"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/nodes"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/state"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/router/types"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/nodes"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/state"
 )
 
 // RunPipeline executes the deploy state machine until a terminal phase or error.

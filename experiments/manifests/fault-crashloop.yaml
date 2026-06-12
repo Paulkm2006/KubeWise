@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fault-crashloop
+  labels:
+    experiment: crashloop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      experiment: crashloop
+  template:
+    metadata:
+      labels:
+        experiment: crashloop
+    spec:
+      containers:
+        - name: app
+          image: busybox:latest
+          command: ["sh", "-c", "sleep 3; exit 1"]
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 50m
+              memory: 32Mi

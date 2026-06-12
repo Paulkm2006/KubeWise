@@ -37,12 +37,73 @@ type FunctionDefinition struct {
 	Parameters  map[string]any `json:"parameters"`
 }
 
+type ToolChoiceMode string
+
+const (
+	ToolChoiceAuto     ToolChoiceMode = "auto"
+	ToolChoiceNone     ToolChoiceMode = "none"
+	ToolChoiceRequired ToolChoiceMode = "required"
+	ToolChoiceFunction ToolChoiceMode = "function"
+)
+
+type ToolChoice struct {
+	Mode ToolChoiceMode `json:"mode"`
+	Name string         `json:"name,omitempty"`
+}
+
+type ResponseFormatType string
+
+const (
+	ResponseFormatText       ResponseFormatType = "text"
+	ResponseFormatJSONObject ResponseFormatType = "json_object"
+	ResponseFormatJSONSchema ResponseFormatType = "json_schema"
+)
+
+type ResponseFormat struct {
+	Type   ResponseFormatType `json:"type"`
+	Name   string             `json:"name,omitempty"`
+	Schema map[string]any     `json:"schema,omitempty"`
+	Strict bool               `json:"strict,omitempty"`
+}
+
+type StreamEventType string
+
+const (
+	StreamEventTextDelta StreamEventType = "text_delta"
+	StreamEventDone      StreamEventType = "done"
+)
+
+type StreamEvent struct {
+	Type                 StreamEventType `json:"type"`
+	Content              string          `json:"content,omitempty"`
+	AccumulatedToolCalls []ToolCall      `json:"accumulated_tool_calls,omitempty"`
+	Usage                *Usage          `json:"usage,omitempty"`
+}
+
 // StreamChunk is yielded by ChatCompletionStream for each delta.
 type StreamChunk struct {
 	Content              string     // text delta (empty for tool call deltas)
 	AccumulatedToolCalls []ToolCall // set on the final chunk when finish_reason="tool_calls"
 	Done                 bool       // true on the final chunk
 	Usage                *Usage     // set on the final chunk
+}
+
+type CompletionRequest struct {
+	Messages       []Message
+	Tools          []FunctionDefinition
+	ToolChoice     ToolChoice
+	ResponseFormat *ResponseFormat
+	Model          string
+	Temperature    *float64
+	MaxTokens      *int
+	OnEvent        func(StreamEvent)
+}
+
+type CompletionResponse struct {
+	Message      Message
+	Usage        *Usage
+	FinishReason string
+	ParseError   string
 }
 
 // Config LLM客户端配置

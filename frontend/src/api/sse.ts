@@ -1,6 +1,5 @@
-import type { DiagnosisEvent } from './types';
-
-const BASE = 'http://localhost:3000/api/v1';
+import { api } from './client';
+import type { DiagnosisEvent, DiagnosisStatus } from './types';
 
 export interface SSECallbacks {
   onEvent: (ev: DiagnosisEvent) => void;
@@ -13,7 +12,7 @@ export function subscribeDiagnosis(
   since: number,
   callbacks: SSECallbacks
 ): () => void {
-  const url = `${BASE}/diagnose/stream?id=${encodeURIComponent(id)}&since=${since}`;
+  const url = api.diagnoses.eventsUrl(id, since);
   const es = new EventSource(url);
 
   es.addEventListener('diagnosis_event', (e: MessageEvent) => {
@@ -51,8 +50,6 @@ export function subscribeDiagnosis(
   return () => es.close();
 }
 
-export async function fetchDiagnosisStatus(id: string): Promise<import('./types').DiagnosisStatus> {
-  const res = await fetch(`${BASE}/diagnose/${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+export async function fetchDiagnosisStatus(id: string): Promise<DiagnosisStatus> {
+  return api.diagnoses.get(id);
 }
