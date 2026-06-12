@@ -230,7 +230,7 @@ export default function Chat({ activeCluster }: ChatProps) {
             <div className="w-10 h-10 rounded-full bg-accent-dim/20 text-accent flex items-center justify-center text-sm font-semibold shrink-0 border border-accent/20">
               KW
             </div>
-            <div className="max-w-[75%] min-w-0 flex-1">
+            <div className="max-w-[min(100%,48rem)] min-w-0 flex-1">
               <ProgressCard
                 card={liveCard}
                 cluster={liveClusterRef.current}
@@ -251,7 +251,9 @@ export default function Chat({ activeCluster }: ChatProps) {
                 onChartCancel={() => answerInteraction({ cancelled: true })}
                 onDeployExecute={(values) => answerInteraction({ action: 'execute', values })}
                 onDeployCancel={() => answerInteraction({ action: 'cancel' })}
-                onDeployCorrect={(correction) => answerInteraction({ action: 'cancel', correction })}
+                onDeployCorrect={(values, correction) =>
+                  answerInteraction({ action: 'execute', values, correction })
+                }
               />
             </div>
           </div>

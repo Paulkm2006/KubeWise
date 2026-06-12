@@ -18,7 +18,7 @@ interface ProgressCardProps {
   onChartCancel: () => void;
   onDeployExecute: (values: string) => void;
   onDeployCancel: () => void;
-  onDeployCorrect: (correction: string) => void;
+  onDeployCorrect: (values: string, correction: string) => void;
 }
 
 function statusDot(done: boolean, failed: boolean, running: boolean) {
@@ -139,13 +139,15 @@ export default function ProgressCard({
       )}
 
       {interaction?.kind === 'deploy_confirm' && (
-        <DeployConfirmCard
-          plan={interaction.payload as unknown as DeployPlan}
-          disabled={interactionPending}
-          onExecute={onDeployExecute}
-          onCancel={onDeployCancel}
-          onCorrect={onDeployCorrect}
-        />
+        <div className="-mx-1 w-[min(100%,42rem)]">
+          <DeployConfirmCard
+            plan={interaction.payload as unknown as DeployPlan}
+            disabled={interactionPending}
+            onExecute={onDeployExecute}
+            onCancel={onDeployCancel}
+            onCorrect={onDeployCorrect}
+          />
+        </div>
       )}
 
       {card.failed && card.errorMsg && !report && (
