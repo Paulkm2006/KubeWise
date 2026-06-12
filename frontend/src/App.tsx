@@ -8,6 +8,7 @@ import DiagnosisOverlay from './components/DiagnosisOverlay';
 import { initialActivities, Activity } from './data/mock';
 import { api } from './api/client';
 import { DiagnosisStore, StoredDiagnosis } from './stores/diagnosisStore';
+import { AuditStore } from './stores/auditStore';
 import type { DiagnosisTarget } from './api/types';
 
 const TAB_CONFIG = [
@@ -33,6 +34,7 @@ export default function App() {
   const [diagError, setDiagError] = useState<string | null>(null);
   const [diagTarget, setDiagTarget] = useState({ cluster: '', namespace: '', pod: '' });
   const storeRef = useRef(new DiagnosisStore());
+  const auditStoreRef = useRef(new AuditStore());
   const [activeDiagnosis, setActiveDiagnosis] = useState<StoredDiagnosis | null>(null);
   const [, forceUpdate] = useState(0);
 
@@ -70,7 +72,6 @@ export default function App() {
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
-    if (tab === 'audit') addActivity('done', 'Security audit report ready');
   };
 
   const handleClusterChange = (name: string) => {
@@ -211,7 +212,14 @@ export default function App() {
               diagnosedPods={diagnosedPods}
             />
           )}
-          {activeTab === 'audit' && <SecurityAudit />}
+          {activeTab === 'audit' && (
+            <SecurityAudit
+              activeCluster={activeCluster}
+              store={auditStoreRef.current}
+              onActivity={addActivity}
+              onStoreUpdate={() => forceUpdate((n) => n + 1)}
+            />
+          )}
           {activeTab === 'chat' && <Chat />}
         </main>
       </div>

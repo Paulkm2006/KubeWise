@@ -202,3 +202,98 @@ export interface DiagnosisDerivedState {
   liveEvidenceCount: number;
   liveHypothesisCount: number;
 }
+
+export type AuditSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface AuditFinding {
+  severity: AuditSeverity;
+  category: string;
+  resource: string;
+  risk: string;
+  impact: string;
+  suggestion: string;
+}
+
+export interface AuditSummary {
+  total: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+export interface AuditResult {
+  findings: AuditFinding[];
+  summary: AuditSummary;
+  markdown?: string;
+  duration_ms?: number;
+}
+
+export type AuditLifecycleStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface AuditTarget {
+  cluster: string;
+  cluster_display: string;
+}
+
+export interface AuditEvent {
+  audit_id: string;
+  seq_num: number;
+  event_type: string;
+  message?: string;
+  summary?: string;
+  detail?: string;
+  payload_kind?: string;
+  payload_json?: string;
+  elapsed_ms?: number;
+  created_at?: number;
+}
+
+export interface AuditStatus {
+  audit_id: string;
+  status: AuditLifecycleStatus;
+  created_at?: string;
+  target: AuditTarget;
+  events: AuditEvent[];
+  result?: AuditResult;
+  error_message?: string;
+}
+
+export interface AuditSummaryRow {
+  id: string;
+  cluster_fingerprint: string;
+  cluster_display?: string;
+  status: AuditLifecycleStatus;
+  created_at: string;
+}
+
+export interface AuditListResponse {
+  audits: AuditSummaryRow[];
+  total: number;
+}
+
+export const AUDIT_PHASES = [
+  { id: 'rbac', label: 'RBAC' },
+  { id: 'pod_security', label: 'Pod Security' },
+  { id: 'network_policies', label: 'Network Policies' },
+  { id: 'image_security', label: 'Image Security' },
+] as const;
+
+export type AuditPhaseId = (typeof AUDIT_PHASES)[number]['id'];
+
+export interface AuditPhaseState {
+  id: AuditPhaseId;
+  label: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  count?: number;
+  elapsedMs?: number;
+  summary?: string;
+}
+
+export interface AuditDerivedState {
+  phases: AuditPhaseState[];
+  currentPhase?: AuditPhaseId;
+  liveFindings: AuditFinding[];
+  completedCount: number;
+  totalPhases: number;
+}

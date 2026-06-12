@@ -20,6 +20,9 @@ const (
 	PayloadKindDiagnosisLLMStep      = "diagnosis_llm_step"
 	PayloadKindDiagnosisEnrichment   = "diagnosis_enrichment"
 
+	PayloadKindAuditPhaseFindings = "audit_phase_findings"
+	PayloadKindAuditReport        = "audit_report"
+
 	// Legacy aliases used during migration.
 	PayloadKindEvidence     = PayloadKindDiagnosisEvidence
 	PayloadKindHypothesis   = PayloadKindDiagnosisHypothesis

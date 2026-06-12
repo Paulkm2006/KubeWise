@@ -19,6 +19,11 @@ type DiagnosisRunner interface {
 	DiagnosePod(ctx context.Context, params DiagnoseParams, queryID string, events chan<- ProgressEvent) error
 }
 
+// AuditRunner is the anti-corruption boundary for the Audit context.
+type AuditRunner interface {
+	AuditCluster(ctx context.Context, cluster, queryID string, events chan<- ProgressEvent) error
+}
+
 // DiagnoseParams identifies a pod to diagnose on a cluster.
 type DiagnoseParams struct {
 	Cluster   string

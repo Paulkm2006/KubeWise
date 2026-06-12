@@ -39,6 +39,7 @@ func (w *DB) migrate() error {
 		"migrations/001_initial.sql",
 		"migrations/002_diagnosis_events.sql",
 		"migrations/003_diagnosis_structured.sql",
+		"migrations/004_audits.sql",
 	}
 	for _, f := range files {
 		data, err := migrations.ReadFile(f)

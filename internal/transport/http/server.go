@@ -13,6 +13,9 @@ import (
 	conversationapp "github.com/kubewise/kubewise/internal/conversation/application"
 	"github.com/kubewise/kubewise/internal/conversation/infrastructure/filestore"
 	conversationhttp "github.com/kubewise/kubewise/internal/conversation/interface/http"
+	auditapp "github.com/kubewise/kubewise/internal/audit/application"
+	auditsqlite "github.com/kubewise/kubewise/internal/audit/infrastructure/sqlite"
+	audithttp "github.com/kubewise/kubewise/internal/audit/interface/http"
 	diagapp "github.com/kubewise/kubewise/internal/diagnosis/application"
 	diagsqlite "github.com/kubewise/kubewise/internal/diagnosis/infrastructure/sqlite"
 	diaghttp "github.com/kubewise/kubewise/internal/diagnosis/interface/http"
@@ -59,9 +62,11 @@ func NewServer() *Server {
 
 	var activityRepo *activityfeedsqlite.Repository
 	var diagnosisRepo *diagsqlite.Repository
+	var auditRepo *auditsqlite.Repository
 	if sqldb != nil {
 		activityRepo = activityfeedsqlite.NewRepository(sqldb.DB)
 		diagnosisRepo = diagsqlite.NewRepository(sqldb.DB)
+		auditRepo = auditsqlite.NewRepository(sqldb.DB)
 	}
 
 	activitySvc := activityfeedapp.NewService(activityRepo)
@@ -72,12 +77,15 @@ func NewServer() *Server {
 	diagnosisH := &diaghttp.Handler{
 		Service: diagapp.NewService(diagnosisRepo, agentRT, activitySvc),
 	}
+	auditH := &audithttp.Handler{
+		Service: auditapp.NewService(auditRepo, agentRT),
+	}
 	observabilityH := &obshttp.Handler{
 		Service: obsapp.NewService(obscluster.NewManagerReader(cm)),
 	}
 	activityH := &activityfeedhttp.Handler{Service: activitySvc}
 
-	MountRoutes(e, conversationH, diagnosisH, observabilityH, activityH)
+	MountRoutes(e, conversationH, diagnosisH, auditH, observabilityH, activityH)
 	return &Server{echo: e}
 }
 

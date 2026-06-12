@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	activityfeedhttp "github.com/kubewise/kubewise/internal/activityfeed/interface/http"
+	audithttp "github.com/kubewise/kubewise/internal/audit/interface/http"
 	conversationhttp "github.com/kubewise/kubewise/internal/conversation/interface/http"
 	diaghttp "github.com/kubewise/kubewise/internal/diagnosis/interface/http"
 	obshttp "github.com/kubewise/kubewise/internal/observability/interface/http"
@@ -18,6 +19,7 @@ func MountRoutes(
 	e *echo.Echo,
 	conversation *conversationhttp.Handler,
 	diagnosis *diaghttp.Handler,
+	audit *audithttp.Handler,
 	observability *obshttp.Handler,
 	activity *activityfeedhttp.Handler,
 ) {
@@ -54,6 +56,13 @@ func MountRoutes(
 	v1.GET("/diagnoses/:id", diagnosis.Get)
 	v1.POST("/diagnoses/:id/cancel", diagnosis.Cancel)
 	v1.GET("/diagnoses/:id/events", diagnosis.StreamEvents)
+
+	v1.POST("/audits", audit.Start)
+	v1.GET("/audits", audit.List)
+	v1.GET("/audits/latest", audit.Latest)
+	v1.GET("/audits/:id", audit.Get)
+	v1.POST("/audits/:id/cancel", audit.Cancel)
+	v1.GET("/audits/:id/events", audit.StreamEvents)
 
 	v1.GET("/activities", activity.List)
 }

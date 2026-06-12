@@ -5,6 +5,8 @@ import type {
   DiagnosisStatus,
   Activity,
   DiagnosisListResponse,
+  AuditStatus,
+  AuditListResponse,
 } from './types';
 
 const BASE = 'http://localhost:3000/api/v1';
@@ -87,5 +89,30 @@ export const api = {
   activities: {
     list: (limit = 20, offset = 0) =>
       fetchJSON<Activity[]>(`${BASE}/activities?limit=${limit}&offset=${offset}`),
+  },
+  audits: {
+    list: async (params?: { limit?: number; offset?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.limit) q.set('limit', String(params.limit));
+      if (params?.offset) q.set('offset', String(params.offset));
+      const res = await fetchJSON<AuditListResponse>(`${BASE}/audits?${q}`);
+      return res.audits;
+    },
+    get: (id: string) => fetchJSON<AuditStatus>(`${BASE}/audits/${encodeURIComponent(id)}`),
+    latest: (cluster: string) =>
+      fetchJSON<AuditStatus>(`${BASE}/audits/latest?cluster=${encodeURIComponent(cluster)}`),
+    cancel: (id: string) =>
+      fetchJSON<{ status: string; audit_id: string }>(
+        `${BASE}/audits/${encodeURIComponent(id)}/cancel`,
+        { method: 'POST' },
+      ),
+    create: (cluster: string) =>
+      fetchJSON<{ audit_id: string; status: string }>(`${BASE}/audits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cluster }),
+      }),
+    eventsUrl: (id: string, since = 0) =>
+      `${BASE}/audits/${encodeURIComponent(id)}/events?since=${since}`,
   },
 };
