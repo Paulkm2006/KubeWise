@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Build artifacts
+frontend/dist
+frontend/node_modules
+kubewise
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+frontend/Dockerfile
+frontend/.dockerignore
+
+# Docs & experiments (not needed at build time)
+docs
+experiments
+site
+README.md
+LICENSE
+
+# Secrets — never bake into images
+.env
+*.env
+config.yaml
