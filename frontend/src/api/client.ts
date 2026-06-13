@@ -8,10 +8,12 @@ import type {
   AuditStatus,
   AuditListResponse,
 } from './types';
-import { API_BASE } from '../config';
+import { API_BASE, AUTH_HEADER } from '../config';
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const headers = new Headers(init?.headers);
+  if (AUTH_HEADER) headers.set('Authorization', AUTH_HEADER);
+  const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`API ${res.status}: ${body}`);
