@@ -88,7 +88,7 @@ export default function DiagnosisOverlay({
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-elevated/30">
           <div>
             <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted font-semibold mb-1">
-              Case File
+              诊断档案
             </p>
             <h2 className="text-sm font-semibold text-text">{displayTarget.pod}</h2>
             <p className="text-xs text-text-muted mt-0.5 font-mono">
@@ -103,7 +103,7 @@ export default function DiagnosisOverlay({
                 className="text-[10px] uppercase tracking-wider px-2.5 py-1.5 rounded-sm border border-border
                            text-text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer bg-transparent"
               >
-                Run Log
+                运行日志
               </button>
             )}
             <button
@@ -130,7 +130,7 @@ export default function DiagnosisOverlay({
           {diagnosedAt && !isLoading && (
             <div className="px-4 py-3 rounded-sm border border-border/60 bg-elevated/40">
               <p className="text-[10px] uppercase tracking-wider text-text-muted font-semibold">
-                Last Diagnosis
+                上次诊断
               </p>
               <p className="text-sm text-text mt-1">{formatAbsoluteTime(diagnosedAt)}</p>
               <p className="text-xs text-text-muted font-mono mt-0.5">
@@ -143,10 +143,10 @@ export default function DiagnosisOverlay({
             <div className="px-5 py-8 rounded-sm border border-border bg-elevated/20 text-center space-y-4">
               <div className="inline-flex items-center gap-2 text-sm text-text-secondary">
                 <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                Checking prior diagnosis
+                检查已有诊断
               </div>
               <p className="text-xs text-text-muted leading-relaxed max-w-sm mx-auto">
-                Restoring the latest case for this pod. If none exists, a new diagnosis will start.
+                正在恢复此 Pod 的最新诊断记录。如不存在，将开始新的诊断。
               </p>
             </div>
           )}
@@ -154,9 +154,9 @@ export default function DiagnosisOverlay({
           {isError && (
             <div className="px-4 py-4 rounded-sm border border-red/30 bg-red-dim/10">
               <p className="text-xs text-red font-semibold uppercase tracking-wider mb-1">
-                Case Unavailable
+                档案不可用
               </p>
-              <p className="text-sm text-text-secondary">{error || 'Failed to open diagnosis.'}</p>
+              <p className="text-sm text-text-secondary">{error || '打开诊断失败。'}</p>
             </div>
           )}
 
@@ -167,7 +167,7 @@ export default function DiagnosisOverlay({
               {toolEvents.length > 0 && (
                 <div>
                   <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-2">
-                    Tool Execution
+                    工具执行
                   </h3>
                   <div className="space-y-1.5">
                     {toolEvents.slice(-5).map((ev, i) => (
@@ -195,7 +195,7 @@ export default function DiagnosisOverlay({
                   className="w-full text-xs px-3 py-2 rounded-sm border border-border/60 text-text-muted
                              hover:text-text hover:bg-hover transition-colors cursor-pointer bg-transparent"
                 >
-                  View live run log →
+                  查看实时运行日志 →
                 </button>
               )}
             </>
@@ -206,17 +206,17 @@ export default function DiagnosisOverlay({
               {status === 'cancelled' && (
                 <div className="px-4 py-3 rounded-sm border border-amber/30 bg-amber-dim/10">
                   <p className="text-xs font-semibold uppercase tracking-wider text-amber">
-                    Investigation Stopped
+                    调查已停止
                   </p>
                   <p className="text-sm text-text-secondary mt-1 leading-relaxed">
-                    This case was closed before a report was finalized.
+                    此案例在报告完成前已关闭。
                   </p>
                 </div>
               )}
 
               {status === 'failed' && !result && (
                 <div className="px-4 py-6 text-center text-text-muted text-sm">
-                  Diagnosis failed before a report could be generated.
+                  诊断在生成报告前失败。
                 </div>
               )}
 
@@ -225,16 +225,16 @@ export default function DiagnosisOverlay({
                   {result.enrichment?.status === 'degraded' && (
                     <div className="px-4 py-3 rounded-sm border border-amber/30 bg-amber-dim/10">
                       <p className="text-xs font-semibold uppercase tracking-wider text-amber">
-                        Degraded Analysis
+                        降级分析
                       </p>
                       <p className="text-sm text-text-secondary mt-1 leading-relaxed">
                         {result.enrichment.message ||
-                          'Some AI analysis steps were temporarily unavailable. This report used deterministic fallback based on collected evidence.'}
+                          '部分 AI 分析步骤暂时不可用，此报告使用基于已收集证据的确定性回退方案。'}
                       </p>
                       {result.enrichment.degraded_steps &&
                         result.enrichment.degraded_steps.length > 0 && (
                           <p className="text-xs text-text-muted mt-2 font-mono">
-                            Affected: {result.enrichment.degraded_steps.join(', ')}
+                            受影响: {result.enrichment.degraded_steps.join(', ')}
                           </p>
                         )}
                     </div>
@@ -242,13 +242,13 @@ export default function DiagnosisOverlay({
 
                   {result.duration_ms != null && result.duration_ms > 0 && (
                     <div className="flex items-center gap-1.5 text-xs text-text-muted font-mono">
-                      <span>⏱</span> Completed in {formatDuration(result.duration_ms)}
+                      <span>⏱</span> 耗时 {formatDuration(result.duration_ms)}
                     </div>
                   )}
 
                   <div className="px-5 py-4 rounded-sm bg-red-dim/15 border border-red/20">
                     <p className="text-xs text-red font-semibold tracking-wider uppercase mb-1">
-                      Root Cause
+                      根因
                     </p>
                     <p className="text-base font-semibold text-text">
                       {result.root_cause.title || result.root_cause.summary}
@@ -264,7 +264,7 @@ export default function DiagnosisOverlay({
                       )}
                       {result.root_cause.confidence_label && (
                         <span className="text-text-muted">
-                          Confidence: {result.root_cause.confidence_label}
+                          置信度: {result.root_cause.confidence_label}
                           {result.root_cause.confidence_score != null &&
                             ` (${Math.round(result.root_cause.confidence_score * 100)}%)`}
                         </span>
@@ -278,7 +278,7 @@ export default function DiagnosisOverlay({
                   {result.evidence && result.evidence.length > 0 && (
                     <div>
                       <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-3">
-                        Evidence Chain
+                        证据链
                       </h3>
                       <div className="space-y-2">
                         {result.evidence.map((e) => (
@@ -306,7 +306,7 @@ export default function DiagnosisOverlay({
                   {result.hypotheses && result.hypotheses.length > 0 && (
                     <div>
                       <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-3">
-                        Hypotheses Checked
+                        已验证假设
                       </h3>
                       <div className="space-y-2">
                         {result.hypotheses.map((h) => (
@@ -334,7 +334,7 @@ export default function DiagnosisOverlay({
                   {result.actions && result.actions.length > 0 && (
                     <div>
                       <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-3">
-                        Recommended Actions
+                        建议操作
                       </h3>
                       <div className="space-y-2">
                         {result.actions.map((action, i) => (
@@ -365,7 +365,7 @@ export default function DiagnosisOverlay({
                             className="text-xs px-3 py-1.5 rounded-sm border border-accent/30 text-accent
                                        hover:bg-accent-dim/15 transition-colors cursor-pointer bg-transparent"
                           >
-                            {copied ? '✓ Copied' : 'Copy Command'}
+                            {copied ? '✓ 已复制' : '复制命令'}
                           </button>
                         </div>
                       )}
@@ -374,14 +374,14 @@ export default function DiagnosisOverlay({
 
                   {result.impact?.description && (
                     <div className="px-4 py-3 rounded-sm bg-elevated border border-border/50 text-sm text-text-muted leading-relaxed">
-                      Impact ({result.impact.severity || 'unknown'}): {result.impact.description}
+                      影响 ({result.impact.severity || '未知'}): {result.impact.description}
                     </div>
                   )}
 
                   {result.limitations && result.limitations.length > 0 && (
                     <div>
                       <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-2">
-                        Limitations
+                        局限
                       </h3>
                       <ul className="space-y-1.5 text-sm text-text-muted">
                         {result.limitations.map((lim, i) => (
@@ -409,7 +409,7 @@ export default function DiagnosisOverlay({
                   className="w-full text-xs px-3 py-2 rounded-sm border border-border/60 text-text-muted
                              hover:text-text hover:bg-hover transition-colors cursor-pointer bg-transparent"
                 >
-                  View how this diagnosis ran →
+                  查看诊断执行过程 →
                 </button>
               )}
             </div>
@@ -530,7 +530,7 @@ function InvestigationRefreshPanel({
           {loading ? (
             <>
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-              Investigating…
+              调查中…
             </>
           ) : (
             <>
@@ -549,28 +549,28 @@ const refreshCopy: Record<
   { title: string; body: string; label: string; action: string }
 > = {
   archived: {
-    title: 'Case may be stale',
-    body: 'Pod state may have shifted since this report was filed. A new investigation collects fresh signals and replaces these findings.',
-    label: 'Refresh',
-    action: 'Run New Diagnosis',
+    title: '案例可能过时',
+    body: 'Pod 状态可能已发生变化。新的调查将收集最新信号并替换当前发现。',
+    label: '刷新',
+    action: '运行新诊断',
   },
   failed: {
-    title: 'Investigation incomplete',
-    body: 'The previous run ended without a reliable conclusion. Start a new pass to rebuild the case from current cluster state.',
-    label: 'Retry',
-    action: 'Run New Diagnosis',
+    title: '调查未完成',
+    body: '上次运行未得出可靠结论。开始新的诊断以从当前集群状态重建案例。',
+    label: '重试',
+    action: '运行新诊断',
   },
   cancelled: {
-    title: 'No finalized report',
-    body: 'The last investigation was stopped early. Open a new case to continue troubleshooting from live data.',
-    label: 'Resume',
-    action: 'Run New Diagnosis',
+    title: '无最终报告',
+    body: '上次调查已提前停止。打开新案例以从实时数据继续排查。',
+    label: '继续',
+    action: '运行新诊断',
   },
   in_progress: {
-    title: 'Need a clean slate?',
-    body: 'Starting over will stop the current investigation and open a new case for this pod.',
-    label: 'Restart',
-    action: 'New Investigation',
+    title: '需要重新开始？',
+    body: '重新开始将停止当前调查并为此 Pod 打开新案例。',
+    label: '重启',
+    action: '新调查',
   },
 };
 
@@ -585,13 +585,13 @@ function formatRelativeTime(value: string): string {
   if (Number.isNaN(date.getTime())) return '';
   const diffMs = Date.now() - date.getTime();
   const secs = Math.max(0, Math.round(diffMs / 1000));
-  if (secs < 60) return `${secs}s ago`;
+  if (secs < 60) return `${secs}秒前`;
   const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return `${mins}分钟前`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `${hours}小时前`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `${days}天前`;
 }
 
 function renderToolEvent(ev: DiagnosisEvent): JSX.Element {

@@ -38,9 +38,9 @@ export default function ConfirmCard({
 
   return (
     <div className="mt-3 p-3 rounded-sm border border-amber/30 bg-amber-dim/20 space-y-3">
-      <div className="text-xs font-mono text-amber uppercase tracking-wide">Confirm operation</div>
+      <div className="text-xs font-mono text-amber uppercase tracking-wide">确认操作</div>
       <div className="text-sm text-text">
-        <span className="text-text-muted">Step {idx}/{total} · </span>
+        <span className="text-text-muted">步骤 {idx}/{total} · </span>
         <span className="font-medium">{opLabel(step.operation_type)}</span>
       </div>
       <div className="text-sm text-text-secondary font-mono">
@@ -65,7 +65,7 @@ export default function ConfirmCard({
             onClick={onConfirm}
             className="text-sm px-3 py-1.5 rounded-sm bg-green text-bg font-medium disabled:opacity-40"
           >
-            Confirm
+            确认
           </button>
           <button
             type="button"
@@ -73,7 +73,7 @@ export default function ConfirmCard({
             onClick={onSkip}
             className="text-sm px-3 py-1.5 rounded-sm border border-border text-text-secondary hover:border-red/40"
           >
-            Skip
+            跳过
           </button>
           <button
             type="button"
@@ -81,7 +81,7 @@ export default function ConfirmCard({
             onClick={() => setMode('edit')}
             className="text-sm px-3 py-1.5 rounded-sm border border-border text-text-secondary hover:border-accent/30"
           >
-            Correct…
+            修正…
           </button>
         </div>
       ) : (
@@ -89,7 +89,7 @@ export default function ConfirmCard({
           <input
             value={correction}
             onChange={(e) => setCorrection(e.target.value)}
-            placeholder="Describe your correction…"
+            placeholder="描述您的修正…"
             className="w-full text-sm bg-bg border border-border rounded-sm px-3 py-2 outline-none focus:border-accent/30"
           />
           <div className="flex gap-2">
@@ -103,7 +103,7 @@ export default function ConfirmCard({
               }}
               className="text-sm px-3 py-1.5 rounded-sm bg-accent text-bg font-medium disabled:opacity-40"
             >
-              Send correction
+              发送修正
             </button>
             <button
               type="button"
@@ -113,7 +113,7 @@ export default function ConfirmCard({
               }}
               className="text-sm px-3 py-1.5 rounded-sm border border-border text-text-muted"
             >
-              Cancel
+              取消
             </button>
           </div>
         </div>

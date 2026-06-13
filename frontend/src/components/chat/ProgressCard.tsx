@@ -63,7 +63,7 @@ export default function ProgressCard({
 
       {report && (
         <div className="space-y-1">
-          <div className="text-xs font-mono text-accent uppercase tracking-wide">Report</div>
+          <div className="text-xs font-mono text-accent uppercase tracking-wide">报告</div>
           <MarkdownContent content={report} />
         </div>
       )}
@@ -74,7 +74,7 @@ export default function ProgressCard({
           onClick={onToggleDetails}
           className="text-xs text-text-muted hover:text-accent font-mono"
         >
-          {card.detailsExpanded ? '▼' : '▶'} Execution details
+          {card.detailsExpanded ? '▼' : '▶'} 执行详情
           {card.durationMs != null && ` · ${(card.durationMs / 1000).toFixed(1)}s`}
         </button>
 

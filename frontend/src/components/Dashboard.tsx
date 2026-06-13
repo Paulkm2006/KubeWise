@@ -168,11 +168,11 @@ export default function Dashboard({
       {/* Clusters */}
       <div ref={clustersRef} className="px-8 pt-6 pb-5 border-b border-border/60">
         <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-sm font-semibold text-text tracking-wide">Clusters</h2>
+          <h2 className="text-sm font-semibold text-text tracking-wide">集群</h2>
           {loading ? (
-            <span className="text-sm text-text-muted font-mono">loading...</span>
+            <span className="text-sm text-text-muted font-mono">加载中...</span>
           ) : (
-            <span className="text-sm text-text-muted font-mono">{clusters.length} connected</span>
+            <span className="text-sm text-text-muted font-mono">{clusters.length} 已连接</span>
           )}
           {error && <span className="text-xs text-red ml-2">{error}</span>}
         </div>
@@ -209,28 +209,28 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                     }>
                       ●
                     </span>{' '}
-                    {c.pods_ready}/{c.pods_total} pods ready
+                    {c.pods_ready}/{c.pods_total} Pod 就绪
                   </span>
                   <span className="text-xs text-text-muted font-mono">{c.last_updated}s</span>
                 </div>
                 <div className="mt-1.5">
                   {c.issues_count > 0 ? (
                     <span className={`text-sm font-medium ${c.issues_count > 2 ? 'text-red' : 'text-amber'}`}>
-                      {c.issues_count} issue{c.issues_count > 1 ? 's' : ''}
+                      {c.issues_count} 个问题
                     </span>
                   ) : (
-                    <span className="text-sm text-text-muted">0 issues</span>
+                    <span className="text-sm text-text-muted">0 个问题</span>
                   )}
                 </div>
                 <div className={`mt-3 pt-3 border-t border-border/30 flex gap-3 text-xs text-text-muted ${isFiltered ? '' : 'opacity-0 group-hover:opacity-100 transition-opacity'}`}>
-                  <span>◈ {c.nodes} nodes</span>
-                  <span>▣ {c.namespaces} namespaces</span>
+                  <span>◈ {c.nodes} 节点</span>
+                  <span>▣ {c.namespaces} 命名空间</span>
                 </div>
               </button>
             );
           })}
           {clusters.length === 0 && !loading && (
-            <div className="text-sm text-text-muted py-4">No clusters found. Check connection.</div>
+            <div className="text-sm text-text-muted py-4">未找到集群，请检查连接。</div>
           )}
         </div>
       </div>
@@ -241,11 +241,11 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
         <div ref={issuesRef} className="flex flex-col">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div className="flex items-center gap-3">
-              <h2 className="text-sm font-semibold text-text tracking-wide">Issues</h2>
+              <h2 className="text-sm font-semibold text-text tracking-wide">问题</h2>
               <span className="text-sm text-red/80 font-mono font-medium">
                 {sortedIssues.length > 0
-                  ? `${sortedIssues.length} total${focusCluster ? ` on ${focusCluster}` : ' across all clusters'}`
-                  : 'none'}
+                  ? `共 ${sortedIssues.length} 个${focusCluster ? ` (在 ${focusCluster})` : ' (跨所有集群)'}`
+                  : '无'}
               </span>
             </div>
 
@@ -289,24 +289,24 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
 
           {loading && clusters.length === 0 ? (
             <div className="border border-border rounded-sm p-10 text-center">
-              <p className="text-sm text-text-muted">Loading issues...</p>
+              <p className="text-sm text-text-muted">加载问题...</p>
             </div>
           ) : sortedIssues.length === 0 ? (
             <div className="border border-border rounded-sm p-10 text-center">
-              <p className="text-sm text-text-muted">No issues</p>
-              <p className="text-xs text-text-muted mt-1">All clusters are running normally</p>
+              <p className="text-sm text-text-muted">无问题</p>
+              <p className="text-xs text-text-muted mt-1">所有集群运行正常</p>
             </div>
           ) : (
             <div key={`issues-${focusCluster || 'all'}-${page}`} className="border border-border rounded-sm overflow-hidden flex-1 flex flex-col animate-fade-in">
               <table className="w-full">
                 <thead>
                   <tr className="bg-elevated/50">
-                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Sev</th>
-                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Cluster</th>
+                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">严重度</th>
+                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">集群</th>
                     <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Pod</th>
-                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Status</th>
-                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Ns</th>
-                    <th className="text-right text-xs text-text-muted font-semibold uppercase py-3 px-4">Action</th>
+                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">状态</th>
+                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">命名空间</th>
+                    <th className="text-right text-xs text-text-muted font-semibold uppercase py-3 px-4">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -332,7 +332,7 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                                 : 'border-border hover:text-accent hover:border-accent/40 text-text-muted bg-transparent'
                               }`}
                           >
-                            {isDone ? '✓ Done' : 'Diagnose →'}
+                            {isDone ? '✓ 已完成' : '诊断 →'}
                           </button>
                         </td>
                       </tr>
@@ -349,7 +349,7 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
           {/* Recent Diagnoses */}
           {diagnoses.length > 0 && (
             <div className="border border-border rounded-sm p-5 bg-surface">
-              <h3 className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-3">Recent Diagnoses</h3>
+              <h3 className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-3">近期诊断</h3>
               <div className="space-y-2 max-h-[240px] overflow-y-auto">
                 {diagnoses.slice(0, 10).map((d) => (
                   <button
@@ -398,10 +398,10 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
             <>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: 'Pods', value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text', target: 'issues' as const },
-                  { label: 'Issues', value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text', target: 'issues' as const },
-                  { label: 'Nodes', value: currentCluster.nodes, color: 'text-text', target: 'clusters' as const },
-                  { label: 'Namespaces', value: currentCluster.namespaces, color: 'text-text', target: 'clusters' as const },
+                  { label: 'Pod', value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text', target: 'issues' as const },
+                  { label: '问题', value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text', target: 'issues' as const },
+                  { label: '节点', value: currentCluster.nodes, color: 'text-text', target: 'clusters' as const },
+                  { label: '命名空间', value: currentCluster.namespaces, color: 'text-text', target: 'clusters' as const },
                 ].map((s) => (
                   <div
                     key={s.label}
@@ -423,14 +423,14 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
 
               {/* Version info */}
               <div className="border border-border rounded-sm p-4 bg-surface">
-                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">Cluster Info</p>
+                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">集群信息</p>
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs">
-                    <span className="text-text-muted">Version</span>
+                    <span className="text-text-muted">版本</span>
                     <span className="text-text-secondary font-mono">{currentCluster.version || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-text-muted">Fingerprint</span>
+                    <span className="text-text-muted">指纹</span>
                     <span className="text-text-secondary font-mono text-[10px]">{currentCluster.fingerprint.slice(0, 16)}...</span>
                   </div>
                 </div>
@@ -448,10 +448,10 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                   const totalNodes = clusters.reduce((s, c) => s + c.nodes, 0);
                   const totalNs = clusters.reduce((s, c) => s + c.namespaces, 0);
                   return [
-                    { label: 'Clusters', value: total, color: 'text-text', target: 'clusters' as const },
-                    { label: 'Pods', value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber', target: 'issues' as const },
-                    { label: 'Issues', value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text', target: 'issues' as const },
-                    { label: 'Nodes / NS', value: `${totalNodes} / ${totalNs}`, color: 'text-text', target: 'clusters' as const },
+                    { label: '集群', value: total, color: 'text-text', target: 'clusters' as const },
+                    { label: 'Pod', value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber', target: 'issues' as const },
+                    { label: '问题', value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text', target: 'issues' as const },
+                    { label: '节点 / 命名空间', value: `${totalNodes} / ${totalNs}`, color: 'text-text', target: 'clusters' as const },
                   ].map((s) => (
                     <div
                       key={s.label}
@@ -474,7 +474,7 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
 
               {/* All clusters summary */}
               <div className="border border-border rounded-sm p-4 bg-surface">
-                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">All Clusters</p>
+                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">所有集群</p>
                 <div className="space-y-1.5">
                   {clusters.map(c => (
                     <div key={c.name} className="flex justify-between text-xs">
@@ -495,7 +495,7 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
 
       <div className="px-8 pb-6">
         <p className="text-xs text-text-muted border-t border-border/30 pt-4">
-          CIS Kubernetes Benchmark v1.10 · NIST SP 800-204 · Auto-refresh 15s
+          CIS Kubernetes Benchmark v1.10 · NIST SP 800-204 · 自动刷新 15秒
         </p>
       </div>
     </div>

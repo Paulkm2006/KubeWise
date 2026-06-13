@@ -12,9 +12,9 @@ import { AuditStore } from './stores/auditStore';
 import type { DiagnosisTarget, ClusterSummary } from './api/types';
 
 const TAB_CONFIG = [
-  { id: 'dashboard', label: 'Dashboard', icon: '◈' },
-  { id: 'audit', label: 'Audit', icon: '◇' },
-  { id: 'chat', label: 'Chat', icon: '○' },
+  { id: 'dashboard', label: '仪表盘', icon: '◈' },
+  { id: 'audit', label: '安全审计', icon: '◇' },
+  { id: 'chat', label: '对话', icon: '○' },
 ] as const;
 
 type DiagPhase = 'idle' | 'loading' | 'ready' | 'error';
@@ -59,7 +59,7 @@ export default function App() {
         setDiagnosedPods((prev) => new Set(prev).add(key));
         addActivity(
           stored.status === 'failed' ? 'issue' : 'done',
-          `${stored.target.pod} diagnosis ${stored.status}`,
+          `${stored.target.pod} 诊断${stored.status === 'completed' ? '完成' : stored.status === 'failed' ? '失败' : stored.status}`,
           stored.target.cluster,
         );
       },
@@ -83,7 +83,7 @@ export default function App() {
 
   const handleClusterChange = (name: string) => {
     setActiveCluster(name);
-    addActivity('info', `Switched to ${name}`, name);
+    addActivity('info', `已切换到 ${name}`, name);
   };
 
   const openDiagnosisById = async (id: string) => {
@@ -104,7 +104,7 @@ export default function App() {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setDiagPhase('error');
       setDiagError(msg);
-      addActivity('issue', `Failed to open diagnosis: ${msg}`);
+      addActivity('issue', `打开诊断失败: ${msg}`);
     }
   };
 
@@ -130,13 +130,13 @@ export default function App() {
       if (!msg.includes('404')) {
         setDiagPhase('error');
         setDiagError(msg);
-        addActivity('issue', `Diagnosis lookup failed for ${pod}: ${msg}`, cluster);
+        addActivity('issue', `${pod} 诊断查询失败: ${msg}`, cluster);
         return;
       }
     }
 
     try {
-      addActivity('pending', `Diagnosing ${pod}...`, cluster);
+      addActivity('pending', `正在诊断 ${pod}...`, cluster);
       const res = await api.diagnoses.create(cluster, namespace, pod);
       const stored = storeRef.current.add(res.diagnosis_id, target, callbacks);
       setActiveDiagnosis(stored);
@@ -145,7 +145,7 @@ export default function App() {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setDiagPhase('error');
       setDiagError(msg);
-      addActivity('issue', `Diagnosis failed for ${pod}: ${msg}`, cluster);
+      addActivity('issue', `${pod} 诊断失败: ${msg}`, cluster);
     }
   };
 
@@ -170,7 +170,7 @@ export default function App() {
         storeRef.current.closeSSE(activeDiagnosis.id);
       }
 
-      addActivity('pending', `Re-diagnosing ${pod}...`, cluster);
+      addActivity('pending', `重新诊断 ${pod}...`, cluster);
       const res = await api.diagnoses.create(cluster, namespace, pod);
       const stored = storeRef.current.add(res.diagnosis_id, target, callbacks);
       setActiveDiagnosis(stored);
@@ -179,7 +179,7 @@ export default function App() {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setDiagPhase('error');
       setDiagError(msg);
-      addActivity('issue', `Re-diagnosis failed for ${pod}: ${msg}`, cluster);
+      addActivity('issue', `${pod} 重新诊断失败: ${msg}`, cluster);
     }
   };
 
@@ -209,7 +209,7 @@ export default function App() {
           activeCluster={activeCluster}
           clusters={clusters}
           onClear={() => setActivities([])}
-          onActivityClick={(cluster) => { if (cluster) { setActiveCluster(cluster); addActivity('info', `Switched to ${cluster}`, cluster); } }}
+          onActivityClick={(cluster) => { if (cluster) { setActiveCluster(cluster); addActivity('info', `已切换到 ${cluster}`, cluster); } }}
           onFocusCluster={(name) => { setFocusCluster(name); setActiveTab('dashboard'); }}
         />
 

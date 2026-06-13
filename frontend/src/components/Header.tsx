@@ -50,7 +50,7 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
   }, []);
 
   const active = clusters.find((c) => c.name === activeCluster) || clusters[0];
-  const freshnessText = freshness === 0 ? 'just now' : `${freshness}s ago`;
+  const freshnessText = freshness === 0 ? '刚刚' : `${freshness}秒前`;
 
   return (
     <header className="h-14 flex items-center px-6 border-b border-border bg-surface shrink-0 select-none gap-4">
@@ -84,7 +84,7 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-50" />
           <span className="relative inline-flex rounded-full w-2 h-2 bg-green" />
         </span>
-        Live
+        实时
       </span>
       <span className="text-sm text-text-muted">{freshnessText}</span>
 
@@ -93,7 +93,7 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
         onClick={() => { onRefresh(); setFreshness(0); onActivity('info', 'Views refreshed', activeCluster); }}
         className="text-sm text-text-muted px-3 py-1.5 border border-border hover:border-accent/30 hover:text-text rounded-sm transition-colors cursor-pointer bg-transparent"
       >
-        ⟳ Refresh
+        ⟳ 刷新
       </button>
 
       {/* Cluster Switcher */}

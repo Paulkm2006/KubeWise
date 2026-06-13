@@ -20,17 +20,17 @@ const sevStyle: Record<string, string> = {
   low: 'text-accent bg-accent-dim',
 };
 
-const FILTERS = ['All', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
+const FILTERS = ['全部', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
 
 function formatAge(iso?: string): string {
   if (!iso) return '';
   const ms = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins}分钟前`;
   const hours = Math.floor(mins / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 48) return `${hours}小时前`;
+  return `${Math.floor(hours / 24)}天前`;
 }
 
 function formatDuration(ms?: number): string {
@@ -170,7 +170,7 @@ export default function SecurityAudit({
   };
 
   const filtered = useMemo(() => {
-    if (filter === 'All') return findings;
+    if (filter === '全部') return findings;
     return findings.filter((f) => f.severity.toUpperCase() === filter);
   }, [findings, filter]);
 
@@ -267,17 +267,17 @@ export default function SecurityAudit({
     <div className="h-full overflow-y-auto px-8 py-6">
       <div className="flex items-start justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-sm font-semibold text-text tracking-wide">Security Audit</h1>
+          <h1 className="text-sm font-semibold text-text tracking-wide">安全审计</h1>
           <p className="text-sm text-text-muted mt-1">
-            {activeCluster || 'No cluster selected'}
+            {activeCluster || '未选择集群'}
             {pagePhase === 'completed' && liveStored?.createdAt && (
               <span className="ml-2">
-                · Last audited {formatAge(liveStored.createdAt)}
+                · 上次审计 {formatAge(liveStored.createdAt)}
                 {freshness === 'aging' && (
-                  <span className="text-amber ml-1">· Report may be outdated</span>
+                  <span className="text-amber ml-1">· 报告可能过时</span>
                 )}
                 {freshness === 'stale' && (
-                  <span className="text-red ml-1">· Report is stale — re-audit recommended</span>
+                  <span className="text-red ml-1">· 报告陈旧，建议重新审计</span>
                 )}
               </span>
             )}
@@ -292,7 +292,7 @@ export default function SecurityAudit({
               className="text-sm text-text-muted px-4 py-1.5 border border-border rounded-sm
                          hover:border-red/40 hover:text-red transition-colors cursor-pointer bg-transparent"
             >
-              Cancel
+              取消
             </button>
           )}
           {(pagePhase === 'completed' || pagePhase === 'failed') && (
@@ -302,7 +302,7 @@ export default function SecurityAudit({
               className="text-sm text-text-secondary px-4 py-1.5 border border-border rounded-sm
                          hover:border-accent/30 hover:text-text transition-colors cursor-pointer bg-transparent"
             >
-              Re-audit
+              重新审计
             </button>
           )}
           <button
@@ -313,14 +313,14 @@ export default function SecurityAudit({
                        hover:bg-accent-dim/15 transition-colors cursor-pointer bg-transparent font-medium
                        disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            ↓ Export
+            ↓ 导出
           </button>
         </div>
       </div>
 
       {pagePhase === 'loading' && (
         <div className="flex items-center justify-center py-24 text-sm text-text-muted">
-          Loading audit status…
+          加载审计状态…
         </div>
       )}
 
@@ -339,10 +339,10 @@ export default function SecurityAudit({
       {pagePhase === 'empty' && (
         <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
           <span className="text-3xl text-text-muted mb-4">◇</span>
-          <h2 className="text-base font-semibold text-text mb-2">No audit report yet</h2>
+          <h2 className="text-base font-semibold text-text mb-2">暂无审计报告</h2>
           <p className="text-sm text-text-muted leading-relaxed mb-6">
-            Run a full security scan across RBAC, Pod security, network policies, and image
-            configuration for <span className="text-text font-medium">{activeCluster}</span>.
+            运行完整安全扫描，覆盖 RBAC、Pod 安全、网络策略和镜像配置，
+            目标集群: <span className="text-text font-medium">{activeCluster}</span>。
           </p>
           <button
             onClick={handleStart}
@@ -350,17 +350,17 @@ export default function SecurityAudit({
             className="text-sm font-medium text-bg bg-accent px-6 py-2.5 rounded-sm
                        hover:brightness-110 transition-all cursor-pointer disabled:opacity-50"
           >
-            Run Security Audit
+            运行安全审计
           </button>
           <p className="text-xs text-text-muted mt-6">
-            RBAC · Pod Security · Network Policies · Image Security
+            RBAC · Pod 安全 · 网络策略 · 镜像安全
           </p>
         </div>
       )}
 
       {pagePhase === 'failed' && (
         <div className="mb-6 px-4 py-3 rounded-sm border border-red/30 bg-red-dim/10 text-sm text-red">
-          Audit failed{liveStored?.errorMessage ? `: ${liveStored.errorMessage}` : ''}
+          审计失败{liveStored?.errorMessage ? `: ${liveStored.errorMessage}` : ''}
         </div>
       )}
 
@@ -368,7 +368,7 @@ export default function SecurityAudit({
         <div className="mb-6 border border-border rounded-sm p-5 bg-elevated/20">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-medium text-text">
-              Auditing {activeCluster}
+              正在审计 {activeCluster}
             </span>
             <span className="text-sm font-mono text-text-muted">
               {Math.floor(elapsedSec / 60)}:{(elapsedSec % 60).toString().padStart(2, '0')}
@@ -395,10 +395,10 @@ export default function SecurityAudit({
                 <PhaseIcon status={phase.status} />
                 <span className="flex-1 font-medium">{phase.label}</span>
                 {phase.status === 'completed' && phase.count !== undefined && (
-                  <span className="text-xs font-mono text-text-muted">{phase.count} findings</span>
+                  <span className="text-xs font-mono text-text-muted">{phase.count} 发现</span>
                 )}
                 {phase.status === 'running' && (
-                  <span className="text-xs text-accent animate-pulse">scanning…</span>
+                  <span className="text-xs text-accent animate-pulse">扫描中…</span>
                 )}
               </div>
             ))}
@@ -407,7 +407,7 @@ export default function SecurityAudit({
           {findings.length > 0 && (
             <div>
               <p className="text-xs uppercase tracking-wider text-text-muted font-semibold mb-2">
-                Live findings ({findings.length})
+                实时发现 ({findings.length})
               </p>
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {findings.slice(-8).map((row, i) => (
@@ -422,7 +422,7 @@ export default function SecurityAudit({
               onClick={() => setLogOpen((v) => !v)}
               className="mt-4 text-xs text-text-muted hover:text-text cursor-pointer bg-transparent border-0"
             >
-              {logOpen ? '▾' : '▸'} Run log ({liveStored.events.length} events)
+              {logOpen ? '▾' : '▸'} 运行日志 ({liveStored.events.length} 事件)
             </button>
           )}
           {logOpen && liveStored && (
@@ -442,7 +442,7 @@ export default function SecurityAudit({
           <>
             <div className="grid grid-cols-5 gap-4 mb-6">
               {[
-                { label: 'Total', value: summary.total, color: 'text-text', key: 'All' },
+                { label: '总计', value: summary.total, color: 'text-text', key: '全部' },
                 { label: 'CRITICAL', value: summary.critical, color: 'text-red', key: 'CRITICAL' },
                 { label: 'HIGH', value: summary.high, color: 'text-red', key: 'HIGH' },
                 { label: 'MEDIUM', value: summary.medium, color: 'text-amber', key: 'MEDIUM' },
@@ -485,8 +485,8 @@ export default function SecurityAudit({
 
       {pagePhase === 'completed' && findings.length === 0 && (
         <div className="text-center py-16 border border-border rounded-sm">
-          <p className="text-lg font-semibold text-green mb-2">No findings</p>
-          <p className="text-sm text-text-muted">This cluster passed all security checks.</p>
+          <p className="text-lg font-semibold text-green mb-2">无发现</p>
+          <p className="text-sm text-text-muted">此集群通过所有安全检查。</p>
         </div>
       )}
 
@@ -525,7 +525,7 @@ function FindingsTable({ findings, dimmed }: { findings: AuditFinding[]; dimmed?
   if (findings.length === 0) {
     return (
       <div className="text-center py-12 text-sm text-text-muted border border-border rounded-sm">
-        No findings match this filter
+        无匹配此筛选的发现
       </div>
     );
   }
@@ -539,12 +539,12 @@ function FindingsTable({ findings, dimmed }: { findings: AuditFinding[]; dimmed?
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-elevated/50">
-            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Sev</th>
-            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Category</th>
-            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Resource</th>
-            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Risk</th>
-            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Impact</th>
-            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Suggestion</th>
+            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">严重度</th>
+            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">类别</th>
+            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">资源</th>
+            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">风险</th>
+            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">影响</th>
+            <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">建议</th>
           </tr>
         </thead>
         <tbody>

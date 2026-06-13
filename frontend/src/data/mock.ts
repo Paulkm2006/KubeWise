@@ -38,23 +38,23 @@ export interface AuditFinding {
 }
 
 export const diagnosisSteps: DiagnosisStep[] = [
-  { id: 1, label: 'Collecting context', detail: 'Pod describe, events, logs...' },
-  { id: 2, label: 'LLM Analysis', detail: 'Analyzing symptoms...' },
-  { id: 3, label: 'Hypothesis verification', detail: 'Verifying root cause...' },
-  { id: 4, label: 'Generating report', detail: 'Structuring findings...' },
+  { id: 1, label: '采集上下文', detail: 'Pod describe、事件、日志...' },
+  { id: 2, label: 'LLM 分析', detail: '分析症状...' },
+  { id: 3, label: '假设验证', detail: '验证根因...' },
+  { id: 4, label: '生成报告', detail: '结构化发现...' },
 ];
 
 export const mockDiagnosisResult: DiagnosisResult = {
-  rootCause: 'OOMKilled — Memory limit insufficient',
+  rootCause: 'OOMKilled — 内存限制不足',
   confidence: '92%',
   evidence: [
-    { num: 1, text: 'Container exited with code 137 (OOMKilled confirmation)' },
-    { num: 2, text: 'Memory limit = 64Mi, actual peak = 256Mi (4× over limit)' },
-    { num: 3, text: 'Node status: 32Gi / 12Gi used — no resource pressure' },
+    { num: 1, text: '容器以退出码 137 退出 (OOMKilled 确认)' },
+    { num: 2, text: '内存限制 = 64Mi，实际峰值 = 256Mi (超出限制 4 倍)' },
+    { num: 3, text: '节点状态: 32Gi / 12Gi 已用 — 无资源压力' },
   ],
   fixCommand: 'kubectl set resources deployment nginx \\\n  --container nginx \\\n  --limits memory=512Mi \\\n  -n prod',
-  impact: 'Rolling restart, 1/3 replicas briefly unavailable (~30s)',
-  duration: '28s',
+  impact: '滚动重启，1/3 副本短暂不可用 (~30秒)',
+  duration: '28秒',
 };
 
 export const auditFindings: AuditFinding[] = [

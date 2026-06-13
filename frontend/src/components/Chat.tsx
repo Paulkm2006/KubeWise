@@ -12,10 +12,10 @@ import MarkdownContent from './MarkdownContent';
 import ProgressCard from './chat/ProgressCard';
 
 const SUGGESTIONS = [
-  'List all namespaces',
-  'Which PVC uses the most storage?',
-  'Run a full security audit',
-  'Deploy ArgoCD in dev namespace',
+  '列出所有命名空间',
+  '哪个 PVC 使用存储最多？',
+  '运行完整安全审计',
+  '在 dev 命名空间部署 ArgoCD',
 ];
 
 interface ChatProps {
@@ -31,7 +31,7 @@ export default function Chat({ activeCluster }: ChatProps) {
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'KubeWise Chat — ask about the cluster selected in the header. Each message routes to the right agent.',
+      text: 'KubeWise 对话 — 关于顶部选中集群的问题将自动路由到对应 Agent。',
       cluster: '',
       timestamp: formatTime(),
     },
@@ -296,7 +296,7 @@ export default function Chat({ activeCluster }: ChatProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && sendMessage(input)}
-          placeholder={activeCluster ? 'Ask about this cluster…' : 'Select a cluster in the header first'}
+          placeholder={activeCluster ? '请输入关于此集群的问题…' : '请先在顶部选择一个集群'}
           disabled={streaming || !activeCluster}
           className="flex-1 bg-surface border border-border rounded-sm px-4 py-2.5 text-sm text-text
                      placeholder:text-text-muted outline-none focus:border-accent/30 transition-colors font-sans
@@ -309,7 +309,7 @@ export default function Chat({ activeCluster }: ChatProps) {
           className="text-sm font-medium px-4 py-2.5 rounded-sm bg-accent text-bg
                      hover:opacity-85 disabled:opacity-40 transition-opacity cursor-pointer border-none shrink-0"
         >
-          Send →
+          发送 →
         </button>
       </div>
     </div>
