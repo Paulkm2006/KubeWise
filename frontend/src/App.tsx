@@ -204,7 +204,14 @@ export default function App() {
       />
 
       <div className="flex flex-1 min-h-0">
-        <Sidebar activities={activities} activeCluster={activeCluster} clusters={clusters} />
+        <Sidebar
+          activities={activities}
+          activeCluster={activeCluster}
+          clusters={clusters}
+          onClear={() => setActivities([])}
+          onActivityClick={(cluster) => { if (cluster) { setActiveCluster(cluster); addActivity('info', `Switched to ${cluster}`, cluster); } }}
+          onFocusCluster={(name) => { setFocusCluster(name); setActiveTab('dashboard'); }}
+        />
 
         <div className="w-px bg-border shrink-0" />
 

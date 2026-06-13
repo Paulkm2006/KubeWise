@@ -4,6 +4,9 @@ interface SidebarProps {
   activities: Activity[];
   activeCluster: string;
   clusters: ClusterSummary[];
+  onClear?: () => void;
+  onActivityClick?: (cluster?: string) => void;
+  onFocusCluster?: (name: string) => void;
 }
 
 interface Activity {
@@ -20,7 +23,7 @@ const typeStyle: Record<string, { border: string; dot: string }> = {
   info: { border: 'border-l-accent/50', dot: 'bg-accent' },
 };
 
-export default function Sidebar({ activities, activeCluster, clusters }: SidebarProps) {
+export default function Sidebar({ activities, activeCluster, clusters, onClear, onActivityClick, onFocusCluster }: SidebarProps) {
   const clusterInfo = clusters.find((c) => c.name === activeCluster);
 
   return (
@@ -29,7 +32,7 @@ export default function Sidebar({ activities, activeCluster, clusters }: Sidebar
       <div className="flex-1 flex flex-col min-h-0 p-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-semibold text-text-muted tracking-widest uppercase">Activity</span>
-          <span className="text-xs text-text-muted cursor-pointer hover:text-text transition-colors">clear</span>
+          <span onClick={onClear} className="text-xs text-text-muted cursor-pointer hover:text-text transition-colors">clear</span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-1">
           {activities.map((a, i) => {
@@ -37,7 +40,8 @@ export default function Sidebar({ activities, activeCluster, clusters }: Sidebar
             return (
               <div
                 key={i}
-                className={`flex items-start gap-2.5 px-3 py-2 border-l-2 ${s.border} hover:bg-hover/50 transition-colors cursor-default rounded-r-sm`}
+                onClick={() => a.cluster && onActivityClick?.(a.cluster)}
+                className={`flex items-start gap-2.5 px-3 py-2 border-l-2 ${s.border} hover:bg-hover/50 transition-colors rounded-r-sm ${a.cluster ? 'cursor-pointer' : 'cursor-default'}`}
               >
                 <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
                 <div className="min-w-0 flex-1">
@@ -55,7 +59,10 @@ export default function Sidebar({ activities, activeCluster, clusters }: Sidebar
       {/* Cluster State Card */}
       <div className="p-4 pt-2">
         {clusterInfo ? (
-          <div className="p-4 bg-elevated border border-border rounded-sm">
+          <div
+            onClick={() => onFocusCluster?.(activeCluster)}
+            className="p-4 bg-elevated border border-border rounded-sm cursor-pointer hover:border-accent/30 transition-colors"
+          >
             <div className="flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full shrink-0 ${
                 clusterInfo.health === 'healthy' ? 'bg-green' :
