@@ -19,12 +19,12 @@
 
 ```bash
 # 1. 搭建实验环境（创建 3 个集群 + 注入故障）
-cd tests/experiments
+cd experiments
 bash setup.sh
 
 # 2. 修改 KubeWise 配置指向实验集群
 #    编辑 config.yaml，将 kubeconfig 改为：
-#    kubeconfig: "tests/experiments/kube/merged.kubeconfig"
+#    kubeconfig: "experiments/.kube/merged.kubeconfig"
 
 # 3. 启动 KubeWise
 go build -o kubewise ./cmd && ./kubewise serve --config config.yaml -v --log-file stderr
@@ -38,7 +38,7 @@ cd frontend && npx vite --host
 ## 环境清理
 
 ```bash
-cd tests/experiments
+cd experiments
 bash cleanup.sh
 ```
 
@@ -64,9 +64,9 @@ bash cleanup.sh
 
 | 集群 | API 端口 | 健康应用 | 注入故障 | 类型 |
 |------|---------|---------|---------|------|
-| kw-exp-a | 16443 | nginx | CrashLoopBackOff | high severity |
-| kw-exp-b | 16444 | nginx | OOMKilled + ImagePullBackOff | high / medium |
-| kw-exp-c | 16445 | nginx | Pending（资源不足） | medium |
+| kw-exp-a | 16500 | nginx | CrashLoopBackOff | high severity |
+| kw-exp-b | 16501 | nginx | OOMKilled + ImagePullBackOff | high / medium |
+| kw-exp-c | 16502 | nginx | Pending（资源不足） | medium |
 
 ### 故障说明
 

@@ -11,7 +11,7 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-KUBE_DIR="$DIR/kube"
+DOT_KUBE_DIR="$DIR/.kube"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,9 +39,9 @@ if [ "${1:-}" != "--keep-clusters" ]; then
   echo ""
 fi
 
-# 清理 kubeconfig
-rm -f "$KUBE_DIR"/*.kubeconfig "$KUBE_DIR"/*.kubeconfig "$KUBE_DIR"/merged.kubeconfig
-info "kubeconfig 已清理"
+# 清理 .kube 沙箱目录（里面都是 kind 生成的文件）
+rm -rf "$DOT_KUBE_DIR"
+info "kubeconfig 沙箱已清理"
 
 echo ""
 echo -e "${GREEN}✓ 清理完成${NC}"

@@ -12,12 +12,13 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 KUBE_DIR="$DIR/kube"
+DOT_KUBE_DIR="$DIR/.kube"        # kind 操作的沙箱目录，不污染 ~/.kube/config
 MANIFESTS="$DIR/manifests"
 CLUSTERS="$DIR/clusters"
 
-KUBECONFIG_A="$KUBE_DIR/kind-a.kubeconfig"
-KUBECONFIG_B="$KUBE_DIR/kind-b.kubeconfig"
-KUBECONFIG_C="$KUBE_DIR/kind-c.kubeconfig"
+KUBECONFIG_A="$DOT_KUBE_DIR/kind-a.kubeconfig"
+KUBECONFIG_B="$DOT_KUBE_DIR/kind-b.kubeconfig"
+KUBECONFIG_C="$DOT_KUBE_DIR/kind-c.kubeconfig"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -106,7 +107,29 @@ if [ "${1:-}" != "--skip-prechecks" ]; then
   prechecks
 fi
 
-# 1. 创建 3 个 kind 集群
+# 1. 准备沙箱目录: 将 kube/ 复制成 .kube/（.kube/ 不受 git 追踪，
+#    kind 的 kubeconfig 写入不会污染用户的 ~/.kube/config）
+echo "══════════════════════════════════════════════"
+echo "  准备 kubeconfig 沙箱"
+echo "══════════════════════════════════════════════"
+
+rm -rf "$DOT_KUBE_DIR"
+mkdir -p "$DOT_KUBE_DIR"
+if [ -d "$KUBE_DIR" ] && [ "$(ls -A "$KUBE_DIR" 2>/dev/null)" ]; then
+  cp -r "$KUBE_DIR"/* "$DOT_KUBE_DIR/"
+  info "已复制 kube/ → .kube/"
+else
+  info "kube/ 为空或不存在，从空目录开始"
+fi
+
+# 设置 KUBECONFIG 指向 .kube/merged.kubeconfig，后续 kind create cluster
+# 就不会污染 ~/.kube/config
+export KUBECONFIG="$DOT_KUBE_DIR/merged.kubeconfig"
+ok "沙箱目录就绪: $DOT_KUBE_DIR"
+
+echo ""
+
+# 2. 创建 3 个 kind 集群
 echo "══════════════════════════════════════════════"
 echo "  创建 kind 集群"
 echo "══════════════════════════════════════════════"
@@ -134,8 +157,6 @@ echo "════════════════════════�
 echo "  导出 kubeconfig"
 echo "══════════════════════════════════════════════"
 
-mkdir -p "$KUBE_DIR"
-
 export_kubeconfig() {
   local cluster_name="$1"
   local out="$2"
@@ -149,7 +170,7 @@ export_kubeconfig "kw-exp-b" "$KUBECONFIG_B"
 export_kubeconfig "kw-exp-c" "$KUBECONFIG_C"
 
 # 合并成一个 kubeconfig（方便 KubeWise 读取）
-KUBECONFIG_MERGED="$KUBE_DIR/merged.kubeconfig"
+KUBECONFIG_MERGED="$DOT_KUBE_DIR/merged.kubeconfig"
 KUBECONFIG="" kubectl config view --raw > /dev/null 2>&1 || true
 # 手动合并
 KUBECONFIG="$KUBECONFIG_A:$KUBECONFIG_B:$KUBECONFIG_C" \
@@ -255,10 +276,13 @@ echo "════════════════════════�
 echo ""
 echo -e "${GREEN}3 个 kind 集群已创建并注入故障。${NC}"
 echo ""
+echo "所有 kubeconfig 文件在 .kube/ 下，未污染 ~/.kube/config:"
+echo "  ls -la $DOT_KUBE_DIR/"
+echo ""
 echo "启动 KubeWise 查看效果:"
 echo ""
 echo "  1. 修改 config.yaml 的 kubeconfig 路径："
-echo "       kubeconfig: \"tests/experiments/kube/merged.kubeconfig\""
+echo "       kubeconfig: \"experiments/.kube/merged.kubeconfig\""
 echo ""
 echo "  2. 启动后端："
 echo "       go build -o kubewise ./cmd && ./kubewise serve --config config.yaml -v --log-file stderr"
@@ -267,10 +291,4 @@ echo "  3. 启动前端："
 echo "       cd frontend && npx vite --host"
 echo ""
 echo "清理环境:"
-echo "  bash tests/experiments/cleanup.sh"
-echo ""
-echo "单独管理:"
-echo "  kind delete cluster --name kw-exp-a"
-echo "  kind delete cluster --name kw-exp-b"
-echo "  kind delete cluster --name kw-exp-c"
-echo ""
+echo "  bash experiments/cleanup.sh"
