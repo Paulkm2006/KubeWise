@@ -18,9 +18,9 @@ export default function ActivitySidebar({ activities, activeCluster }: ActivityS
       {/* Activity Feed */}
       <div className="flex-1 flex flex-col min-h-0 p-3">
         <div className="flex items-center justify-between mb-2.5">
-          <span className="text-xxs text-text-muted tracking-widest uppercase font-medium">Events</span>
+          <span className="text-xxs text-text-muted tracking-widest uppercase font-medium">事件</span>
           <span className="text-xxs text-text-muted cursor-pointer hover:text-text-secondary transition-colors">
-            clear
+            清空
           </span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-0.5">
@@ -50,13 +50,13 @@ export default function ActivitySidebar({ activities, activeCluster }: ActivityS
           <p className="text-xs font-medium text-text">{activeCluster}</p>
           <div className="flex items-center gap-1.5 mt-1">
             <span className="text-xxs px-1.5 py-0.5 rounded-sm bg-amber-dim text-amber tracking-wider font-medium">
-              2 issues
+              2 个问题
             </span>
             <span className="text-xxs text-text-muted font-mono">8/10</span>
           </div>
           <div className="flex gap-2.5 mt-1.5 text-[10px] text-text-muted tracking-wide">
-            <span>◈ 10 nodes</span>
-            <span>▣ 28 ns</span>
+            <span>◈ 10 节点</span>
+            <span>▣ 28 命名空间</span>
           </div>
         </div>
       </div>
