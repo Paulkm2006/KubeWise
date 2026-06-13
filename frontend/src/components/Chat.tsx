@@ -75,7 +75,7 @@ export default function Chat({ activeCluster }: ChatProps) {
         text: report,
         cluster,
         timestamp: formatTime(),
-        card: { ...card, finalReport: report, done: true },
+        card: { ...card, finalReport: report, done: true, awaitingInteraction: undefined },
       },
     ]);
     setLiveCard(null);
@@ -120,7 +120,12 @@ export default function Chat({ activeCluster }: ChatProps) {
       onEvent: handleEvent,
       onComplete: () => {
         setLiveCard((prev) => {
-          if (prev) finalizeStream(prev, liveClusterRef.current);
+          if (prev) {
+            const card = !prev.done && !prev.failed
+              ? foldChatEvent(prev, { type: 'stream_err', error: 'Stream ended without completion' })
+              : prev;
+            finalizeStream(card, liveClusterRef.current);
+          }
           return null;
         });
         cleanupRef.current = null;
