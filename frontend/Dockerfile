@@ -1,5 +1,5 @@
 # ---- Build stage ----
-FROM oven/bun:1-distroless AS builder
+FROM oven/bun:1-alpine AS builder
 
 WORKDIR /app
 COPY package.json bun.lock ./
