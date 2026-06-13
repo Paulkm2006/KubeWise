@@ -31,7 +31,7 @@ bash setup.sh        # Linux / macOS
 go build -o kubewise ./cmd && ./kubewise serve --config config.yaml -v --log-file stderr
 
 # 4. 启动前端
-cd frontend && npx vite --host
+cd frontend && npx run dev
 ```
 
 打开浏览器访问 `http://localhost:5173`，Dashboard 上应该能看到 3 个集群和对应的故障。
@@ -78,34 +78,3 @@ bash cleanup.sh          # Linux / macOS
 | OOMKilled | `stress --vm-bytes 300M` + memory limit 100Mi | Pod OOMKilled，K8s 自动重启 | Agent 应发现内存超限 |
 | ImagePullBackOff | 不存在的镜像 `nonexistent.example.com/fake-app:v99.9.9` | Pod 持续 ImagePullBackOff | Agent 应发现镜像拉取失败 |
 | Pending | 请求 1000 CPU + 512Gi 内存 | Pod 一直 Pending（无法调度） | Agent 应发现资源不足 |
-
-## 实验记录格式
-
-每个实验对应 `experiments/` 下的一个目录，包含：
-
-```
-experiments/NN-name/
-├── README.md     ← 实验假设、SOP、预期观测、实际记录
-└── (可选) 脚本、数据
-```
-
-### 实验记录模板
-
-```markdown
-# 实验 NN: 故障名称
-
-## 假设
-_对这个故障的诊断预期_
-
-## 方法
-_操作步骤_
-
-## 预期观测
-_在前端和日志中应该看到什么_
-
-## 实际观测
-_运行后的实际结果（记录日期、版本）_
-
-## 结论
-_诊断是否准确、哪里可以改进_
-```
