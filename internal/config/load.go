@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -44,6 +45,7 @@ func Load(cfgFile string) error {
 // explicitly provided.  Must be called after Load().
 func ApplyFlags(fs *pflag.FlagSet) {
 	tryOverride(fs, "kubeconfig", func(v string) { Global.KubeConfig = v })
+	tryOverride(fs, "data-dir", func(v string) { Global.DataDir = v })
 	tryOverride(fs, "model", func(v string) { Global.LLM.Model = v })
 	tryOverride(fs, "api-key", func(v string) { Global.LLM.APIKey = v })
 	tryOverride(fs, "api-base", func(v string) { Global.LLM.APIBase = v })
@@ -74,6 +76,7 @@ func ApplyFlags(fs *pflag.FlagSet) {
 
 func setDefaults() {
 	Global = &Config{
+		DataDir: "", // resolved below
 		Verbose: false,
 		Log: LogConfig{
 			Level: "info",
@@ -98,6 +101,13 @@ func setDefaults() {
 			Addr: ":8080",
 		},
 	}
+
+	// Resolve DataDir default to ~/.kubewise
+	if Global.DataDir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			Global.DataDir = filepath.Join(home, ".kubewise")
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -117,8 +127,9 @@ func loadFile(path string) error {
 // ---------------------------------------------------------------------------
 
 // envVar converts a dotted config key to the KUBEWISE_* env var name.
-//   llm.api_key  →  KUBEWISE_LLM_API_KEY
-//   agent.max_steps  →  KUBEWISE_AGENT_MAX_STEPS
+//
+//	llm.api_key  →  KUBEWISE_LLM_API_KEY
+//	agent.max_steps  →  KUBEWISE_AGENT_MAX_STEPS
 func envVar(key string) string {
 	s := strings.ToUpper(key)
 	s = strings.NewReplacer("-", "_", ".", "_").Replace(s)
@@ -145,6 +156,7 @@ func applyEnvVars() {
 	}
 
 	setStr("kubeconfig", &Global.KubeConfig)
+	setStr("data_dir", &Global.DataDir)
 	setStr("llm.model", &Global.LLM.Model)
 	setStr("llm.api_key", &Global.LLM.APIKey)
 	setStr("llm.api_base", &Global.LLM.APIBase)

@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/kubewise/kubewise/internal/agent/session"
-	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/conversation/domain"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
 	"github.com/kubewise/kubewise/internal/tui/styles"
 )
 
@@ -52,7 +52,7 @@ type chatEntry struct {
 	role      string // "user" | "assistant" | "error"
 	content   string // raw content for session persistence
 	lines     []string
-	blocks    []session.Block
+	blocks    []domain.Block
 	timestamp time.Time
 	inTokens  int
 	outTokens int
@@ -106,9 +106,9 @@ func (m *ChatModel) SetSize(width, height int) {
 	m.renderer.SetWidth(width - 2)
 }
 
-// CompletedMessages returns session.Message structs for all completed assistant messages.
-func (m *ChatModel) CompletedMessages() []session.Message {
-	var out []session.Message
+// CompletedMessages returns domain.Message structs for all completed assistant messages.
+func (m *ChatModel) CompletedMessages() []domain.Message {
+	var out []domain.Message
 	for _, e := range m.messages {
 		if e.role != "assistant" {
 			continue
@@ -117,7 +117,7 @@ func (m *ChatModel) CompletedMessages() []session.Message {
 		if content == "" {
 			content = strings.Join(e.lines, "\n")
 		}
-		out = append(out, session.Message{
+		out = append(out, domain.Message{
 			Role:      "assistant",
 			Content:   content,
 			Blocks:    e.blocks,
@@ -130,13 +130,13 @@ func (m *ChatModel) CompletedMessages() []session.Message {
 	return out
 }
 
-// AllMessages returns session.Message structs for all messages (user + assistant).
-func (m *ChatModel) AllMessages() []session.Message {
-	var out []session.Message
+// AllMessages returns domain.Message structs for all messages (user + assistant).
+func (m *ChatModel) AllMessages() []domain.Message {
+	var out []domain.Message
 	for _, e := range m.messages {
 		switch e.role {
 		case "user":
-			out = append(out, session.Message{
+			out = append(out, domain.Message{
 				Role:      "user",
 				Content:   e.content,
 				Timestamp: e.timestamp,
@@ -146,7 +146,7 @@ func (m *ChatModel) AllMessages() []session.Message {
 			if content == "" {
 				content = strings.Join(e.lines, "\n")
 			}
-			out = append(out, session.Message{
+			out = append(out, domain.Message{
 				Role:      "assistant",
 				Content:   content,
 				Blocks:    e.blocks,
@@ -161,7 +161,7 @@ func (m *ChatModel) AllMessages() []session.Message {
 }
 
 // SetMessages replaces the display with previously saved session messages.
-func (m *ChatModel) SetMessages(msgs []session.Message) {
+func (m *ChatModel) SetMessages(msgs []domain.Message) {
 	m.messages = make([]chatEntry, 0, len(msgs))
 	m.cards = make(map[string]*progressCard)
 	for _, msg := range msgs {
@@ -196,57 +196,57 @@ func (m *ChatModel) SetMessages(msgs []session.Message) {
 	}
 }
 
-// renderBlock renders a single session.Block to a styled string.
-func (m *ChatModel) renderBlock(b session.Block) string {
+// renderBlock renders a single domain.Block to a styled string.
+func (m *ChatModel) renderBlock(b domain.Block) string {
 	switch b.Type {
 	case "table":
-		var p session.TablePayload
+		var p domain.TablePayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
 			return m.renderer.RenderTable(p.Headers, p.Rows)
 		}
 	case "code":
-		var p session.CodePayload
+		var p domain.CodePayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
 			return m.renderer.RenderCode(p.Language, p.Content)
 		}
 	case "kv":
-		var p session.KVPayload
+		var p domain.KVPayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
-			pairs := make([]session.KVPair, len(p.Pairs))
+			pairs := make([]domain.KVPair, len(p.Pairs))
 			for i, kp := range p.Pairs {
-				pairs[i] = session.KVPair{Key: kp.Key, Value: kp.Value}
+				pairs[i] = domain.KVPair{Key: kp.Key, Value: kp.Value}
 			}
 			return m.renderer.RenderKV(pairs)
 		}
 	case "list":
-		var p session.ListPayload
+		var p domain.ListPayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
-			items := make([]session.ListItem, len(p.Items))
+			items := make([]domain.ListItem, len(p.Items))
 			for i, li := range p.Items {
-				items[i] = session.ListItem{Status: li.Status, Text: li.Text}
+				items[i] = domain.ListItem{Status: li.Status, Text: li.Text}
 			}
 			return m.renderer.RenderList(items)
 		}
 	case "detail":
-		var p session.DetailPayload
+		var p domain.DetailPayload
 		if err := json.Unmarshal(b.Payload, &p); err == nil {
-			d := session.DetailPayload{
+			d := domain.DetailPayload{
 				Kind: p.Kind, Name: p.Name, Namespace: p.Namespace,
 				Status: p.Status, RecentLogs: p.RecentLogs, Labels: p.Labels,
 			}
 			for _, c := range p.Containers {
-				d.Containers = append(d.Containers, session.ContainerInfo{
+				d.Containers = append(d.Containers, domain.ContainerInfo{
 					Name: c.Name, Image: c.Image, Ready: c.Ready,
 					RestartCount: c.RestartCount, State: c.State, Resources: c.Resources,
 				})
 			}
 			for _, c := range p.Conditions {
-				d.Conditions = append(d.Conditions, session.ConditionInfo{
+				d.Conditions = append(d.Conditions, domain.ConditionInfo{
 					Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message,
 				})
 			}
 			for _, e := range p.Events {
-				d.Events = append(d.Events, session.EventInfo{
+				d.Events = append(d.Events, domain.EventInfo{
 					Type: e.Type, Reason: e.Reason, Message: e.Message, Timestamp: e.Timestamp,
 				})
 			}
@@ -452,9 +452,9 @@ func (m ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	return m, nil
 }
 
-// detailToPayload converts an session.DetailPayload to a session.DetailPayload.
-func detailToPayload(d session.DetailPayload) session.DetailPayload {
-	dp := session.DetailPayload{
+// detailToPayload converts an domain.DetailPayload to a domain.DetailPayload.
+func detailToPayload(d domain.DetailPayload) domain.DetailPayload {
+	dp := domain.DetailPayload{
 		Kind:       d.Kind,
 		Name:       d.Name,
 		Namespace:  d.Namespace,
@@ -463,18 +463,18 @@ func detailToPayload(d session.DetailPayload) session.DetailPayload {
 		Labels:     d.Labels,
 	}
 	for _, c := range d.Containers {
-		dp.Containers = append(dp.Containers, session.ContainerInfo{
+		dp.Containers = append(dp.Containers, domain.ContainerInfo{
 			Name: c.Name, Image: c.Image, Ready: c.Ready,
 			RestartCount: c.RestartCount, State: c.State, Resources: c.Resources,
 		})
 	}
 	for _, c := range d.Conditions {
-		dp.Conditions = append(dp.Conditions, session.ConditionInfo{
+		dp.Conditions = append(dp.Conditions, domain.ConditionInfo{
 			Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message,
 		})
 	}
 	for _, e := range d.Events {
-		dp.Events = append(dp.Events, session.EventInfo{
+		dp.Events = append(dp.Events, domain.EventInfo{
 			Type: e.Type, Reason: e.Reason, Message: e.Message, Timestamp: e.Timestamp,
 		})
 	}

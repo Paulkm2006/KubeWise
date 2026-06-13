@@ -58,12 +58,32 @@ type toolCallAccum struct {
 	ArgumentsJSON strings.Builder
 }
 
-// ChatCompletion 聊天补全接口，支持工具调用。
-// 内部始终使用流式 API 实现，若 onChunk 已设置则在每个 token delta 时回调，
-// 对外仍表现为阻塞返回完整 *Message 的同步接口。
+// ChatCompletion keeps the legacy call shape while delegating to the platform
+// request/response API.
 func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functions []FunctionDefinition, onChunk func(StreamChunk)) (*Message, error) {
-	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(messages))
-	for i, msg := range messages {
+	var onEvent func(StreamEvent)
+	if onChunk != nil {
+		onEvent = func(ev StreamEvent) {
+			onChunk(StreamChunk{
+				Content:              ev.Content,
+				AccumulatedToolCalls: ev.AccumulatedToolCalls,
+				Done:                 ev.Type == StreamEventDone,
+				Usage:                ev.Usage,
+			})
+		}
+	}
+	resp, err := c.Complete(ctx, CompletionRequest{Messages: messages, Tools: functions, OnEvent: onEvent})
+	if err != nil {
+		return nil, err
+	}
+	return &resp.Message, nil
+}
+
+// Complete is the platform LLM port used by agent runtimes. It preserves the
+// current streaming implementation while accepting per-call options.
+func (c *Client) Complete(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {
+	openaiMessages := make([]openai.ChatCompletionMessageParamUnion, len(req.Messages))
+	for i, msg := range req.Messages {
 		param, err := messageToOpenAIParam(msg)
 		if err != nil {
 			return nil, fmt.Errorf("message[%d]: %w", i, err)
@@ -71,40 +91,41 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		openaiMessages[i] = param
 	}
 
+	model := req.Model
+	if model == "" {
+		model = c.config.Model
+	}
 	params := openai.ChatCompletionNewParams{
 		Messages: openaiMessages,
-		Model:    openai.ChatModel(c.config.Model),
+		Model:    openai.ChatModel(model),
 	}
 
-	reqOpts := []option.RequestOption{}
-
-	if len(functions) > 0 {
-		tools := make([]map[string]any, len(functions))
-		for i, fn := range functions {
-			tools[i] = map[string]any{
-				"type": "function",
-				"function": map[string]any{
-					"name":        fn.Name,
-					"description": fn.Description,
-					"parameters":  fn.Parameters,
-				},
-			}
-		}
-		reqOpts = append(reqOpts, option.WithJSONSet("tools", tools))
+	reqOpts := []option.RequestOption{
+		option.WithJSONSet("stream_options", map[string]any{"include_usage": true}),
+	}
+	if req.Temperature != nil {
+		reqOpts = append(reqOpts, option.WithJSONSet("temperature", *req.Temperature))
+	}
+	if req.MaxTokens != nil {
+		reqOpts = append(reqOpts, option.WithJSONSet("max_tokens", *req.MaxTokens))
+	}
+	if req.ResponseFormat != nil {
+		reqOpts = append(reqOpts, option.WithJSONSet("response_format", responseFormatJSON(*req.ResponseFormat)))
+	}
+	if req.ToolChoice.Mode != "" {
+		reqOpts = append(reqOpts, option.WithJSONSet("tool_choice", toolChoiceJSON(req.ToolChoice)))
+	}
+	if len(req.Tools) > 0 {
+		reqOpts = append(reqOpts, option.WithJSONSet("tools", functionDefinitionsJSON(req.Tools)))
 	}
 
-	// 请求最终 chunk 中的用量信息
-	reqOpts = append(reqOpts, option.WithJSONSet("stream_options", map[string]any{
-		"include_usage": true,
-	}))
-
-	toolNames := make([]string, 0, len(functions))
-	for _, fn := range functions {
+	toolNames := make([]string, 0, len(req.Tools))
+	for _, fn := range req.Tools {
 		toolNames = append(toolNames, fn.Name)
 	}
 	c.logger().Debug("chat completion request",
 		zap.String("model", string(params.Model)),
-		zap.Int("messages", len(messages)),
+		zap.Int("messages", len(req.Messages)),
 		zap.Strings("tools", toolNames),
 	)
 
@@ -115,12 +136,12 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 	accum := make(map[int64]*toolCallAccum)
 	var toolOrder []int64
 	result := &Message{Role: "assistant"}
-	var finalized bool // 是否已通过 finish_reason 确定 content + tool_calls
+	var finishReason string
+	var finalized bool
+	onEvent := req.OnEvent
 
 	for s.Next() {
 		chunk := s.Current()
-
-		// 用法信息终包（stream_options: include_usage）
 		if len(chunk.Choices) == 0 {
 			if chunk.Usage.TotalTokens > 0 {
 				result.Usage = &Usage{
@@ -129,25 +150,22 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 					TotalTokens:      int(chunk.Usage.TotalTokens),
 				}
 			}
-			if finalized && onChunk != nil {
-				onChunk(StreamChunk{Done: true, AccumulatedToolCalls: result.ToolCalls, Usage: result.Usage})
-				onChunk = nil // 只发一次
+			if finalized && onEvent != nil {
+				onEvent(StreamEvent{Type: StreamEventDone, AccumulatedToolCalls: result.ToolCalls, Usage: result.Usage})
+				onEvent = nil
 			}
 			continue
 		}
 
 		choice := chunk.Choices[0]
 		delta := choice.Delta
-
-		// 文本内容 delta
 		if delta.Content != "" {
 			content.WriteString(delta.Content)
-			if onChunk != nil {
-				onChunk(StreamChunk{Content: delta.Content})
+			if onEvent != nil {
+				onEvent(StreamEvent{Type: StreamEventTextDelta, Content: delta.Content})
 			}
 		}
 
-		// 工具调用 delta（按 index 增量到达）
 		for _, tc := range delta.ToolCalls {
 			idx := tc.Index
 			a, exists := accum[idx]
@@ -170,35 +188,10 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 			}
 		}
 
-		// finish_reason → 组装最终 content 和 tool_calls
 		if choice.FinishReason != "" {
+			finishReason = string(choice.FinishReason)
 			result.Content = content.String()
-
-			if len(accum) > 0 {
-				tcs := make([]ToolCall, 0, len(toolOrder))
-				for _, idx := range toolOrder {
-					a := accum[idx]
-					var args map[string]any
-					if a.ArgumentsJSON.Len() > 0 {
-						argsStr := a.ArgumentsJSON.String()
-						if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
-							args = map[string]any{"raw_arguments": argsStr}
-						}
-					}
-					if args == nil {
-						args = make(map[string]any)
-					}
-					tcs = append(tcs, ToolCall{
-						ID:   a.ID,
-						Type: a.Type,
-						Function: FunctionCall{
-							Name:      a.Name,
-							Arguments: args,
-						},
-					})
-				}
-				result.ToolCalls = tcs
-			}
+			result.ToolCalls = accumulatedToolCalls(toolOrder, accum)
 			finalized = true
 		}
 	}
@@ -207,33 +200,24 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 		c.logger().Error("chat completion failed",
 			zap.Error(err),
 			zap.String("model", string(params.Model)),
-			zap.Int("messages", len(messages)),
-			zap.String("message_summary", summarizeMessages(messages)),
+			zap.Int("messages", len(req.Messages)),
+			zap.String("message_summary", summarizeMessages(req.Messages)),
 		)
 		return nil, fmt.Errorf("chat completion failed: %w", err)
 	}
 
-	// 未收到 usage-only chunk 时在此处发 Done
-	if onChunk != nil && finalized {
-		onChunk(StreamChunk{Done: true, AccumulatedToolCalls: result.ToolCalls, Usage: result.Usage})
+	if onEvent != nil && finalized {
+		onEvent(StreamEvent{Type: StreamEventDone, AccumulatedToolCalls: result.ToolCalls, Usage: result.Usage})
 	}
-
-	// 如果全程未收到 finish_reason（极少见），补全 content
 	if !finalized {
 		result.Content = content.String()
+		result.ToolCalls = accumulatedToolCalls(toolOrder, accum)
 	}
 
 	fields := []zap.Field{
 		zap.String("model", string(params.Model)),
 		zap.Int("content_len", len(result.Content)),
 		zap.Int("tool_calls", len(result.ToolCalls)),
-	}
-	if len(result.ToolCalls) > 0 {
-		names := make([]string, 0, len(result.ToolCalls))
-		for _, tc := range result.ToolCalls {
-			names = append(names, tc.Function.Name)
-		}
-		fields = append(fields, zap.Strings("tool_call_names", names))
 	}
 	if result.Usage != nil {
 		fields = append(fields,
@@ -244,5 +228,87 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, functio
 	}
 	c.logger().Info("chat completion response", fields...)
 
-	return result, nil
+	return &CompletionResponse{
+		Message:      *result,
+		Usage:        result.Usage,
+		FinishReason: finishReason,
+	}, nil
+}
+
+func accumulatedToolCalls(order []int64, accum map[int64]*toolCallAccum) []ToolCall {
+	if len(accum) == 0 {
+		return nil
+	}
+	tcs := make([]ToolCall, 0, len(order))
+	for _, idx := range order {
+		a := accum[idx]
+		var args map[string]any
+		if a.ArgumentsJSON.Len() > 0 {
+			argsStr := a.ArgumentsJSON.String()
+			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+				args = map[string]any{"raw_arguments": argsStr}
+			}
+		}
+		if args == nil {
+			args = make(map[string]any)
+		}
+		tcs = append(tcs, ToolCall{
+			ID:   a.ID,
+			Type: a.Type,
+			Function: FunctionCall{
+				Name:      a.Name,
+				Arguments: args,
+			},
+		})
+	}
+	return tcs
+}
+
+func functionDefinitionsJSON(functions []FunctionDefinition) []map[string]any {
+	tools := make([]map[string]any, len(functions))
+	for i, fn := range functions {
+		tools[i] = map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        fn.Name,
+				"description": fn.Description,
+				"parameters":  fn.Parameters,
+			},
+		}
+	}
+	return tools
+}
+
+func toolChoiceJSON(choice ToolChoice) any {
+	switch choice.Mode {
+	case ToolChoiceFunction:
+		return map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": choice.Name,
+			},
+		}
+	case ToolChoiceAuto, ToolChoiceNone, ToolChoiceRequired:
+		return string(choice.Mode)
+	default:
+		return string(ToolChoiceAuto)
+	}
+}
+
+func responseFormatJSON(format ResponseFormat) map[string]any {
+	switch format.Type {
+	case ResponseFormatJSONSchema:
+		return map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name":   format.Name,
+				"schema": format.Schema,
+				"strict": format.Strict,
+			},
+		}
+	case ResponseFormatJSONObject:
+		return map[string]any{"type": "json_object"}
+	default:
+		return map[string]any{"type": "text"}
+	}
 }

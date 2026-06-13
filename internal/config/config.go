@@ -1,10 +1,10 @@
 // Package config provides centralized configuration for KubeWise.
 //
 // Loading priority (higher wins):
-//   1. Hardcoded defaults
-//   2. YAML config file
-//   3. Environment variables (KUBEWISE_*)
-//   4. CLI flags (via ApplyFlags)
+//  1. Hardcoded defaults
+//  2. YAML config file
+//  3. Environment variables (KUBEWISE_*)
+//  4. CLI flags (via ApplyFlags)
 package config
 
 import "go.uber.org/zap"
@@ -24,13 +24,14 @@ func L() *zap.Logger {
 
 // Config is the root configuration structure.
 type Config struct {
-	KubeConfig string      `json:"kubeconfig" yaml:"kubeconfig"`
-	Verbose    bool        `json:"verbose"    yaml:"verbose"`
-	Log        LogConfig   `json:"log"        yaml:"log"`
-	LLM        LLMConfig   `json:"llm"        yaml:"llm"`
-	Agent      AgentConfig `json:"agent"      yaml:"agent"`
+	KubeConfig string       `json:"kubeconfig" yaml:"kubeconfig"`
+	DataDir    string       `json:"data_dir"   yaml:"data_dir"`
+	Verbose    bool         `json:"verbose"    yaml:"verbose"`
+	Log        LogConfig    `json:"log"        yaml:"log"`
+	LLM        LLMConfig    `json:"llm"        yaml:"llm"`
+	Agent      AgentConfig  `json:"agent"      yaml:"agent"`
 	Deploy     DeployConfig `json:"deploy"    yaml:"deploy"`
-	API        APIConfig   `json:"api"        yaml:"api"`
+	API        APIConfig    `json:"api"        yaml:"api"`
 
 	// Logger is the process-wide zap logger.  Set by cmd/main once during
 	// startup; never written after the first goroutine is launched.

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kubewise/kubewise/internal/agent/event"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/event"
 	"github.com/kubewise/kubewise/internal/tui/model"
 )
 

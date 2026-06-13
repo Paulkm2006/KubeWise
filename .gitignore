@@ -36,5 +36,10 @@ go.work.sum
 
 config.yaml
 kubewise.log
-.kube
+**/.kube
 main
+
+**/node_modules/
+**/dist/
+**/build/
+data/

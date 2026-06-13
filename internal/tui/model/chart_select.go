@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
 )
 
 var (

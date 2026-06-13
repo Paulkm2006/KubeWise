@@ -1,39 +1,8 @@
-export type ClusterHealth = 'healthy' | 'warning' | 'error' | 'info';
-
-export interface Cluster {
-  id: string;
-  name: string;
-  health: ClusterHealth;
-  podsReady: number;
-  podsTotal: number;
-  issues: number;
-  nodes: number;
-  namespaces: number;
-  lastUpdated: number;
-}
-
-export interface Issue {
-  severity: 'high' | 'medium' | 'low';
-  cluster: string;
-  pod: string;
-  status: string;
-  namespace: string;
-}
-
 export interface Activity {
   type: 'done' | 'issue' | 'pending' | 'info';
   text: string;
   cluster?: string;
   time: string;
-}
-
-export interface ResourceRow {
-  pod: string;
-  cpu: string;
-  cpuStatus: 'high' | 'medium' | 'low' | 'ok';
-  memory: string;
-  memoryStatus: 'high' | 'medium' | 'low' | 'ok';
-  disk: string;
 }
 
 export interface DiagnosisStep {
@@ -67,53 +36,6 @@ export interface AuditFinding {
   impact: string;
   suggestion: string;
 }
-
-export const clusters: Cluster[] = [
-  { id: 'prod-cn', name: 'prod-cn', health: 'healthy', podsReady: 12, podsTotal: 12, issues: 1, nodes: 8, namespaces: 32, lastUpdated: 3 },
-  { id: 'prod-us', name: 'prod-us', health: 'error', podsReady: 8, podsTotal: 10, issues: 16, nodes: 10, namespaces: 28, lastUpdated: 3 },
-  { id: 'staging', name: 'staging', health: 'healthy', podsReady: 5, podsTotal: 5, issues: 0, nodes: 3, namespaces: 12, lastUpdated: 3 },
-  { id: 'dev', name: 'dev', health: 'info', podsReady: 3, podsTotal: 3, issues: 0, nodes: 1, namespaces: 8, lastUpdated: 3 },
-  { id: 'prod-eu', name: 'prod-eu', health: 'healthy', podsReady: 6, podsTotal: 6, issues: 0, nodes: 6, namespaces: 24, lastUpdated: 8 },
-  { id: 'prod-ap', name: 'prod-ap', health: 'error', podsReady: 2, podsTotal: 4, issues: 3, nodes: 4, namespaces: 16, lastUpdated: 5 },
-];
-
-export const issues: Issue[] = [
-  { severity: 'high', cluster: 'prod-us', pod: 'nginx-7d9f', status: 'CrashLoopBackOff (12/12)', namespace: 'prod' },
-  { severity: 'high', cluster: 'prod-us', pod: 'mysql-0', status: 'CrashLoopBackOff (8/8)', namespace: 'prod' },
-  { severity: 'high', cluster: 'prod-us', pod: 'kafka-1', status: 'CrashLoopBackOff (6/6)', namespace: 'kafka' },
-  { severity: 'high', cluster: 'prod-us', pod: 'etcd-2', status: 'OOMKilled (exit 137)', namespace: 'kube-system' },
-  { severity: 'medium', cluster: 'prod-us', pod: 'redis-3a2b', status: 'Pending (insufficient cpu)', namespace: 'prod' },
-  { severity: 'medium', cluster: 'prod-us', pod: 'api-gw-5f1a', status: 'OOMKilled (exit 137)', namespace: 'default' },
-  { severity: 'medium', cluster: 'prod-us', pod: 'auth-svc-2c4b', status: 'CrashLoopBackOff (5/5)', namespace: 'default' },
-  { severity: 'medium', cluster: 'prod-us', pod: 'cache-7d9x', status: 'ImagePullBackOff', namespace: 'default' },
-  { severity: 'medium', cluster: 'prod-us', pod: 'worker-queue-1a', status: 'Pending (insufficient memory)', namespace: 'worker' },
-  { severity: 'low', cluster: 'prod-us', pod: 'cron-cleanup-7d', status: 'Pending (evicted)', namespace: 'cron' },
-  { severity: 'low', cluster: 'prod-us', pod: 'log-forwarder-x2', status: 'ImagePullBackOff', namespace: 'monitoring' },
-  { severity: 'low', cluster: 'prod-us', pod: 'metric-collector-3f', status: 'CrashLoopBackOff (2/2)', namespace: 'monitoring' },
-  { severity: 'low', cluster: 'prod-us', pod: 'dns-cache-9c1', status: 'OOMKilled (exit 137)', namespace: 'kube-system' },
-  { severity: 'low', cluster: 'prod-us', pod: 'backup-job-4e', status: 'Error (backoff limit)', namespace: 'cron' },
-  { severity: 'low', cluster: 'prod-us', pod: 'sidecar-injector-8a', status: 'Pending (node pressure)', namespace: 'kube-system' },
-  { severity: 'low', cluster: 'prod-us', pod: 'fluentd-7b', status: 'CrashLoopBackOff (4/4)', namespace: 'monitoring' },
-  { severity: 'high', cluster: 'prod-ap', pod: 'api-gw-6f3a', status: 'ImagePullBackOff', namespace: 'default' },
-  { severity: 'medium', cluster: 'prod-ap', pod: 'worker-x1b2', status: 'OOMKilled (exit 137)', namespace: 'worker' },
-  { severity: 'low', cluster: 'prod-ap', pod: 'cron-sync-9c', status: 'CrashLoopBackOff (3/3)', namespace: 'cron' },
-  { severity: 'low', cluster: 'prod-cn', pod: 'log-agent-2d1', status: 'Pending (evicted)', namespace: 'monitoring' },
-];
-
-export const resources: ResourceRow[] = [
-  { pod: 'nginx-7d9f', cpu: '1.2', cpuStatus: 'high', memory: '2.1', memoryStatus: 'high', disk: '50' },
-  { pod: 'redis-3a2b', cpu: '0.9', cpuStatus: 'medium', memory: '1.0', memoryStatus: 'medium', disk: '30' },
-  { pod: 'api-gw-5f1', cpu: '0.7', cpuStatus: 'low', memory: '1.5', memoryStatus: 'low', disk: '20' },
-  { pod: 'auth-svc-2c4', cpu: '0.5', cpuStatus: 'ok', memory: '0.6', memoryStatus: 'ok', disk: '10' },
-  { pod: 'worker-x9', cpu: '0.3', cpuStatus: 'ok', memory: '0.3', memoryStatus: 'ok', disk: '5' },
-];
-
-export const initialActivities: Activity[] = [
-  { type: 'pending', text: 'Redis Pending detected', cluster: 'prod-us', time: '14:22' },
-  { type: 'done', text: 'nginx-7d9f diagnosis: OOMKilled', cluster: 'prod-us', time: '14:20' },
-  { type: 'done', text: 'Security audit: 12 findings', time: '14:15' },
-  { type: 'issue', text: 'CrashLoopBackOff detected', cluster: 'prod-us', time: '14:10' },
-];
 
 export const diagnosisSteps: DiagnosisStep[] = [
   { id: 1, label: 'Collecting context', detail: 'Pod describe, events, logs...' },

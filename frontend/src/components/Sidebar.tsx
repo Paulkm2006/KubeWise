@@ -1,8 +1,16 @@
-import { Activity } from '../data/mock';
+import type { ClusterSummary } from '../api/types';
 
 interface SidebarProps {
   activities: Activity[];
   activeCluster: string;
+  clusters: ClusterSummary[];
+}
+
+interface Activity {
+  type: 'done' | 'issue' | 'pending' | 'info';
+  text: string;
+  cluster?: string;
+  time: string;
 }
 
 const typeStyle: Record<string, { border: string; dot: string }> = {
@@ -12,7 +20,9 @@ const typeStyle: Record<string, { border: string; dot: string }> = {
   info: { border: 'border-l-accent/50', dot: 'bg-accent' },
 };
 
-export default function Sidebar({ activities, activeCluster }: SidebarProps) {
+export default function Sidebar({ activities, activeCluster, clusters }: SidebarProps) {
+  const clusterInfo = clusters.find((c) => c.name === activeCluster);
+
   return (
     <aside className="w-56 shrink-0 flex flex-col bg-bg">
       {/* Activity Feed */}
@@ -44,17 +54,36 @@ export default function Sidebar({ activities, activeCluster }: SidebarProps) {
 
       {/* Cluster State Card */}
       <div className="p-4 pt-2">
-        <div className="p-4 bg-elevated border border-border rounded-sm">
-          <p className="text-sm font-semibold text-text">{activeCluster}</p>
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-xs px-2 py-0.5 rounded-sm bg-amber-dim text-amber font-medium">2 issues</span>
-            <span className="text-sm text-text-muted font-mono">8/10 pods ready</span>
+        {clusterInfo ? (
+          <div className="p-4 bg-elevated border border-border rounded-sm">
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                clusterInfo.health === 'healthy' ? 'bg-green' :
+                clusterInfo.health === 'degraded' ? 'bg-amber' : 'bg-red'
+              }`} />
+              <p className="text-sm font-semibold text-text truncate">{clusterInfo.name}</p>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className={`text-xs px-2 py-0.5 rounded-sm font-medium ${
+                clusterInfo.issues_count > 0 ? 'bg-amber-dim text-amber' : 'bg-green-dim text-green'
+              }`}>
+                {clusterInfo.issues_count} {clusterInfo.issues_count === 1 ? 'issue' : 'issues'}
+              </span>
+              <span className="text-sm text-text-muted font-mono">
+                {clusterInfo.pods_ready}/{clusterInfo.pods_total} pods ready
+              </span>
+            </div>
+            <div className="flex gap-3 mt-3 text-sm text-text-muted">
+              <span>◈ {clusterInfo.nodes} nodes</span>
+              <span>▣ {clusterInfo.namespaces} namespaces</span>
+            </div>
           </div>
-          <div className="flex gap-3 mt-3 text-sm text-text-muted">
-            <span>◈ 10 nodes</span>
-            <span>▣ 28 namespaces</span>
+        ) : activeCluster ? (
+          <div className="p-4 bg-elevated border border-border rounded-sm">
+            <p className="text-sm text-text-muted">{activeCluster}</p>
+            <p className="text-xs text-text-muted mt-2">Loading cluster info...</p>
           </div>
-        </div>
+        ) : null}
       </div>
     </aside>
   );

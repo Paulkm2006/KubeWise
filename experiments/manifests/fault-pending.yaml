@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fault-pending
+  labels:
+    experiment: pending
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      experiment: pending
+  template:
+    metadata:
+      labels:
+        experiment: pending
+    spec:
+      containers:
+        - name: app
+          image: busybox:latest
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "1000"       # most nodes don't have this much
+              memory: "512Gi"   # certainly not this much
+            limits:
+              memory: "512Gi"

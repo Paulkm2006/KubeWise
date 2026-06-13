@@ -1,0 +1,1 @@
+-- Structured diagnosis report and event payload columns

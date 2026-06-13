@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/kubewise/kubewise/internal/agent/subagent/deploy/core/catalog"
+	"github.com/kubewise/kubewise/internal/platform/agentruntime/subagent/deploy/core/catalog"
 )
 
 // ManualChartInputDoneMsg 用户完成手动输入后发送的消息。
