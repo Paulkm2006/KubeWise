@@ -20,7 +20,8 @@
 ```bash
 # 1. 搭建实验环境（创建 3 个集群 + 注入故障）
 cd experiments
-bash setup.sh
+bash setup.sh        # Linux / macOS
+# 或 pwsh setup.ps1  # Windows / PowerShell
 
 # 2. 修改 KubeWise 配置指向实验集群
 #    编辑 config.yaml，将 kubeconfig 改为：
@@ -39,7 +40,8 @@ cd frontend && npx vite --host
 
 ```bash
 cd experiments
-bash cleanup.sh
+bash cleanup.sh          # Linux / macOS
+# 或 pwsh cleanup.ps1    # Windows / PowerShell
 ```
 
 ## 实验设计
