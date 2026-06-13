@@ -21,16 +21,29 @@ networking:
 
 nodes:
   - role: control-plane
+    kubeadmConfigPatches:
+    - |
+      kind: ClusterConfiguration
+      apiServer:
+        certSANs:
+        - "host.docker.internal"
+        - "127.0.0.1"
     extraPortMappings:
       # 类似这样添加映射到主机的NodePort
       - containerPort: 80
-        hostPort: 8080
+        hostPort: 28080
         protocol: TCP
       - containerPort: 443
-        hostPort: 8443
+        hostPort: 28443
         protocol: TCP
   - role: worker
   - role: worker
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+      endpoint = ["https://docker.1ms.run"]
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."registry.k8s.io"]
+      endpoint = ["https://k8s.m.daocloud.io"]
 ```
 
 拉起kind集群
@@ -71,7 +84,7 @@ kubectl get node
 kind默认不装metric server,导致无法监控和查看资源状态（比如kubectl top node目前不会生效），所以需要自行装一下
 
 ```
-kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl apply -f https://cdn.gh-proxy.org/https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 ```
 
 如果遇到网络问题，可以自行拉取镜像之后加载到每个kind节点
