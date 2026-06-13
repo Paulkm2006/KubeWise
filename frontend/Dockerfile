@@ -5,7 +5,12 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install
 
+
 COPY . .
+
+# Ensure Vite loads .env.production (VITE_API_BASE=/api/v1)
+# instead of .env.development (http://localhost:3000/api/v1)
+ENV NODE_ENV=production
 RUN bun run build
 
 # ---- Runtime stage ----
