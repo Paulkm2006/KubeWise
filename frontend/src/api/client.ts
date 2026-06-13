@@ -8,8 +8,7 @@ import type {
   AuditStatus,
   AuditListResponse,
 } from './types';
-
-const BASE = 'http://localhost:3000/api/v1';
+import { API_BASE } from '../config';
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -22,13 +21,13 @@ async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   clusters: {
-    list: () => fetchJSON<ClusterSummary[]>(`${BASE}/clusters`),
-    issues: (name: string) => fetchJSON<Issue[]>(`${BASE}/clusters/${encodeURIComponent(name)}/issues`),
-    events: (name: string) => fetchJSON<unknown[]>(`${BASE}/clusters/${encodeURIComponent(name)}/events`),
+    list: () => fetchJSON<ClusterSummary[]>(`${API_BASE}/clusters`),
+    issues: (name: string) => fetchJSON<Issue[]>(`${API_BASE}/clusters/${encodeURIComponent(name)}/issues`),
+    events: (name: string) => fetchJSON<unknown[]>(`${API_BASE}/clusters/${encodeURIComponent(name)}/events`),
   },
   chats: {
     sync: (body: { query: string; query_id?: string; session_id?: string; cluster?: string }) =>
-      fetchJSON<{ query_id: string; result: string }>(`${BASE}/chats`, {
+      fetchJSON<{ query_id: string; result: string }>(`${API_BASE}/chats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -38,81 +37,81 @@ export const api = {
       if (params.query_id) q.set('query_id', params.query_id);
       if (params.session_id) q.set('session_id', params.session_id);
       if (params.cluster) q.set('cluster', params.cluster);
-      return `${BASE}/chats/stream?${q}`;
+      return `${API_BASE}/chats/stream?${q}`;
     },
     answerInteraction: (body: { interaction_id: string; payload: unknown }) =>
-      fetchJSON<{ status: string }>(`${BASE}/chats/interactions`, {
+      fetchJSON<{ status: string }>(`${API_BASE}/chats/interactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }),
   },
   sessions: {
-    list: () => fetchJSON<{ sessions: unknown[] }>(`${BASE}/sessions`),
+    list: () => fetchJSON<{ sessions: unknown[] }>(`${API_BASE}/sessions`),
     create: (title?: string) =>
-      fetchJSON<unknown>(`${BASE}/sessions`, {
+      fetchJSON<unknown>(`${API_BASE}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: title ?? '' }),
       }),
-    get: (id: string) => fetchJSON<unknown>(`${BASE}/sessions/${encodeURIComponent(id)}`),
+    get: (id: string) => fetchJSON<unknown>(`${API_BASE}/sessions/${encodeURIComponent(id)}`),
     delete: (id: string) =>
-      fetchJSON<{ status: string }>(`${BASE}/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      fetchJSON<{ status: string }>(`${API_BASE}/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   diagnoses: {
     list: async (params?: { limit?: number; offset?: number }) => {
       const q = new URLSearchParams();
       if (params?.limit) q.set('limit', String(params.limit));
       if (params?.offset) q.set('offset', String(params.offset));
-      const res = await fetchJSON<DiagnosisListResponse>(`${BASE}/diagnoses?${q}`);
+      const res = await fetchJSON<DiagnosisListResponse>(`${API_BASE}/diagnoses?${q}`);
       return res.diagnoses;
     },
-    get: (id: string) => fetchJSON<DiagnosisStatus>(`${BASE}/diagnoses/${encodeURIComponent(id)}`),
+    get: (id: string) => fetchJSON<DiagnosisStatus>(`${API_BASE}/diagnoses/${encodeURIComponent(id)}`),
     latest: (params: { cluster: string; namespace: string; pod: string }) => {
       const q = new URLSearchParams(params);
-      return fetchJSON<DiagnosisStatus>(`${BASE}/diagnoses/latest?${q}`);
+      return fetchJSON<DiagnosisStatus>(`${API_BASE}/diagnoses/latest?${q}`);
     },
     cancel: (id: string) =>
       fetchJSON<{ status: string; diagnosis_id: string }>(
-        `${BASE}/diagnoses/${encodeURIComponent(id)}/cancel`,
+        `${API_BASE}/diagnoses/${encodeURIComponent(id)}/cancel`,
         { method: 'POST' },
       ),
     create: (cluster: string, namespace: string, pod: string) =>
-      fetchJSON<{ diagnosis_id: string; status: string }>(`${BASE}/diagnoses`, {
+      fetchJSON<{ diagnosis_id: string; status: string }>(`${API_BASE}/diagnoses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cluster, namespace, pod }),
       }),
     eventsUrl: (id: string, since = 0) =>
-      `${BASE}/diagnoses/${encodeURIComponent(id)}/events?since=${since}`,
+      `${API_BASE}/diagnoses/${encodeURIComponent(id)}/events?since=${since}`,
   },
   activities: {
     list: (limit = 20, offset = 0) =>
-      fetchJSON<Activity[]>(`${BASE}/activities?limit=${limit}&offset=${offset}`),
+      fetchJSON<Activity[]>(`${API_BASE}/activities?limit=${limit}&offset=${offset}`),
   },
   audits: {
     list: async (params?: { limit?: number; offset?: number }) => {
       const q = new URLSearchParams();
       if (params?.limit) q.set('limit', String(params.limit));
       if (params?.offset) q.set('offset', String(params.offset));
-      const res = await fetchJSON<AuditListResponse>(`${BASE}/audits?${q}`);
+      const res = await fetchJSON<AuditListResponse>(`${API_BASE}/audits?${q}`);
       return res.audits;
     },
-    get: (id: string) => fetchJSON<AuditStatus>(`${BASE}/audits/${encodeURIComponent(id)}`),
+    get: (id: string) => fetchJSON<AuditStatus>(`${API_BASE}/audits/${encodeURIComponent(id)}`),
     latest: (cluster: string) =>
-      fetchJSON<AuditStatus>(`${BASE}/audits/latest?cluster=${encodeURIComponent(cluster)}`),
+      fetchJSON<AuditStatus>(`${API_BASE}/audits/latest?cluster=${encodeURIComponent(cluster)}`),
     cancel: (id: string) =>
       fetchJSON<{ status: string; audit_id: string }>(
-        `${BASE}/audits/${encodeURIComponent(id)}/cancel`,
+        `${API_BASE}/audits/${encodeURIComponent(id)}/cancel`,
         { method: 'POST' },
       ),
     create: (cluster: string) =>
-      fetchJSON<{ audit_id: string; status: string }>(`${BASE}/audits`, {
+      fetchJSON<{ audit_id: string; status: string }>(`${API_BASE}/audits`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cluster }),
       }),
     eventsUrl: (id: string, since = 0) =>
-      `${BASE}/audits/${encodeURIComponent(id)}/events?since=${since}`,
+      `${API_BASE}/audits/${encodeURIComponent(id)}/events?since=${since}`,
   },
 };

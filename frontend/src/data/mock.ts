@@ -37,13 +37,6 @@ export interface AuditFinding {
   suggestion: string;
 }
 
-export const initialActivities: Activity[] = [
-  { type: 'pending', text: 'Redis Pending detected', cluster: 'prod-us', time: '14:22' },
-  { type: 'done', text: 'nginx-7d9f diagnosis: OOMKilled', cluster: 'prod-us', time: '14:20' },
-  { type: 'done', text: 'Security audit: 12 findings', time: '14:15' },
-  { type: 'issue', text: 'CrashLoopBackOff detected', cluster: 'prod-us', time: '14:10' },
-];
-
 export const diagnosisSteps: DiagnosisStep[] = [
   { id: 1, label: 'Collecting context', detail: 'Pod describe, events, logs...' },
   { id: 2, label: 'LLM Analysis', detail: 'Analyzing symptoms...' },

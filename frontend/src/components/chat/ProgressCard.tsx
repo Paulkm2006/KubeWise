@@ -1,4 +1,4 @@
-import type { ChartCandidate, ChatProgressCard, OperationStep } from '../../api/types';
+import type { ChartCandidate, ChatProgressCard, DeployPlan, OperationStep } from '../../api/types';
 import { toggleDetailsExpanded, togglePhaseExpanded } from '../../lib/chatFold';
 import MarkdownContent from '../MarkdownContent';
 import ConfirmCard from './ConfirmCard';

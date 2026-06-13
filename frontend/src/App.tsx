@@ -1,15 +1,15 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import SecurityAudit from './components/SecurityAudit';
 import Chat from './components/Chat';
 import DiagnosisOverlay from './components/DiagnosisOverlay';
-import { initialActivities, Activity } from './data/mock';
+import { Activity } from './data/mock';
 import { api } from './api/client';
 import { DiagnosisStore, StoredDiagnosis } from './stores/diagnosisStore';
 import { AuditStore } from './stores/auditStore';
-import type { DiagnosisTarget } from './api/types';
+import type { DiagnosisTarget, ClusterSummary } from './api/types';
 
 const TAB_CONFIG = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈' },
@@ -27,7 +27,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [activeCluster, setActiveCluster] = useState('');
   const [focusCluster, setFocusCluster] = useState<string | null>(null);
-  const [activities, setActivities] = useState<Activity[]>(initialActivities);
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [diagnosedPods, setDiagnosedPods] = useState<Set<string>>(new Set());
   const [diagOpen, setDiagOpen] = useState(false);
   const [diagPhase, setDiagPhase] = useState<DiagPhase>('idle');
@@ -37,6 +37,11 @@ export default function App() {
   const auditStoreRef = useRef(new AuditStore());
   const [activeDiagnosis, setActiveDiagnosis] = useState<StoredDiagnosis | null>(null);
   const [, forceUpdate] = useState(0);
+  const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+
+  useEffect(() => {
+    api.clusters.list().then(setClusters).catch(() => {});
+  }, []);
 
   const addActivity = useCallback((type: string, text: string, cluster?: string) => {
     const now = new Date();
@@ -196,7 +201,7 @@ export default function App() {
       />
 
       <div className="flex flex-1 min-h-0">
-        <Sidebar activities={activities} activeCluster={activeCluster} />
+        <Sidebar activities={activities} activeCluster={activeCluster} clusters={clusters} />
 
         <div className="w-px bg-border shrink-0" />
 
