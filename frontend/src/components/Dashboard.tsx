@@ -83,7 +83,7 @@ export default function Dashboard({
         // Fetch recent diagnoses
         const diagData = await api.diagnoses.list({ limit: 10 });
         if (!mounted) return;
-        setDiagnoses(diagData);
+        setDiagnoses(diagData ?? []);
       } catch (e) {
         if (!mounted) return;
         setError(e instanceof Error ? e.message : 'Failed to fetch data');
