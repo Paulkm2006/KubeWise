@@ -1,17 +1,20 @@
 # KubeWise 配置文件示例
 # 复制到 ~/.kubewise.yaml 即可使用
 
-# Kubernetes配置文件路径，不填则默认使用 ~/.kube/config
+# Kubernetes 配置文件路径，不填则默认使用 ~/.kube/config
 kubeconfig: "~/.kube/config"
 
-# LLM相关配置
+# KubeWise 数据存储目录（会话记录、缓存等），默认 ~/.kubewise
+data_dir: "~/.kubewise"
+
+# LLM 相关配置
 llm:
-  # 模型名称，支持 glm-5.1、qwen3、gpt-4o 等兼容OpenAI API的模型
+  # 模型名称，支持 glm-5.1、qwen3、gpt-4o 等兼容 OpenAI API 的模型
   model: "glm-5.1"
-  # API Key
+  # API Key（也可通过环境变量 KUBEWISE_LLM_API_KEY 设置）
   api_key: "your-api-key-here"
-  # API Base URL，对于国产模型需要填写对应的API地址
-  # 智谱AI: https://open.bigmodel.cn/api/paas/v4/
+  # API Base URL，国产模型需要填写对应的 API 地址
+  # 智谱 AI: https://open.bigmodel.cn/api/paas/v4/
   # 通义千问: https://dashscope.aliyuncs.com/compatible-mode/v1
   # DeepSeek: https://api.deepseek.com/v1
   api_base: "https://open.bigmodel.cn/api/paas/v4/"
@@ -20,29 +23,47 @@ llm:
 log:
   # 日志级别: debug / info / warn / error（-v 模式默认 debug）
   level: "info"
-  # 日志文件路径（-v 模式默认 ./kubewise.log）
+  # 日志文件路径（-v 模式默认 ./kubewise.log；stderr/stdout 为控制台输出）
   file: "stderr"
 
-# Agent相关配置
+# Agent 相关配置
 agent:
-  # 最大工具调用轮次，默认20。复杂查询可能需要更多轮次
+  # 最大工具调用轮次，默认 20。复杂查询可能需要更多轮次
   # 也可通过环境变量 KUBEWISE_AGENT_MAX_STEPS 或 --max-steps 参数设置
   max_steps: 20
 
-  # Supervisor自动干预配置
-  # 当agent陷入循环或达到max_steps时，supervisor会评估是否继续、重置或终止
+  # Supervisor 自动干预配置
+  # 当 agent 陷入循环或达到 max_steps 时，supervisor 会评估是否继续、重置或终止
   # 可通过 --no-supervisor 参数禁用
   supervisor:
     enabled: true
-    # 相同工具+参数连续调用N次后触发检测（默认3）
+    # 相同工具+参数连续调用 N 次后触发检测（默认 3）
     repeat_threshold: 3
-    # 两个工具交替调用A-B-A-B N次后触发检测（默认3）
+    # 两个工具交替调用 A-B-A-B N 次后触发检测（默认 3）
     ping_pong_threshold: 3
-    # 同一工具名连续调用N次后触发检测（默认5）
+    # 同一工具名连续调用 N 次后触发检测（默认 5）
     same_tool_threshold: 5
-    # 最大继续授权次数（默认2）
+    # 最大继续授权次数（默认 2）
     max_extensions: 2
-    # 每次继续授权额外给多少步（默认10）
+    # 每次继续授权额外给多少步（默认 10）
     extension_step_grant: 10
-    # 最大LLM评估调用次数（默认2）
+    # 最大 LLM 评估调用次数（默认 2）
     max_evaluator_calls: 2
+
+# Deploy Agent 配置（Helm 部署流水线）
+deploy:
+  artifact_hub:
+    # 是否启用 Artifact Hub 在线搜索（默认 true）
+    enabled: true
+    # 搜索超时（默认 5s）
+    timeout: 5s
+    # 用户选择 Chart 超时（默认 10s）
+    selection_timeout: 10s
+  helm:
+    # helm install/upgrade 等待超时（默认 5m）
+    wait_timeout: 5m
+
+# HTTP API 服务配置（serve 命令）
+api:
+  # 监听地址（默认 :8080）
+  addr: ":8080"
