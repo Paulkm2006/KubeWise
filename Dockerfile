@@ -5,10 +5,10 @@ RUN apk add --no-cache gcc musl-dev sqlite-dev
 
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN GO111MODULE=on GOPROXY=https://goproxy.cn,direct go mod download
 
 COPY . .
-RUN CGO_ENABLED=1 GO111MODULE=on GOPROXY=https://goproxy.cn,direct go build -o /kubewise ./cmd
+RUN CGO_ENABLED=1 go build -o /kubewise ./cmd
 
 # ---- Runtime stage ----
 FROM alpine:3
