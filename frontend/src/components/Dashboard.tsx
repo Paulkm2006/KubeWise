@@ -119,6 +119,8 @@ export default function Dashboard({
 
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCluster = useRef<string | null>(null);
+  const issuesRef = useRef<HTMLDivElement>(null);
+  const clustersRef = useRef<HTMLDivElement>(null);
 
   // Cleanup timer on unmount
   useEffect(() => () => { if (clickTimer.current) clearTimeout(clickTimer.current); }, []);
@@ -164,7 +166,7 @@ export default function Dashboard({
   return (
     <div className="h-full overflow-y-auto">
       {/* Clusters */}
-      <div className="px-8 pt-6 pb-5 border-b border-border/60">
+      <div ref={clustersRef} className="px-8 pt-6 pb-5 border-b border-border/60">
         <div className="flex items-center gap-3 mb-4">
           <h2 className="text-sm font-semibold text-text tracking-wide">Clusters</h2>
           {loading ? (
@@ -236,7 +238,7 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
       {/* Issues + side content */}
       <div className="px-8 py-6 grid grid-cols-[1.5fr_1fr] gap-8 items-stretch">
         {/* Issues */}
-        <div className="flex flex-col">
+        <div ref={issuesRef} className="flex flex-col">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-text tracking-wide">Issues</h2>
@@ -396,14 +398,25 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
             <>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: 'Pods', value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text' },
-                  { label: 'Issues', value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text' },
-                  { label: 'Nodes', value: currentCluster.nodes, color: 'text-text' },
-                  { label: 'Namespaces', value: currentCluster.namespaces, color: 'text-text' },
+                  { label: 'Pods', value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text', target: 'issues' as const },
+                  { label: 'Issues', value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text', target: 'issues' as const },
+                  { label: 'Nodes', value: currentCluster.nodes, color: 'text-text', target: 'clusters' as const },
+                  { label: 'Namespaces', value: currentCluster.namespaces, color: 'text-text', target: 'clusters' as const },
                 ].map((s) => (
-                  <div key={s.label} className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer">
+                  <div
+                    key={s.label}
+                    onClick={() => {
+                      if (s.target === 'issues') {
+                        setPage(1);
+                        issuesRef.current?.scrollIntoView({ behavior: 'smooth' });
+                      } else {
+                        clustersRef.current?.scrollIntoView({ behavior: 'smooth' });
+                      }
+                    }}
+                    className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer"
+                  >
                     <p className={`text-2xl font-semibold font-mono ${s.color}`}>{s.value}</p>
-                    <p className="text-sm text-text-muted mt-1">{s.label}</p>
+                    <p className="text-sm text-text-muted mt-1 hover:underline">{s.label}</p>
                   </div>
                 ))}
               </div>
@@ -435,14 +448,25 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                   const totalNodes = clusters.reduce((s, c) => s + c.nodes, 0);
                   const totalNs = clusters.reduce((s, c) => s + c.namespaces, 0);
                   return [
-                    { label: 'Clusters', value: total, color: 'text-text' },
-                    { label: 'Pods', value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber' },
-                    { label: 'Issues', value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text' },
-                    { label: 'Nodes / NS', value: `${totalNodes} / ${totalNs}`, color: 'text-text' },
+                    { label: 'Clusters', value: total, color: 'text-text', target: 'clusters' as const },
+                    { label: 'Pods', value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber', target: 'issues' as const },
+                    { label: 'Issues', value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text', target: 'issues' as const },
+                    { label: 'Nodes / NS', value: `${totalNodes} / ${totalNs}`, color: 'text-text', target: 'clusters' as const },
                   ].map((s) => (
-                    <div key={s.label} className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer">
+                    <div
+                      key={s.label}
+                      onClick={() => {
+                        if (s.target === 'issues') {
+                          setPage(1);
+                          issuesRef.current?.scrollIntoView({ behavior: 'smooth' });
+                        } else {
+                          clustersRef.current?.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }}
+                      className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer"
+                    >
                       <p className={`text-lg font-semibold font-mono ${s.color}`}>{s.value}</p>
-                      <p className="text-sm text-text-muted mt-1">{s.label}</p>
+                      <p className="text-sm text-text-muted mt-1 hover:underline">{s.label}</p>
                     </div>
                   ));
                 })()}
