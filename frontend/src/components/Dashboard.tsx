@@ -10,6 +10,7 @@ interface DashboardProps {
   onDiagnose: (cluster: string, namespace: string, pod: string) => Promise<void>;
   onOpenDiagnosis: (id: string) => void;
   diagnosedPods: Set<string>;
+  refreshKey?: number;
 }
 
 const PAGE_SIZE = 10;
@@ -39,7 +40,8 @@ export default function Dashboard({
   onClusterChange,
   onDiagnose,
   onOpenDiagnosis,
-  diagnosedPods
+  diagnosedPods,
+  refreshKey,
 }: DashboardProps) {
   const [page, setPage] = useState(1);
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
@@ -95,7 +97,7 @@ export default function Dashboard({
     fetchAll();
     const interval = setInterval(fetchAll, 15000);
     return () => { mounted = false; clearInterval(interval); };
-  }, [focusCluster, fetchIssuesForCluster]);
+  }, [focusCluster, fetchIssuesForCluster, refreshKey]);
 
   // Sort issues by severity (high > medium > low)
   const sortedIssues = useMemo(() => {

@@ -38,6 +38,8 @@ export default function App() {
   const [activeDiagnosis, setActiveDiagnosis] = useState<StoredDiagnosis | null>(null);
   const [, forceUpdate] = useState(0);
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const handleRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     api.clusters.list().then(setClusters).catch(() => {});
@@ -198,6 +200,7 @@ export default function App() {
         activeCluster={activeCluster}
         onClusterChange={handleClusterChange}
         onActivity={addActivity}
+        onRefresh={handleRefresh}
       />
 
       <div className="flex flex-1 min-h-0">
@@ -215,6 +218,7 @@ export default function App() {
               onDiagnose={openDiagnosisForPod}
               onOpenDiagnosis={openDiagnosisById}
               diagnosedPods={diagnosedPods}
+              refreshKey={refreshKey}
             />
           )}
           {activeTab === 'audit' && (
@@ -223,6 +227,7 @@ export default function App() {
               store={auditStoreRef.current}
               onActivity={addActivity}
               onStoreUpdate={() => forceUpdate((n) => n + 1)}
+              refreshKey={refreshKey}
             />
           )}
           {activeTab === 'chat' && <Chat activeCluster={activeCluster} />}

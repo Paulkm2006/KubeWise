@@ -25,9 +25,10 @@ interface HeaderProps {
   activeCluster: string;
   onClusterChange: (name: string) => void;
   onActivity: (type: string, text: string, cluster?: string) => void;
+  onRefresh: () => void;
 }
 
-export default function Header({ activeTab, onTabChange, tabs, activeCluster, onClusterChange, onActivity }: HeaderProps) {
+export default function Header({ activeTab, onTabChange, tabs, activeCluster, onClusterChange, onActivity, onRefresh }: HeaderProps) {
   const [open, setOpen] = useState(false);
   const [freshness, setFreshness] = useState(0);
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
@@ -89,7 +90,7 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
 
       {/* Refresh */}
       <button
-        onClick={() => { setFreshness(0); onActivity('info', 'Views refreshed', activeCluster); }}
+        onClick={() => { onRefresh(); setFreshness(0); onActivity('info', 'Views refreshed', activeCluster); }}
         className="text-sm text-text-muted px-3 py-1.5 border border-border hover:border-accent/30 hover:text-text rounded-sm transition-colors cursor-pointer bg-transparent"
       >
         ⟳ Refresh

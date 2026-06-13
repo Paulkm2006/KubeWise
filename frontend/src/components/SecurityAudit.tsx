@@ -10,6 +10,7 @@ interface SecurityAuditProps {
   store: AuditStore;
   onActivity: (type: string, text: string, cluster?: string) => void;
   onStoreUpdate: () => void;
+  refreshKey?: number;
 }
 
 const sevStyle: Record<string, string> = {
@@ -56,6 +57,7 @@ export default function SecurityAudit({
   store,
   onActivity,
   onStoreUpdate,
+  refreshKey,
 }: SecurityAuditProps) {
   const [pagePhase, setPagePhase] = useState<PagePhase>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +135,7 @@ export default function SecurityAudit({
 
   useEffect(() => {
     loadCluster();
-  }, [loadCluster]);
+  }, [loadCluster, refreshKey]);
 
   useEffect(() => {
     if (pagePhase !== 'running') {
