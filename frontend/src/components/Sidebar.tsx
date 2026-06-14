@@ -6,7 +6,7 @@ interface SidebarProps {
   activeCluster: string;
   clusters: ClusterSummary[];
   onClear?: () => void;
-  onActivityClick?: (cluster?: string) => void;
+  onActivityClick?: (activity: Activity) => void;
   onFocusCluster?: (name: string) => void;
 }
 
@@ -15,6 +15,8 @@ interface Activity {
   text: string;
   cluster?: string;
   time: string;
+  kind?: 'diagnosis' | 'audit' | 'cluster_switch' | 'info';
+  detail?: string;
 }
 
 const typeStyle: Record<string, { border: string; dot: string }> = {
@@ -42,7 +44,7 @@ export default function Sidebar({ activities, activeCluster, clusters, onClear, 
             return (
               <div
                 key={i}
-                onClick={() => a.cluster && onActivityClick?.(a.cluster)}
+                onClick={() => onActivityClick?.(a)}
                 className={`flex items-start gap-2.5 px-3 py-2 border-l-2 ${s.border} hover:bg-hover/50 transition-colors rounded-r-sm ${a.cluster ? 'cursor-pointer' : 'cursor-default'}`}
               >
                 <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
