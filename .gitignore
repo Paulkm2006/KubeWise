@@ -29,6 +29,9 @@ go.work.sum
 .env.development
 .env.production
 
+# Plans
+docs/plans/
+
 # Editor/IDE
 # .idea/
 .vscode/
@@ -45,3 +48,4 @@ main
 **/dist/
 **/build/
 data/kubewise
+kubewise
