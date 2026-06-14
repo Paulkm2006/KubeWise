@@ -634,7 +634,7 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                               <span className={`w-2 h-2 rounded-full ${healthDot[c.health] || 'bg-text-muted'}`} />
                               <span className="text-sm font-mono text-text">{c.name}</span>
                             </span>
-                            <span className="text-xs text-text-muted">{c.pods_ready}/{c.pods_total} Pod · {c.issues_count} {t('dashboard.issuesCount', { count: c.issues_count })}</span>
+                            <span className="text-xs text-text-muted">{c.pods_ready}/{c.pods_total} Pod · {t('dashboard.issuesCount', { count: c.issues_count })}</span>
                           </div>
                         ))}
                       </div>
