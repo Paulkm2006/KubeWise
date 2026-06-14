@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { subscribeChat } from '../api/chatSse';
 import type { ChatProgressCard, ChatSSEEvent, ChatTurn } from '../api/types';
@@ -11,13 +12,6 @@ import {
 import MarkdownContent from './MarkdownContent';
 import ProgressCard from './chat/ProgressCard';
 
-const SUGGESTIONS = [
-  '列出所有命名空间',
-  '哪个 PVC 使用存储最多？',
-  '运行完整安全审计',
-  '在 dev 命名空间部署 ArgoCD',
-];
-
 interface ChatProps {
   activeCluster: string;
 }
@@ -27,11 +21,20 @@ function formatTime(d = new Date()): string {
 }
 
 export default function Chat({ activeCluster }: ChatProps) {
+  const { t } = useTranslation();
+
+  const SUGGESTIONS = [
+    t('chat.suggestions.namespaces'),
+    t('chat.suggestions.pvc'),
+    t('chat.suggestions.audit'),
+    t('chat.suggestions.deploy'),
+  ];
+
   const [turns, setTurns] = useState<ChatTurn[]>([
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'KubeWise 对话 — 关于顶部选中集群的问题将自动路由到对应 Agent。',
+      text: t('chat.welcome'),
       cluster: '',
       timestamp: formatTime(),
     },
@@ -296,7 +299,7 @@ export default function Chat({ activeCluster }: ChatProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && sendMessage(input)}
-          placeholder={activeCluster ? '请输入关于此集群的问题…' : '请先在顶部选择一个集群'}
+          placeholder={activeCluster ? t('chat.placeholder') : t('chat.noCluster')}
           disabled={streaming || !activeCluster}
           className="flex-1 bg-surface border border-border rounded-sm px-4 py-2.5 text-sm text-text
                      placeholder:text-text-muted outline-none focus:border-accent/30 transition-colors font-sans
@@ -309,7 +312,7 @@ export default function Chat({ activeCluster }: ChatProps) {
           className="text-sm font-medium px-4 py-2.5 rounded-sm bg-accent text-bg
                      hover:opacity-85 disabled:opacity-40 transition-opacity cursor-pointer border-none shrink-0"
         >
-          发送 →
+          {t('chat.send')}
         </button>
       </div>
     </div>
