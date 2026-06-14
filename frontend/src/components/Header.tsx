@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { ClusterSummary } from '../api/types';
 
@@ -29,9 +30,15 @@ interface HeaderProps {
 }
 
 export default function Header({ activeTab, onTabChange, tabs, activeCluster, onClusterChange, onActivity, onRefresh }: HeaderProps) {
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [freshness, setFreshness] = useState(0);
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+
+  const toggleLanguage = () => {
+    const next = i18n.language === 'zh' ? 'en' : 'zh';
+    i18n.changeLanguage(next);
+  };
 
   // Fetch real cluster list from API
   useEffect(() => {
@@ -50,7 +57,7 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
   }, []);
 
   const active = clusters.find((c) => c.name === activeCluster) || clusters[0];
-  const freshnessText = freshness === 0 ? '刚刚' : `${freshness}秒前`;
+  const freshnessText = freshness === 0 ? t('header.justNow') : t('header.timeAgo', { seconds: freshness });
 
   return (
     <header className="h-14 flex items-center px-6 border-b border-border bg-surface shrink-0 select-none gap-4">
@@ -84,16 +91,24 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-50" />
           <span className="relative inline-flex rounded-full w-2 h-2 bg-green" />
         </span>
-        实时
+        {t('header.live')}
       </span>
       <span className="text-sm text-text-muted">{freshnessText}</span>
 
       {/* Refresh */}
       <button
-        onClick={() => { onRefresh(); setFreshness(0); onActivity('info', 'Views refreshed', activeCluster); }}
+        onClick={() => { onRefresh(); setFreshness(0); onActivity('info', t('header.refreshed'), activeCluster); }}
         className="text-sm text-text-muted px-3 py-1.5 border border-border hover:border-accent/30 hover:text-text rounded-sm transition-colors cursor-pointer bg-transparent"
       >
-        ⟳ 刷新
+        {t('header.refresh')}
+      </button>
+
+      {/* Language Switcher */}
+      <button
+        onClick={toggleLanguage}
+        className="text-sm text-text-muted px-3 py-1.5 border border-border hover:border-accent/30 hover:text-text rounded-sm transition-colors cursor-pointer bg-transparent"
+      >
+        {i18n.language === 'zh' ? 'EN' : '中'}
       </button>
 
       {/* Cluster Switcher */}

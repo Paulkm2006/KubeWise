@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -11,12 +12,6 @@ import { DiagnosisStore, StoredDiagnosis } from './stores/diagnosisStore';
 import { AuditStore } from './stores/auditStore';
 import type { DiagnosisTarget, ClusterSummary } from './api/types';
 
-const TAB_CONFIG = [
-  { id: 'dashboard', label: '仪表盘', icon: '◈' },
-  { id: 'audit', label: '安全审计', icon: '◇' },
-  { id: 'chat', label: '对话', icon: '○' },
-] as const;
-
 type DiagPhase = 'idle' | 'loading' | 'ready' | 'error';
 
 function podKey(cluster: string, namespace: string, pod: string) {
@@ -24,7 +19,14 @@ function podKey(cluster: string, namespace: string, pod: string) {
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  const TAB_CONFIG = [
+    { id: 'dashboard', label: t('tabs.dashboard'), icon: '◈' },
+    { id: 'audit', label: t('tabs.audit'), icon: '◇' },
+    { id: 'chat', label: t('tabs.chat'), icon: '○' },
+  ] as const;
   const [activeCluster, setActiveCluster] = useState('');
   const [focusCluster, setFocusCluster] = useState<string | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
