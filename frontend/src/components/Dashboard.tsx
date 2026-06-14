@@ -49,6 +49,7 @@ export default function Dashboard({
   const [diagnoses, setDiagnoses] = useState<DiagnosisSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeDetail, setActiveDetail] = useState<'pods' | 'issues' | 'nodes' | 'namespaces' | null>(null);
 
   // Fetch issues for a specific cluster
   const fetchIssuesForCluster = useCallback(async (name: string): Promise<Issue[]> => {
@@ -398,28 +399,116 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
             <>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: 'Pod', value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text', target: 'issues' as const },
-                  { label: '问题', value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text', target: 'issues' as const },
-                  { label: '节点', value: currentCluster.nodes, color: 'text-text', target: 'clusters' as const },
-                  { label: '命名空间', value: currentCluster.namespaces, color: 'text-text', target: 'clusters' as const },
+                  { label: 'Pod', value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text', detail: 'pods' as const },
+                  { label: '问题', value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text', detail: 'issues' as const },
+                  { label: '节点', value: currentCluster.nodes, color: 'text-text', detail: 'nodes' as const },
+                  { label: '命名空间', value: currentCluster.namespaces, color: 'text-text', detail: 'namespaces' as const },
                 ].map((s) => (
                   <div
                     key={s.label}
-                    onClick={() => {
-                      if (s.target === 'issues') {
-                        setPage(1);
-                        issuesRef.current?.scrollIntoView({ behavior: 'smooth' });
-                      } else {
-                        clustersRef.current?.scrollIntoView({ behavior: 'smooth' });
-                      }
-                    }}
-                    className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer"
+                    onClick={() => setActiveDetail(activeDetail === s.detail ? null : s.detail)}
+                    className={`border rounded-sm p-4 text-center transition-colors cursor-pointer
+                      ${activeDetail === s.detail ? 'border-accent/40 bg-accent-dim/10' : 'border-border bg-surface hover:bg-elevated'}`}
                   >
                     <p className={`text-2xl font-semibold font-mono ${s.color}`}>{s.value}</p>
-                    <p className="text-sm text-text-muted mt-1 hover:underline">{s.label}</p>
+                    <p className="text-sm text-text-muted mt-1">{s.label}</p>
                   </div>
                 ))}
               </div>
+
+              {/* Detail Panel */}
+              {activeDetail && (
+                <div className="border border-border rounded-sm bg-surface animate-fade-in">
+                  {activeDetail === 'pods' && (
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-text">Pod 状态</h3>
+                        <span className="text-xs text-text-muted">显示有问题的 Pod</span>
+                      </div>
+                      {sortedIssues.length > 0 ? (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {sortedIssues.map((iss, i) => (
+                            <div key={`${iss.pod}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${severityBadge[iss.severity]}`}>
+                                {iss.severity.toUpperCase()}
+                              </span>
+                              <span className="text-sm font-mono text-text flex-1 truncate">{iss.pod}</span>
+                              <span className="text-xs text-text-muted">{iss.namespace}</span>
+                              <span className="text-xs text-text-secondary font-mono">{iss.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">所有 Pod 运行正常</p>
+                      )}
+                    </div>
+                  )}
+                  {activeDetail === 'issues' && (
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-text">问题列表</h3>
+                        <span className="text-xs text-text-muted">{sortedIssues.length} 个问题</span>
+                      </div>
+                      {sortedIssues.length > 0 ? (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {sortedIssues.map((iss, i) => (
+                            <div key={`${iss.pod}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${severityBadge[iss.severity]}`}>
+                                {iss.severity.toUpperCase()}
+                              </span>
+                              <span className="text-sm font-mono text-text flex-1 truncate">{iss.pod}</span>
+                              <span className="text-xs text-text-muted">{iss.namespace}</span>
+                              <span className="text-xs text-text-secondary font-mono">{iss.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">无问题</p>
+                      )}
+                    </div>
+                  )}
+                  {activeDetail === 'nodes' && (
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-text mb-3">节点信息</h3>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">节点数</span>
+                          <span className="text-text font-mono">{currentCluster.nodes}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">集群版本</span>
+                          <span className="text-text font-mono">{currentCluster.version || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">健康状态</span>
+                          <span className={`font-mono ${currentCluster.health === 'healthy' ? 'text-green' : currentCluster.health === 'degraded' ? 'text-amber' : 'text-red'}`}>
+                            {currentCluster.health}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {activeDetail === 'namespaces' && (
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-text mb-3">命名空间信息</h3>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">命名空间数</span>
+                          <span className="text-text font-mono">{currentCluster.namespaces}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">Pod 总数</span>
+                          <span className="text-text font-mono">{currentCluster.pods_total}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">Pod 就绪</span>
+                          <span className="text-text font-mono">{currentCluster.pods_ready}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Version info */}
               <div className="border border-border rounded-sm p-4 bg-surface">
@@ -448,29 +537,109 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                   const totalNodes = clusters.reduce((s, c) => s + c.nodes, 0);
                   const totalNs = clusters.reduce((s, c) => s + c.namespaces, 0);
                   return [
-                    { label: '集群', value: total, color: 'text-text', target: 'clusters' as const },
-                    { label: 'Pod', value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber', target: 'issues' as const },
-                    { label: '问题', value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text', target: 'issues' as const },
-                    { label: '节点 / 命名空间', value: `${totalNodes} / ${totalNs}`, color: 'text-text', target: 'clusters' as const },
+                    { label: '集群', value: total, color: 'text-text', detail: 'clusters' as const },
+                    { label: 'Pod', value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber', detail: 'pods' as const },
+                    { label: '问题', value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text', detail: 'issues' as const },
+                    { label: '节点 / 命名空间', value: `${totalNodes} / ${totalNs}`, color: 'text-text', detail: 'nodes' as const },
                   ].map((s) => (
                     <div
                       key={s.label}
-                      onClick={() => {
-                        if (s.target === 'issues') {
-                          setPage(1);
-                          issuesRef.current?.scrollIntoView({ behavior: 'smooth' });
-                        } else {
-                          clustersRef.current?.scrollIntoView({ behavior: 'smooth' });
-                        }
-                      }}
-                      className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer"
+                      onClick={() => setActiveDetail(activeDetail === s.detail ? null : s.detail)}
+                      className={`border rounded-sm p-4 text-center transition-colors cursor-pointer
+                        ${activeDetail === s.detail ? 'border-accent/40 bg-accent-dim/10' : 'border-border bg-surface hover:bg-elevated'}`}
                     >
                       <p className={`text-lg font-semibold font-mono ${s.color}`}>{s.value}</p>
-                      <p className="text-sm text-text-muted mt-1 hover:underline">{s.label}</p>
+                      <p className="text-sm text-text-muted mt-1">{s.label}</p>
                     </div>
                   ));
                 })()}
               </div>
+
+              {/* Aggregate Detail Panel */}
+              {activeDetail && (
+                <div className="border border-border rounded-sm bg-surface animate-fade-in">
+                  {activeDetail === 'pods' && (
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-text">Pod 状态</h3>
+                        <span className="text-xs text-text-muted">显示有问题的 Pod</span>
+                      </div>
+                      {sortedIssues.length > 0 ? (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {sortedIssues.map((iss, i) => (
+                            <div key={`${iss.pod}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${severityBadge[iss.severity]}`}>
+                                {iss.severity.toUpperCase()}
+                              </span>
+                              <span className="text-sm font-mono text-text flex-1 truncate">{iss.pod}</span>
+                              <span className="text-xs text-text-muted">{iss.cluster}</span>
+                              <span className="text-xs text-text-secondary font-mono">{iss.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">所有 Pod 运行正常</p>
+                      )}
+                    </div>
+                  )}
+                  {activeDetail === 'issues' && (
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-text">问题列表</h3>
+                        <span className="text-xs text-text-muted">{sortedIssues.length} 个问题</span>
+                      </div>
+                      {sortedIssues.length > 0 ? (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {sortedIssues.map((iss, i) => (
+                            <div key={`${iss.pod}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${severityBadge[iss.severity]}`}>
+                                {iss.severity.toUpperCase()}
+                              </span>
+                              <span className="text-sm font-mono text-text flex-1 truncate">{iss.pod}</span>
+                              <span className="text-xs text-text-muted">{iss.cluster}</span>
+                              <span className="text-xs text-text-secondary font-mono">{iss.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">无问题</p>
+                      )}
+                    </div>
+                  )}
+                  {activeDetail === 'nodes' && (
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-text mb-3">集群概览</h3>
+                      <div className="space-y-2">
+                        {clusters.map(c => (
+                          <div key={c.name} className="flex items-center justify-between px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                            <span className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${healthDot[c.health] || 'bg-text-muted'}`} />
+                              <span className="text-sm font-mono text-text">{c.name}</span>
+                            </span>
+                            <span className="text-xs text-text-muted">{c.nodes} 节点 · {c.namespaces} 命名空间</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {activeDetail === 'clusters' && (
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-text mb-3">集群列表</h3>
+                      <div className="space-y-2">
+                        {clusters.map(c => (
+                          <div key={c.name} className="flex items-center justify-between px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                            <span className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${healthDot[c.health] || 'bg-text-muted'}`} />
+                              <span className="text-sm font-mono text-text">{c.name}</span>
+                            </span>
+                            <span className="text-xs text-text-muted">{c.pods_ready}/{c.pods_total} Pod · {c.issues_count} 问题</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* All clusters summary */}
               <div className="border border-border rounded-sm p-4 bg-surface">
