@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { ClusterSummary } from '../api/types';
@@ -36,7 +36,8 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
 
   const toggleLanguage = () => {
-    const next = i18n.language === 'zh' ? 'en' : 'zh';
+    const lang = i18n.resolvedLanguage || i18n.language;
+    const next = lang.startsWith('zh') ? 'en' : 'zh';
     i18n.changeLanguage(next);
   };
 
@@ -108,7 +109,7 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
         onClick={toggleLanguage}
         className="text-sm text-text-muted px-3 py-1.5 border border-border hover:border-accent/30 hover:text-text rounded-sm transition-colors cursor-pointer bg-transparent"
       >
-        {i18n.language === 'zh' ? 'EN' : '中'}
+        {(i18n.resolvedLanguage || i18n.language).startsWith('zh') ? 'EN' : '中'}
       </button>
 
       {/* Cluster Switcher */}

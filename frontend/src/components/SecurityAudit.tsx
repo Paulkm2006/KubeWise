@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import type { AuditFinding, AuditSeverity } from '../api/types';
+import type { AuditFinding } from '../api/types';
 import { AuditStore, type StoredAudit } from '../stores/auditStore';
 
 type PagePhase = 'loading' | 'empty' | 'running' | 'completed' | 'failed' | 'error';

@@ -15,8 +15,8 @@
     "activity": "Activity",
     "clear": "clear",
     "loadingCluster": "Loading cluster info...",
-    "issues": "{{count}} issue",
-    "issues_plural": "{{count}} issues",
+    "issues_one": "{{count}} issue",
+    "issues_other": "{{count}} issues",
     "podsReady": "{{ready}}/{{total}} pods ready",
     "nodes": "◈ {{count}} nodes",
     "namespaces": "▣ {{count}} namespaces"
@@ -127,11 +127,6 @@
     "impact": "Impact",
     "suggestion": "Suggestion",
     "noMatch": "No findings match this filter",
-    "all": "All",
-    "critical": "CRITICAL",
-    "high": "HIGH",
-    "medium": "MEDIUM",
-    "low": "LOW",
     "retry": "Retry"
   },
   "diagnosis": {
