@@ -290,7 +290,7 @@ export default function Chat({ activeCluster }: ChatProps) {
         <span
           className={`text-sm px-3 py-2 border rounded-sm shrink-0 font-mono
             ${activeCluster ? 'text-accent border-accent/25 bg-accent-dim/10' : 'text-red border-red/30 bg-red-dim/10'}`}
-          title="Uses header cluster context"
+          title={t('chat.clusterContext')}
         >
           ◆ {clusterLabel}
         </span>

@@ -73,13 +73,13 @@ export function ChartSelectCard({
           <input
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="Repo URL"
+            placeholder={t('deploy.repoUrl')}
             className="w-full text-sm bg-bg border border-border rounded-sm px-3 py-2"
           />
           <input
             value={chartName}
             onChange={(e) => setChartName(e.target.value)}
-            placeholder="Chart name"
+            placeholder={t('deploy.chartName')}
             className="w-full text-sm bg-bg border border-border rounded-sm px-3 py-2"
           />
           <div className="flex gap-2">

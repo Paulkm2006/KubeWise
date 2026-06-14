@@ -84,6 +84,7 @@
     "send": "Send →",
     "placeholder": "Ask about this cluster…",
     "noCluster": "Select a cluster in the header first",
+    "clusterContext": "Uses header cluster context",
     "suggestions": {
       "namespaces": "List all namespaces",
       "pvc": "Which PVC uses the most storage?",
@@ -226,7 +227,9 @@
     "deployBtn": "Deploy with these values",
     "cancelDeploy": "Cancel deploy",
     "tip": "Tip: edit YAML directly, or use NL correction above",
-    "valuesPlaceholder": "# Helm values overrides (YAML)"
+    "valuesPlaceholder": "# Helm values overrides (YAML)",
+    "repoUrl": "Repo URL",
+    "chartName": "Chart name"
   },
   "progress": {
     "report": "Report",

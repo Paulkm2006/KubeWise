@@ -82,6 +82,7 @@
     "send": "发送 →",
     "placeholder": "请输入关于此集群的问题…",
     "noCluster": "请先在顶部选择一个集群",
+    "clusterContext": "使用顶部集群上下文",
     "suggestions": {
       "namespaces": "列出所有命名空间",
       "pvc": "哪个 PVC 使用存储最多？",
@@ -224,7 +225,9 @@
     "deployBtn": "使用此配置部署",
     "cancelDeploy": "取消部署",
     "tip": "提示：可直接编辑 YAML，或使用上方自然语言修正",
-    "valuesPlaceholder": "# Helm 覆盖值 (YAML)"
+    "valuesPlaceholder": "# Helm 覆盖值 (YAML)",
+    "repoUrl": "仓库 URL",
+    "chartName": "Chart 名称"
   },
   "progress": {
     "report": "报告",
