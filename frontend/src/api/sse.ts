@@ -7,6 +7,18 @@ export interface SSECallbacks {
   onError?: (err: string) => void;
 }
 
+function parseTerminalStatus(data: string): string {
+  try {
+    const payload = JSON.parse(data) as { status?: unknown };
+    if (typeof payload.status === 'string' && payload.status.length > 0) {
+      return payload.status;
+    }
+  } catch {
+    /* ignore malformed terminal payload */
+  }
+  return 'completed';
+}
+
 export function subscribeDiagnosis(
   id: string,
   since: number,
@@ -26,10 +38,7 @@ export function subscribeDiagnosis(
   });
 
   es.addEventListener('stream_complete', (e: MessageEvent) => {
-    try {
-      const data = JSON.parse(e.data);
-      callbacks.onComplete(data.status);
-    } catch { /* ignore */ }
+    callbacks.onComplete(parseTerminalStatus(e.data));
     es.close();
   });
 
@@ -79,10 +88,7 @@ export function subscribeAudit(
   });
 
   es.addEventListener('stream_complete', (e: MessageEvent) => {
-    try {
-      const data = JSON.parse(e.data);
-      callbacks.onComplete(data.status);
-    } catch { /* ignore */ }
+    callbacks.onComplete(parseTerminalStatus(e.data));
     es.close();
   });
 
