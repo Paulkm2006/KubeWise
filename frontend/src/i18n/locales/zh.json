@@ -123,7 +123,12 @@
     "risk": "风险",
     "impact": "影响",
     "suggestion": "建议",
-    "noMatch": "无匹配此筛选的发现"
+    "noMatch": "无匹配此筛选的发现",
+    "all": "全部",
+    "critical": "CRITICAL",
+    "high": "HIGH",
+    "medium": "MEDIUM",
+    "low": "LOW"
   },
   "diagnosis": {
     "caseFile": "诊断档案",
@@ -223,6 +228,15 @@
   "progress": {
     "report": "报告",
     "executionDetails": "执行详情"
+  },
+  "activity": {
+    "switched": "已切换到 {{cluster}}",
+    "diagOpenFailed": "打开诊断失败: {{error}}",
+    "diagLookupFailed": "{{pod}} 诊断查询失败: {{error}}",
+    "diagnosing": "正在诊断 {{pod}}...",
+    "diagFailed": "{{pod}} 诊断失败: {{error}}",
+    "reDiagnosing": "重新诊断 {{pod}}...",
+    "reDiagFailed": "{{pod}} 重新诊断失败: {{error}}"
   },
   "common": {
     "app": "应用",

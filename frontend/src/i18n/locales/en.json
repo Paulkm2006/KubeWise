@@ -125,7 +125,12 @@
     "risk": "Risk",
     "impact": "Impact",
     "suggestion": "Suggestion",
-    "noMatch": "No findings match this filter"
+    "noMatch": "No findings match this filter",
+    "all": "All",
+    "critical": "CRITICAL",
+    "high": "HIGH",
+    "medium": "MEDIUM",
+    "low": "LOW"
   },
   "diagnosis": {
     "caseFile": "Case File",
@@ -225,6 +230,15 @@
   "progress": {
     "report": "Report",
     "executionDetails": "Execution details"
+  },
+  "activity": {
+    "switched": "Switched to {{cluster}}",
+    "diagOpenFailed": "Failed to open diagnosis: {{error}}",
+    "diagLookupFailed": "{{pod}} diagnosis lookup failed: {{error}}",
+    "diagnosing": "Diagnosing {{pod}}...",
+    "diagFailed": "{{pod}} diagnosis failed: {{error}}",
+    "reDiagnosing": "Re-diagnosing {{pod}}...",
+    "reDiagFailed": "{{pod}} re-diagnosis failed: {{error}}"
   },
   "common": {
     "app": "App",

@@ -21,7 +21,14 @@ const sevStyle: Record<string, string> = {
   low: 'text-accent bg-accent-dim',
 };
 
-const FILTERS = ['全部', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
+const FILTER_KEYS = ['all', 'critical', 'high', 'medium', 'low'] as const;
+const FILTER_SEVERITY: Record<string, string> = {
+  all: '',
+  critical: 'CRITICAL',
+  high: 'HIGH',
+  medium: 'MEDIUM',
+  low: 'LOW',
+};
 
 function formatAge(iso?: string): string {
   if (!iso) return '';
@@ -64,7 +71,7 @@ export default function SecurityAudit({
   const [pagePhase, setPagePhase] = useState<PagePhase>('loading');
   const [error, setError] = useState<string | null>(null);
   const [stored, setStored] = useState<StoredAudit | null>(null);
-  const [filter, setFilter] = useState('All');
+  const [filter, setFilter] = useState('all');
   const [elapsedSec, setElapsedSec] = useState(0);
   const [actionPending, setActionPending] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
@@ -172,8 +179,10 @@ export default function SecurityAudit({
   };
 
   const filtered = useMemo(() => {
-    if (filter === '全部') return findings;
-    return findings.filter((f) => f.severity.toUpperCase() === filter);
+    if (filter === 'all') return findings;
+    const severity = FILTER_SEVERITY[filter];
+    if (!severity) return findings;
+    return findings.filter((f) => f.severity.toUpperCase() === severity);
   }, [findings, filter]);
 
   const handleStart = async () => {
@@ -443,11 +452,11 @@ export default function SecurityAudit({
           <>
             <div className="grid grid-cols-5 gap-4 mb-6">
               {[
-                { label: t('audit.total'), value: summary.total, color: 'text-text', key: '全部' },
-                { label: 'CRITICAL', value: summary.critical, color: 'text-red', key: 'CRITICAL' },
-                { label: 'HIGH', value: summary.high, color: 'text-red', key: 'HIGH' },
-                { label: 'MEDIUM', value: summary.medium, color: 'text-amber', key: 'MEDIUM' },
-                { label: 'LOW', value: summary.low, color: 'text-accent', key: 'LOW' },
+                { label: t('audit.total'), value: summary.total, color: 'text-text', key: 'all' },
+                { label: t('audit.critical'), value: summary.critical, color: 'text-red', key: 'critical' },
+                { label: t('audit.high'), value: summary.high, color: 'text-red', key: 'high' },
+                { label: t('audit.medium'), value: summary.medium, color: 'text-amber', key: 'medium' },
+                { label: t('audit.low'), value: summary.low, color: 'text-accent', key: 'low' },
               ].map((c) => (
                 <button
                   key={c.label}
@@ -465,7 +474,7 @@ export default function SecurityAudit({
             </div>
 
             <div className="flex gap-2 mb-5">
-              {FILTERS.map((f) => (
+              {FILTER_KEYS.map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -475,7 +484,7 @@ export default function SecurityAudit({
                       : 'border-border text-text-muted hover:border-accent/30 hover:text-text bg-transparent'
                     }`}
                 >
-                  {f}
+                  {t(`audit.${f}`)}
                 </button>
               ))}
             </div>
