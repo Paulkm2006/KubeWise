@@ -430,6 +430,8 @@ function StageProgress({
   stages: StoredDiagnosis['derived']['stages'];
   liveCounts?: StoredDiagnosis['derived'];
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-3">
       {DIAGNOSIS_STAGES.map((meta) => {
@@ -476,7 +478,7 @@ function StageProgress({
                     : 'text-text-muted'
                 }`}
               >
-                {meta.label}
+                {t(meta.labelKey)}
               </p>
               <p
                 className={`text-xs mt-0.5 font-mono ${
@@ -484,7 +486,7 @@ function StageProgress({
                 }`}
               >
                 {isActive || isStepDone
-                  ? state?.summary || liveHint || meta.detail
+                  ? state?.summary || liveHint || t(meta.detailKey)
                   : 'Waiting...'}
               </p>
             </div>
