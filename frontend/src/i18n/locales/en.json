@@ -238,7 +238,11 @@
     "diagnosing": "Diagnosing {{pod}}...",
     "diagFailed": "{{pod}} diagnosis failed: {{error}}",
     "reDiagnosing": "Re-diagnosing {{pod}}...",
-    "reDiagFailed": "{{pod}} re-diagnosis failed: {{error}}"
+    "reDiagFailed": "{{pod}} re-diagnosis failed: {{error}}",
+    "auditCompleted": "Security audit {{status}}: {{count}} findings",
+    "auditing": "Auditing {{cluster}}...",
+    "reAuditing": "Re-auditing {{cluster}}...",
+    "auditExported": "Audit report exported as Markdown"
   },
   "common": {
     "app": "App",

@@ -95,7 +95,7 @@ export default function SecurityAudit({
       onTerminal: (s: StoredAudit) => {
         onActivity(
           s.status === 'failed' ? 'issue' : 'done',
-          `Security audit ${s.status}: ${s.result?.summary.total ?? 0} findings`,
+          t('activity.auditCompleted', { status: s.status, count: s.result?.summary.total ?? 0 }),
           s.target.cluster,
         );
       },
@@ -189,7 +189,7 @@ export default function SecurityAudit({
     if (!activeCluster || actionPending) return;
     setActionPending(true);
     try {
-      onActivity('pending', `Auditing ${activeCluster}...`, activeCluster);
+      onActivity('pending', t('activity.auditing', { cluster: activeCluster }), activeCluster);
       const res = await api.audits.create(activeCluster);
       runStartedAt.current = Date.now();
       const s = store.add(
@@ -217,7 +217,7 @@ export default function SecurityAudit({
         await api.audits.cancel(liveStored.id);
         store.closeSSE(liveStored.id);
       }
-      onActivity('pending', `Re-auditing ${activeCluster}...`, activeCluster);
+      onActivity('pending', t('activity.reAuditing', { cluster: activeCluster }), activeCluster);
       const res = await api.audits.create(activeCluster);
       runStartedAt.current = Date.now();
       const s = store.add(
@@ -263,7 +263,7 @@ export default function SecurityAudit({
     a.download = `kubewise-audit-${activeCluster}-${date}.md`;
     a.click();
     URL.revokeObjectURL(url);
-    onActivity('done', 'Audit report exported as Markdown', activeCluster);
+    onActivity('done', t('activity.auditExported'), activeCluster);
   };
 
   const progressPct =

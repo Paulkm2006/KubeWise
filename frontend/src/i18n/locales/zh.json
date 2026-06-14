@@ -236,7 +236,11 @@
     "diagnosing": "正在诊断 {{pod}}...",
     "diagFailed": "{{pod}} 诊断失败: {{error}}",
     "reDiagnosing": "重新诊断 {{pod}}...",
-    "reDiagFailed": "{{pod}} 重新诊断失败: {{error}}"
+    "reDiagFailed": "{{pod}} 重新诊断失败: {{error}}",
+    "auditCompleted": "安全审计 {{status}}: {{count}} 个发现",
+    "auditing": "正在审计 {{cluster}}...",
+    "reAuditing": "重新审计 {{cluster}}...",
+    "auditExported": "审计报告已导出为 Markdown"
   },
   "common": {
     "app": "应用",
