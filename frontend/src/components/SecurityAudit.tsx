@@ -532,6 +532,7 @@ function LiveFindingRow({ row }: { row: AuditFinding }) {
 }
 
 function FindingsTable({ findings, dimmed }: { findings: AuditFinding[]; dimmed?: boolean }) {
+  const { t } = useTranslation();
   if (findings.length === 0) {
     return (
       <div className="text-center py-12 text-sm text-text-muted border border-border rounded-sm">
