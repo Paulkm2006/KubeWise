@@ -9,7 +9,7 @@ type PagePhase = 'loading' | 'empty' | 'running' | 'completed' | 'failed' | 'err
 interface SecurityAuditProps {
   activeCluster: string;
   store: AuditStore;
-  onActivity: (type: string, text: string, cluster?: string) => void;
+  onActivity: (type: string, text: string, cluster?: string, kind?: string, detail?: string) => void;
   onStoreUpdate: () => void;
   refreshKey?: number;
 }

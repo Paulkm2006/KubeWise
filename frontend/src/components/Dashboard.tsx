@@ -51,7 +51,7 @@ export default function Dashboard({
   const [diagnoses, setDiagnoses] = useState<DiagnosisSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeDetail, setActiveDetail] = useState<'pods' | 'issues' | 'nodes' | 'namespaces' | null>(null);
+  const [activeDetail, setActiveDetail] = useState<'pods' | 'issues' | 'nodes' | 'namespaces' | 'clusters' | null>(null);
 
   // Fetch issues for a specific cluster
   const fetchIssuesForCluster = useCallback(async (name: string): Promise<Issue[]> => {

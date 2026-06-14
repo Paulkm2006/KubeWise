@@ -60,6 +60,7 @@ export default function DiagnosisTracePanel({ events, running, onBack }: Diagnos
 }
 
 function TraceEventRow({ event, baseTime }: { event: DiagnosisEvent; baseTime: number }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const meta = traceMeta(event);
   const payload = formatPayload(event);

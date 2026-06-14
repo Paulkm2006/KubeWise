@@ -3,6 +3,8 @@ export interface Activity {
   text: string;
   cluster?: string;
   time: string;
+  kind?: 'diagnosis' | 'audit' | 'cluster_switch' | 'info';
+  detail?: string;
 }
 
 export interface DiagnosisStep {

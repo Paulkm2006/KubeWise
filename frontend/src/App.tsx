@@ -47,10 +47,10 @@ export default function App() {
     api.clusters.list().then(setClusters).catch(() => {});
   }, []);
 
-  const addActivity = useCallback((type: string, text: string, cluster?: string, kind?: Activity['kind'], detail?: string) => {
+  const addActivity = useCallback((type: string, text: string, cluster?: string, kind?: string, detail?: string) => {
     const now = new Date();
     const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    setActivities((prev) => [{ type: type as Activity['type'], text, cluster, time, kind, detail }, ...prev.slice(0, 19)]);
+    setActivities((prev) => [{ type: type as Activity['type'], text, cluster, time, kind: kind as Activity['kind'], detail }, ...prev.slice(0, 19)]);
   }, []);
 
   const storeCallbacks = useCallback(
