@@ -343,7 +343,7 @@ export default function SecurityAudit({
             onClick={loadCluster}
             className="text-sm px-4 py-2 border border-border rounded-sm hover:bg-hover cursor-pointer bg-transparent"
           >
-            Retry
+            {t('audit.retry')}
           </button>
         </div>
       )}

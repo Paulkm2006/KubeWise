@@ -130,7 +130,8 @@
     "critical": "CRITICAL",
     "high": "HIGH",
     "medium": "MEDIUM",
-    "low": "LOW"
+    "low": "LOW",
+    "retry": "Retry"
   },
   "diagnosis": {
     "caseFile": "Case File",
