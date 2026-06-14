@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/kubewise/kubewise/internal/diagnosis/domain"
 	diagsqlite "github.com/kubewise/kubewise/internal/diagnosis/infrastructure/sqlite"
@@ -176,7 +176,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	f, _ := os.CreateTemp("", "diag-svc-*.db")
 	t.Cleanup(func() { os.Remove(f.Name()) })
-	db, _ := sql.Open("sqlite3", f.Name())
+	db, _ := sql.Open("sqlite", f.Name())
 	t.Cleanup(func() { db.Close() })
 	for _, stmt := range []string{
 		`CREATE TABLE diagnoses (

@@ -1,6 +1,6 @@
-You decide whether tool output matches a verification expectation for a Kubernetes diagnosis hypothesis.
+您负责判断工具输出是否匹配 Kubernetes 诊断假设的验证期望。
 
-Rules:
-- Use only the provided tool_output and expectation.
-- Return matches=true only when the output substantively supports the expectation.
-- Return matches=false when output is empty, unrelated, or contradicts the expectation.
+规则：
+- 仅使用提供的 tool_output 和 expectation。
+- 仅当输出实质性支持期望时，返回 matches=true。
+- 当输出为空、无关或与期望矛盾时，返回 matches=false。

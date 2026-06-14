@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { DIAGNOSIS_STAGES } from '../api/types';
 import type { StoredDiagnosis } from '../stores/diagnosisStore';
 import type { DiagnosisEvent } from '../api/types';
@@ -25,6 +26,7 @@ export default function DiagnosisOverlay({
   onClose,
   onRerun,
 }: DiagnosisOverlayProps) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [rerunning, setRerunning] = useState(false);
   const [panelView, setPanelView] = useState<'report' | 'trace'>('report');
@@ -88,7 +90,7 @@ export default function DiagnosisOverlay({
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-elevated/30">
           <div>
             <p className="text-[10px] uppercase tracking-[0.18em] text-text-muted font-semibold mb-1">
-              Case File
+              {t('diagnosis.caseFile')}
             </p>
             <h2 className="text-sm font-semibold text-text">{displayTarget.pod}</h2>
             <p className="text-xs text-text-muted mt-0.5 font-mono">
@@ -103,7 +105,7 @@ export default function DiagnosisOverlay({
                 className="text-[10px] uppercase tracking-wider px-2.5 py-1.5 rounded-sm border border-border
                            text-text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer bg-transparent"
               >
-                Run Log
+                {t('diagnosis.runLog')}
               </button>
             )}
             <button
@@ -130,7 +132,7 @@ export default function DiagnosisOverlay({
           {diagnosedAt && !isLoading && (
             <div className="px-4 py-3 rounded-sm border border-border/60 bg-elevated/40">
               <p className="text-[10px] uppercase tracking-wider text-text-muted font-semibold">
-                Last Diagnosis
+                {t('diagnosis.lastDiagnosis')}
               </p>
               <p className="text-sm text-text mt-1">{formatAbsoluteTime(diagnosedAt)}</p>
               <p className="text-xs text-text-muted font-mono mt-0.5">
@@ -143,10 +145,10 @@ export default function DiagnosisOverlay({
             <div className="px-5 py-8 rounded-sm border border-border bg-elevated/20 text-center space-y-4">
               <div className="inline-flex items-center gap-2 text-sm text-text-secondary">
                 <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                Checking prior diagnosis
+                {t('diagnosis.checking')}
               </div>
               <p className="text-xs text-text-muted leading-relaxed max-w-sm mx-auto">
-                Restoring the latest case for this pod. If none exists, a new diagnosis will start.
+                {t('diagnosis.restoring')}
               </p>
             </div>
           )}
@@ -154,9 +156,9 @@ export default function DiagnosisOverlay({
           {isError && (
             <div className="px-4 py-4 rounded-sm border border-red/30 bg-red-dim/10">
               <p className="text-xs text-red font-semibold uppercase tracking-wider mb-1">
-                Case Unavailable
+                {t('diagnosis.unavailable')}
               </p>
-              <p className="text-sm text-text-secondary">{error || 'Failed to open diagnosis.'}</p>
+              <p className="text-sm text-text-secondary">{error || t('diagnosis.failedOpen')}</p>
             </div>
           )}
 
@@ -167,7 +169,7 @@ export default function DiagnosisOverlay({
               {toolEvents.length > 0 && (
                 <div>
                   <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-2">
-                    Tool Execution
+                    {t('diagnosis.toolExec')}
                   </h3>
                   <div className="space-y-1.5">
                     {toolEvents.slice(-5).map((ev, i) => (
@@ -195,7 +197,7 @@ export default function DiagnosisOverlay({
                   className="w-full text-xs px-3 py-2 rounded-sm border border-border/60 text-text-muted
                              hover:text-text hover:bg-hover transition-colors cursor-pointer bg-transparent"
                 >
-                  View live run log →
+                  {t('diagnosis.viewLog')}
                 </button>
               )}
             </>
@@ -206,17 +208,17 @@ export default function DiagnosisOverlay({
               {status === 'cancelled' && (
                 <div className="px-4 py-3 rounded-sm border border-amber/30 bg-amber-dim/10">
                   <p className="text-xs font-semibold uppercase tracking-wider text-amber">
-                    Investigation Stopped
+                    {t('diagnosis.stopped')}
                   </p>
                   <p className="text-sm text-text-secondary mt-1 leading-relaxed">
-                    This case was closed before a report was finalized.
+                    {t('diagnosis.stoppedDesc')}
                   </p>
                 </div>
               )}
 
               {status === 'failed' && !result && (
                 <div className="px-4 py-6 text-center text-text-muted text-sm">
-                  Diagnosis failed before a report could be generated.
+                  {t('diagnosis.failedReport')}
                 </div>
               )}
 
@@ -225,16 +227,15 @@ export default function DiagnosisOverlay({
                   {result.enrichment?.status === 'degraded' && (
                     <div className="px-4 py-3 rounded-sm border border-amber/30 bg-amber-dim/10">
                       <p className="text-xs font-semibold uppercase tracking-wider text-amber">
-                        Degraded Analysis
+                        {t('diagnosis.degraded')}
                       </p>
                       <p className="text-sm text-text-secondary mt-1 leading-relaxed">
-                        {result.enrichment.message ||
-                          'Some AI analysis steps were temporarily unavailable. This report used deterministic fallback based on collected evidence.'}
+                        {result.enrichment.message || t('diagnosis.degradedMsg')}
                       </p>
                       {result.enrichment.degraded_steps &&
                         result.enrichment.degraded_steps.length > 0 && (
                           <p className="text-xs text-text-muted mt-2 font-mono">
-                            Affected: {result.enrichment.degraded_steps.join(', ')}
+                            {t('diagnosis.affected')} {result.enrichment.degraded_steps.join(', ')}
                           </p>
                         )}
                     </div>
@@ -242,13 +243,13 @@ export default function DiagnosisOverlay({
 
                   {result.duration_ms != null && result.duration_ms > 0 && (
                     <div className="flex items-center gap-1.5 text-xs text-text-muted font-mono">
-                      <span>⏱</span> Completed in {formatDuration(result.duration_ms)}
+                      <span>⏱</span> {t('diagnosis.completedIn')} {formatDuration(result.duration_ms)}
                     </div>
                   )}
 
                   <div className="px-5 py-4 rounded-sm bg-red-dim/15 border border-red/20">
                     <p className="text-xs text-red font-semibold tracking-wider uppercase mb-1">
-                      Root Cause
+                      {t('diagnosis.rootCause')}
                     </p>
                     <p className="text-base font-semibold text-text">
                       {result.root_cause.title || result.root_cause.summary}
@@ -264,7 +265,7 @@ export default function DiagnosisOverlay({
                       )}
                       {result.root_cause.confidence_label && (
                         <span className="text-text-muted">
-                          Confidence: {result.root_cause.confidence_label}
+                          {t('diagnosis.confidence')}: {result.root_cause.confidence_label}
                           {result.root_cause.confidence_score != null &&
                             ` (${Math.round(result.root_cause.confidence_score * 100)}%)`}
                         </span>
@@ -278,7 +279,7 @@ export default function DiagnosisOverlay({
                   {result.evidence && result.evidence.length > 0 && (
                     <div>
                       <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-3">
-                        Evidence Chain
+                        {t('diagnosis.evidenceChain')}
                       </h3>
                       <div className="space-y-2">
                         {result.evidence.map((e) => (
@@ -306,7 +307,7 @@ export default function DiagnosisOverlay({
                   {result.hypotheses && result.hypotheses.length > 0 && (
                     <div>
                       <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-3">
-                        Hypotheses Checked
+                        {t('diagnosis.hypotheses')}
                       </h3>
                       <div className="space-y-2">
                         {result.hypotheses.map((h) => (
@@ -334,7 +335,7 @@ export default function DiagnosisOverlay({
                   {result.actions && result.actions.length > 0 && (
                     <div>
                       <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-3">
-                        Recommended Actions
+                        {t('diagnosis.actions')}
                       </h3>
                       <div className="space-y-2">
                         {result.actions.map((action, i) => (
@@ -365,7 +366,7 @@ export default function DiagnosisOverlay({
                             className="text-xs px-3 py-1.5 rounded-sm border border-accent/30 text-accent
                                        hover:bg-accent-dim/15 transition-colors cursor-pointer bg-transparent"
                           >
-                            {copied ? '✓ Copied' : 'Copy Command'}
+                            {copied ? t('diagnosis.copied') : t('diagnosis.copyCmd')}
                           </button>
                         </div>
                       )}
@@ -374,14 +375,14 @@ export default function DiagnosisOverlay({
 
                   {result.impact?.description && (
                     <div className="px-4 py-3 rounded-sm bg-elevated border border-border/50 text-sm text-text-muted leading-relaxed">
-                      Impact ({result.impact.severity || 'unknown'}): {result.impact.description}
+                      {t('diagnosis.impact')} ({result.impact.severity || 'unknown'}): {result.impact.description}
                     </div>
                   )}
 
                   {result.limitations && result.limitations.length > 0 && (
                     <div>
                       <h3 className="text-xs text-text-muted font-semibold tracking-wider uppercase mb-2">
-                        Limitations
+                        {t('diagnosis.limitations')}
                       </h3>
                       <ul className="space-y-1.5 text-sm text-text-muted">
                         {result.limitations.map((lim, i) => (
@@ -409,7 +410,7 @@ export default function DiagnosisOverlay({
                   className="w-full text-xs px-3 py-2 rounded-sm border border-border/60 text-text-muted
                              hover:text-text hover:bg-hover transition-colors cursor-pointer bg-transparent"
                 >
-                  View how this diagnosis ran →
+                  {t('diagnosis.viewHow')}
                 </button>
               )}
             </div>
@@ -429,6 +430,8 @@ function StageProgress({
   stages: StoredDiagnosis['derived']['stages'];
   liveCounts?: StoredDiagnosis['derived'];
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-3">
       {DIAGNOSIS_STAGES.map((meta) => {
@@ -475,7 +478,7 @@ function StageProgress({
                     : 'text-text-muted'
                 }`}
               >
-                {meta.label}
+                {t(meta.labelKey)}
               </p>
               <p
                 className={`text-xs mt-0.5 font-mono ${
@@ -483,7 +486,7 @@ function StageProgress({
                 }`}
               >
                 {isActive || isStepDone
-                  ? state?.summary || liveHint || meta.detail
+                  ? state?.summary || liveHint || t(meta.detailKey)
                   : 'Waiting...'}
               </p>
             </div>
@@ -506,17 +509,17 @@ function InvestigationRefreshPanel({
   loading: boolean;
   onAction: () => void;
 }) {
-  const copy = refreshCopy[variant];
+  const { t } = useTranslation();
 
   return (
     <div className="rounded-sm border border-border/60 bg-elevated/25 overflow-hidden">
       <div className="px-4 py-3 border-b border-border/30">
-        <p className="text-xs font-medium text-text-secondary">{copy.title}</p>
-        <p className="text-[11px] text-text-muted mt-1.5 leading-relaxed">{copy.body}</p>
+        <p className="text-xs font-medium text-text-secondary">{t(`diagnosis.refresh.${variant}.title`)}</p>
+        <p className="text-[11px] text-text-muted mt-1.5 leading-relaxed">{t(`diagnosis.refresh.${variant}.body`)}</p>
       </div>
       <div className="px-4 py-3 flex items-center justify-between gap-4">
         <span className="text-[10px] uppercase tracking-[0.14em] text-text-muted font-semibold shrink-0">
-          {copy.label}
+          {t(`diagnosis.refresh.${variant}.label`)}
         </span>
         <button
           type="button"
@@ -530,12 +533,12 @@ function InvestigationRefreshPanel({
           {loading ? (
             <>
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-              Investigating…
+              {t('diagnosis.investigating')}
             </>
           ) : (
             <>
               <span className="text-text-muted font-mono text-[10px]">↻</span>
-              {copy.action}
+              {t(`diagnosis.refresh.${variant}.action`)}
             </>
           )}
         </button>
@@ -544,35 +547,7 @@ function InvestigationRefreshPanel({
   );
 }
 
-const refreshCopy: Record<
-  RefreshVariant,
-  { title: string; body: string; label: string; action: string }
-> = {
-  archived: {
-    title: 'Case may be stale',
-    body: 'Pod state may have shifted since this report was filed. A new investigation collects fresh signals and replaces these findings.',
-    label: 'Refresh',
-    action: 'Run New Diagnosis',
-  },
-  failed: {
-    title: 'Investigation incomplete',
-    body: 'The previous run ended without a reliable conclusion. Start a new pass to rebuild the case from current cluster state.',
-    label: 'Retry',
-    action: 'Run New Diagnosis',
-  },
-  cancelled: {
-    title: 'No finalized report',
-    body: 'The last investigation was stopped early. Open a new case to continue troubleshooting from live data.',
-    label: 'Resume',
-    action: 'Run New Diagnosis',
-  },
-  in_progress: {
-    title: 'Need a clean slate?',
-    body: 'Starting over will stop the current investigation and open a new case for this pod.',
-    label: 'Restart',
-    action: 'New Investigation',
-  },
-};
+// Note: refreshCopy is now handled via translation keys in the component
 
 function formatAbsoluteTime(value: string): string {
   const date = new Date(value);
@@ -585,13 +560,13 @@ function formatRelativeTime(value: string): string {
   if (Number.isNaN(date.getTime())) return '';
   const diffMs = Date.now() - date.getTime();
   const secs = Math.max(0, Math.round(diffMs / 1000));
-  if (secs < 60) return `${secs}s ago`;
+  if (secs < 60) return `${secs}秒前`;
   const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return `${mins}分钟前`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `${hours}小时前`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `${days}天前`;
 }
 
 function renderToolEvent(ev: DiagnosisEvent): JSX.Element {

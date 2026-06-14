@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -11,12 +12,6 @@ import { DiagnosisStore, StoredDiagnosis } from './stores/diagnosisStore';
 import { AuditStore } from './stores/auditStore';
 import type { DiagnosisTarget, ClusterSummary } from './api/types';
 
-const TAB_CONFIG = [
-  { id: 'dashboard', label: 'Dashboard', icon: '◈' },
-  { id: 'audit', label: 'Audit', icon: '◇' },
-  { id: 'chat', label: 'Chat', icon: '○' },
-] as const;
-
 type DiagPhase = 'idle' | 'loading' | 'ready' | 'error';
 
 function podKey(cluster: string, namespace: string, pod: string) {
@@ -24,7 +19,14 @@ function podKey(cluster: string, namespace: string, pod: string) {
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  const TAB_CONFIG = [
+    { id: 'dashboard', label: t('tabs.dashboard'), icon: '◈' },
+    { id: 'audit', label: t('tabs.audit'), icon: '◇' },
+    { id: 'chat', label: t('tabs.chat'), icon: '○' },
+  ] as const;
   const [activeCluster, setActiveCluster] = useState('');
   const [focusCluster, setFocusCluster] = useState<string | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -38,15 +40,17 @@ export default function App() {
   const [activeDiagnosis, setActiveDiagnosis] = useState<StoredDiagnosis | null>(null);
   const [, forceUpdate] = useState(0);
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const handleRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     api.clusters.list().then(setClusters).catch(() => {});
   }, []);
 
-  const addActivity = useCallback((type: string, text: string, cluster?: string) => {
+  const addActivity = useCallback((type: string, text: string, cluster?: string, kind?: Activity['kind'], detail?: string) => {
     const now = new Date();
     const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    setActivities((prev) => [{ type: type as Activity['type'], text, cluster, time }, ...prev.slice(0, 19)]);
+    setActivities((prev) => [{ type: type as Activity['type'], text, cluster, time, kind, detail }, ...prev.slice(0, 19)]);
   }, []);
 
   const storeCallbacks = useCallback(
@@ -57,8 +61,10 @@ export default function App() {
         setDiagnosedPods((prev) => new Set(prev).add(key));
         addActivity(
           stored.status === 'failed' ? 'issue' : 'done',
-          `${stored.target.pod} diagnosis ${stored.status}`,
+          `${stored.target.pod} 诊断${stored.status === 'completed' ? '完成' : stored.status === 'failed' ? '失败' : stored.status}`,
           stored.target.cluster,
+          'diagnosis',
+          stored.id,
         );
       },
     }),
@@ -80,8 +86,9 @@ export default function App() {
   };
 
   const handleClusterChange = (name: string) => {
+    if (name === activeCluster) return;
     setActiveCluster(name);
-    addActivity('info', `Switched to ${name}`, name);
+    addActivity('info', t('activity.switched', { cluster: name }), name, 'cluster_switch');
   };
 
   const openDiagnosisById = async (id: string) => {
@@ -102,7 +109,7 @@ export default function App() {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setDiagPhase('error');
       setDiagError(msg);
-      addActivity('issue', `Failed to open diagnosis: ${msg}`);
+      addActivity('issue', t('activity.diagOpenFailed', { error: msg }), undefined, 'diagnosis');
     }
   };
 
@@ -128,13 +135,13 @@ export default function App() {
       if (!msg.includes('404')) {
         setDiagPhase('error');
         setDiagError(msg);
-        addActivity('issue', `Diagnosis lookup failed for ${pod}: ${msg}`, cluster);
+        addActivity('issue', t('activity.diagLookupFailed', { pod, error: msg }), cluster, 'diagnosis');
         return;
       }
     }
 
     try {
-      addActivity('pending', `Diagnosing ${pod}...`, cluster);
+      addActivity('pending', t('activity.diagnosing', { pod }), cluster, 'diagnosis');
       const res = await api.diagnoses.create(cluster, namespace, pod);
       const stored = storeRef.current.add(res.diagnosis_id, target, callbacks);
       setActiveDiagnosis(stored);
@@ -143,7 +150,7 @@ export default function App() {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setDiagPhase('error');
       setDiagError(msg);
-      addActivity('issue', `Diagnosis failed for ${pod}: ${msg}`, cluster);
+      addActivity('issue', t('activity.diagFailed', { pod, error: msg }), cluster, 'diagnosis');
     }
   };
 
@@ -168,7 +175,7 @@ export default function App() {
         storeRef.current.closeSSE(activeDiagnosis.id);
       }
 
-      addActivity('pending', `Re-diagnosing ${pod}...`, cluster);
+      addActivity('pending', t('activity.reDiagnosing', { pod }), cluster, 'diagnosis');
       const res = await api.diagnoses.create(cluster, namespace, pod);
       const stored = storeRef.current.add(res.diagnosis_id, target, callbacks);
       setActiveDiagnosis(stored);
@@ -177,7 +184,7 @@ export default function App() {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setDiagPhase('error');
       setDiagError(msg);
-      addActivity('issue', `Re-diagnosis failed for ${pod}: ${msg}`, cluster);
+      addActivity('issue', t('activity.reDiagFailed', { pod, error: msg }), cluster, 'diagnosis');
     }
   };
 
@@ -198,10 +205,30 @@ export default function App() {
         activeCluster={activeCluster}
         onClusterChange={handleClusterChange}
         onActivity={addActivity}
+        onRefresh={handleRefresh}
       />
 
       <div className="flex flex-1 min-h-0">
-        <Sidebar activities={activities} activeCluster={activeCluster} clusters={clusters} />
+        <Sidebar
+          activities={activities}
+          activeCluster={activeCluster}
+          clusters={clusters}
+          onClear={() => setActivities([])}
+          onActivityClick={(activity) => {
+            if (!activity.cluster) return;
+            if (activity.cluster !== activeCluster) {
+              setActiveCluster(activity.cluster);
+            }
+            if (activity.kind === 'diagnosis' && activity.detail) {
+              openDiagnosisById(activity.detail);
+            } else if (activity.kind === 'audit') {
+              setActiveTab('audit');
+            } else if (activity.kind === 'cluster_switch') {
+              setActiveTab('dashboard');
+            }
+          }}
+          onFocusCluster={(name) => { setFocusCluster(name); setActiveTab('dashboard'); }}
+        />
 
         <div className="w-px bg-border shrink-0" />
 
@@ -215,6 +242,7 @@ export default function App() {
               onDiagnose={openDiagnosisForPod}
               onOpenDiagnosis={openDiagnosisById}
               diagnosedPods={diagnosedPods}
+              refreshKey={refreshKey}
             />
           )}
           {activeTab === 'audit' && (
@@ -223,6 +251,7 @@ export default function App() {
               store={auditStoreRef.current}
               onActivity={addActivity}
               onStoreUpdate={() => forceUpdate((n) => n + 1)}
+              refreshKey={refreshKey}
             />
           )}
           {activeTab === 'chat' && <Chat activeCluster={activeCluster} />}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ChartCandidate, DeployPlan } from '../../api/types';
 
 interface ChartSelectCardProps {
@@ -18,14 +19,15 @@ export function ChartSelectCard({
   onManual,
   onCancel,
 }: ChartSelectCardProps) {
+  const { t } = useTranslation();
   const [manual, setManual] = useState(false);
   const [repoUrl, setRepoUrl] = useState('');
   const [chartName, setChartName] = useState('');
 
   return (
     <div className="mt-3 p-4 rounded-sm border border-accent/25 bg-accent-dim/10 space-y-3">
-      <div className="text-xs font-mono text-accent uppercase tracking-wide">Select Helm chart</div>
-      {appName && <div className="text-sm text-text-secondary">App: {appName}</div>}
+      <div className="text-xs font-mono text-accent uppercase tracking-wide">{t('deploy.selectChart')}</div>
+      {appName && <div className="text-sm text-text-secondary">{t('deploy.app')} {appName}</div>}
 
       {!manual ? (
         <>
@@ -54,7 +56,7 @@ export function ChartSelectCard({
               onClick={() => setManual(true)}
               className="text-sm px-3 py-1.5 rounded-sm border border-border text-text-secondary"
             >
-              Manual chart
+              {t('deploy.manual')}
             </button>
             <button
               type="button"
@@ -62,7 +64,7 @@ export function ChartSelectCard({
               onClick={onCancel}
               className="text-sm px-3 py-1.5 rounded-sm border border-border text-text-muted"
             >
-              Cancel
+              {t('deploy.cancel')}
             </button>
           </div>
         </>
@@ -71,13 +73,13 @@ export function ChartSelectCard({
           <input
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="Repo URL"
+            placeholder={t('deploy.repoUrl')}
             className="w-full text-sm bg-bg border border-border rounded-sm px-3 py-2"
           />
           <input
             value={chartName}
             onChange={(e) => setChartName(e.target.value)}
-            placeholder="Chart name"
+            placeholder={t('deploy.chartName')}
             className="w-full text-sm bg-bg border border-border rounded-sm px-3 py-2"
           />
           <div className="flex gap-2">
@@ -87,10 +89,10 @@ export function ChartSelectCard({
               onClick={() => onManual(repoUrl.trim(), chartName.trim())}
               className="text-sm px-3 py-1.5 rounded-sm bg-accent text-bg font-medium disabled:opacity-40"
             >
-              Use chart
+              {t('deploy.useChart')}
             </button>
             <button type="button" onClick={() => setManual(false)} className="text-sm px-3 py-1.5 rounded-sm border border-border">
-              Back
+              {t('deploy.back')}
             </button>
           </div>
         </div>
@@ -110,6 +112,7 @@ interface DeployConfirmCardProps {
 }
 
 export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorrect }: DeployConfirmCardProps) {
+  const { t } = useTranslation();
   const [values, setValues] = useState(plan.CustomValues || '');
   const [correction, setCorrection] = useState('');
   const [tab, setTab] = useState<ValuesTab>('override');
@@ -122,14 +125,14 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
   return (
     <div className="mt-3 w-full min-w-0 p-4 rounded-sm border border-accent/30 bg-accent-dim/10 space-y-4">
       <div className="space-y-1">
-        <div className="text-xs font-mono text-accent uppercase tracking-wide">Deploy review</div>
+        <div className="text-xs font-mono text-accent uppercase tracking-wide">{t('deploy.review')}</div>
         <div className="text-sm text-text flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-medium">{chartName}</span>
           <span className="text-text-muted">→</span>
           <span className="font-mono text-text-secondary">{namespace}/{release}</span>
           {plan.IsUpgrade && (
             <span className="text-xs px-1.5 py-0.5 rounded-sm bg-amber-dim/40 text-amber border border-amber/20">
-              upgrade
+              {t('deploy.upgrade')}
             </span>
           )}
         </div>
@@ -156,8 +159,8 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
                 : 'border-transparent text-text-muted hover:text-text-secondary'
             }`}
           >
-            Override values
-            <span className="ml-1.5 text-xs text-text-muted">(editable)</span>
+            {t('deploy.override')}
+            <span className="ml-1.5 text-xs text-text-muted">{t('deploy.editable')}</span>
           </button>
           <button
             type="button"
@@ -168,8 +171,8 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
                 : 'border-transparent text-text-muted hover:text-text-secondary'
             }`}
           >
-            Chart defaults
-            <span className="ml-1.5 text-xs text-text-muted">(read-only)</span>
+            {t('deploy.defaults')}
+            <span className="ml-1.5 text-xs text-text-muted">{t('deploy.readonly')}</span>
           </button>
         </div>
 
@@ -182,7 +185,7 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
             disabled={disabled}
             className="w-full text-xs font-mono leading-relaxed bg-bg border border-border rounded-sm p-3 text-text-secondary
                        outline-none focus:border-accent/40 disabled:opacity-50 resize-y min-h-[200px]"
-            placeholder="# Helm values overrides (YAML)"
+            placeholder={t('deploy.valuesPlaceholder')}
           />
         ) : (
           <pre
@@ -195,16 +198,16 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
       </div>
 
       <div className="space-y-2 pt-1 border-t border-border/60">
-        <div className="text-sm font-medium text-text">Natural language correction</div>
+        <div className="text-sm font-medium text-text">{t('deploy.nlCorrection')}</div>
         <p className="text-xs text-text-muted">
-          Describe what to change — the agent will regenerate override values and show an updated plan.
+          {t('deploy.nlDesc')}
         </p>
         <textarea
           value={correction}
           onChange={(e) => setCorrection(e.target.value)}
           rows={2}
           disabled={disabled}
-          placeholder="e.g. set NodePort to 30090, increase replicas to 3"
+          placeholder={t('deploy.nlPlaceholder')}
           className="w-full text-sm bg-bg border border-border rounded-sm px-3 py-2 text-text
                      outline-none focus:border-accent/40 disabled:opacity-50 resize-y"
           onKeyDown={(e) => {
@@ -224,7 +227,7 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
           }}
           className="text-sm px-4 py-2 rounded-sm bg-accent text-bg font-medium disabled:opacity-40"
         >
-          Regenerate values
+          {t('deploy.regenerate')}
         </button>
       </div>
 
@@ -235,7 +238,7 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
           onClick={() => onExecute(values)}
           className="text-sm px-4 py-2 rounded-sm bg-green text-bg font-medium disabled:opacity-40"
         >
-          Deploy with these values
+          {t('deploy.deployBtn')}
         </button>
         <button
           type="button"
@@ -243,10 +246,10 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
           onClick={onCancel}
           className="text-sm px-4 py-2 rounded-sm border border-border text-text-muted hover:border-red/30 hover:text-red"
         >
-          Cancel deploy
+          {t('deploy.cancelDeploy')}
         </button>
         <span className="text-xs text-text-muted ml-auto hidden sm:inline">
-          Tip: edit YAML directly, or use NL correction above
+          {t('deploy.tip')}
         </span>
       </div>
     </div>

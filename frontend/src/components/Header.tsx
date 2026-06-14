@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { ClusterSummary } from '../api/types';
 
@@ -25,12 +26,20 @@ interface HeaderProps {
   activeCluster: string;
   onClusterChange: (name: string) => void;
   onActivity: (type: string, text: string, cluster?: string) => void;
+  onRefresh: () => void;
 }
 
-export default function Header({ activeTab, onTabChange, tabs, activeCluster, onClusterChange, onActivity }: HeaderProps) {
+export default function Header({ activeTab, onTabChange, tabs, activeCluster, onClusterChange, onActivity, onRefresh }: HeaderProps) {
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [freshness, setFreshness] = useState(0);
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
+
+  const toggleLanguage = () => {
+    const lang = i18n.resolvedLanguage || i18n.language;
+    const next = lang.startsWith('zh') ? 'en' : 'zh';
+    i18n.changeLanguage(next);
+  };
 
   // Fetch real cluster list from API
   useEffect(() => {
@@ -49,7 +58,7 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
   }, []);
 
   const active = clusters.find((c) => c.name === activeCluster) || clusters[0];
-  const freshnessText = freshness === 0 ? 'just now' : `${freshness}s ago`;
+  const freshnessText = freshness === 0 ? t('header.justNow') : t('header.timeAgo', { seconds: freshness });
 
   return (
     <header className="h-14 flex items-center px-6 border-b border-border bg-surface shrink-0 select-none gap-4">
@@ -83,16 +92,24 @@ export default function Header({ activeTab, onTabChange, tabs, activeCluster, on
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green opacity-50" />
           <span className="relative inline-flex rounded-full w-2 h-2 bg-green" />
         </span>
-        Live
+        {t('header.live')}
       </span>
       <span className="text-sm text-text-muted">{freshnessText}</span>
 
       {/* Refresh */}
       <button
-        onClick={() => { setFreshness(0); onActivity('info', 'Views refreshed', activeCluster); }}
+        onClick={() => { onRefresh(); setFreshness(0); onActivity('info', t('header.refreshed'), activeCluster); }}
         className="text-sm text-text-muted px-3 py-1.5 border border-border hover:border-accent/30 hover:text-text rounded-sm transition-colors cursor-pointer bg-transparent"
       >
-        ⟳ Refresh
+        {t('header.refresh')}
+      </button>
+
+      {/* Language Switcher */}
+      <button
+        onClick={toggleLanguage}
+        className="text-sm text-text-muted px-3 py-1.5 border border-border hover:border-accent/30 hover:text-text rounded-sm transition-colors cursor-pointer bg-transparent"
+      >
+        {(i18n.resolvedLanguage || i18n.language).startsWith('zh') ? 'EN' : '中'}
       </button>
 
       {/* Cluster Switcher */}

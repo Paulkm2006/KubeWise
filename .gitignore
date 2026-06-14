@@ -26,6 +26,11 @@ go.work.sum
 
 # env file
 .env
+.env.development
+.env.production
+
+# Plans
+docs/plans/
 
 # Editor/IDE
 # .idea/
@@ -42,4 +47,5 @@ main
 **/node_modules/
 **/dist/
 **/build/
-data/
+data/kubewise
+kubewise

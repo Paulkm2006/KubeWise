@@ -1,3 +1,4 @@
+import { AUTH_HEADER } from '../config';
 import type { ChatSSEEvent } from './types';
 
 export interface ChatSSECallbacks {
@@ -7,43 +8,63 @@ export interface ChatSSECallbacks {
 }
 
 export function subscribeChat(streamUrl: string, callbacks: ChatSSECallbacks): () => void {
-  const es = new EventSource(streamUrl);
+  const controller = new AbortController();
 
-  const bind = (type: ChatSSEEvent['type'], handler: (data: Record<string, unknown>) => void) => {
-    es.addEventListener(type, (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as Record<string, unknown>;
-        handler(data);
-      } catch {
-        /* skip malformed */
+  (async () => {
+    try {
+      const headers: Record<string, string> = {};
+      if (AUTH_HEADER) headers['Authorization'] = AUTH_HEADER;
+      const res = await fetch(streamUrl, {
+        headers,
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        callbacks.onError?.(`SSE ${res.status}`);
+        return;
       }
-    });
-  };
-
-  bind('agent_start', (d) => callbacks.onEvent({ type: 'agent_start', ...d }));
-  bind('agent_done', (d) => callbacks.onEvent({ type: 'agent_done', ...d }));
-  bind('phase', (d) => callbacks.onEvent({ type: 'phase', ...d }));
-  bind('tool_call', (d) => callbacks.onEvent({ type: 'tool_call', ...d }));
-  bind('tool_done', (d) => callbacks.onEvent({ type: 'tool_done', ...d }));
-  bind('tool_fail', (d) => callbacks.onEvent({ type: 'tool_fail', ...d }));
-  bind('llm_text_delta', (d) => callbacks.onEvent({ type: 'llm_text_delta', ...d }));
-  bind('supervisor', (d) => callbacks.onEvent({ type: 'supervisor', ...d }));
-  bind('interaction_request', (d) => callbacks.onEvent({ type: 'interaction_request', ...d }));
-  bind('stream_done', () => {
-    callbacks.onComplete();
-    es.close();
-  });
-  bind('stream_err', (d) => {
-    callbacks.onEvent({ type: 'stream_err', error: String(d.error || 'stream error') });
-    callbacks.onError?.(String(d.error || 'stream error'));
-    es.close();
-  });
-
-  es.onerror = () => {
-    if (es.readyState === EventSource.CLOSED) {
-      callbacks.onError?.('Connection closed');
+      const reader = res.body?.getReader();
+      if (!reader) {
+        callbacks.onError?.('No response body');
+        return;
+      }
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+        for (const part of parts) {
+          let eventType = '';
+          let data = '';
+          for (const line of part.split('\n')) {
+            if (line.startsWith('event:')) eventType = line.slice(6).trim();
+            else if (line.startsWith('data:')) data += (data ? '\n' : '') + line.slice(5).trim();
+          }
+          if (!eventType) continue;
+          try {
+            const parsed = data ? (JSON.parse(data) as Record<string, unknown>) : {};
+            const event = { type: eventType as ChatSSEEvent['type'], ...parsed } as ChatSSEEvent;
+            if (eventType === 'stream_done') {
+              callbacks.onComplete();
+              return;
+            }
+            if (eventType === 'stream_err') {
+              callbacks.onEvent(event);
+              callbacks.onError?.(String(parsed.error || 'stream error'));
+              return;
+            }
+            callbacks.onEvent(event);
+          } catch { /* skip malformed */ }
+        }
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        callbacks.onError?.(err instanceof Error ? err.message : 'Connection failed');
+      }
     }
-  };
+  })();
 
-  return () => es.close();
+  return () => controller.abort();
 }

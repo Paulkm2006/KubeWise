@@ -180,11 +180,11 @@ export interface DiagnosisStatus {
 }
 
 export const DIAGNOSIS_STAGES = [
-  { id: 'intake', label: 'Intake', detail: 'Normalize target context' },
-  { id: 'collect', label: 'Collect', detail: 'Gather pod state, events, logs' },
-  { id: 'analyze', label: 'Analyze', detail: 'Build evidence and hypotheses' },
-  { id: 'verify', label: 'Verify', detail: 'Check hypotheses against evidence' },
-  { id: 'report', label: 'Report', detail: 'Assemble structured diagnosis' },
+  { id: 'intake', labelKey: 'stages.intake', detailKey: 'stages.intakeDetail' },
+  { id: 'collect', labelKey: 'stages.collect', detailKey: 'stages.collectDetail' },
+  { id: 'analyze', labelKey: 'stages.analyze', detailKey: 'stages.analyzeDetail' },
+  { id: 'verify', labelKey: 'stages.verify', detailKey: 'stages.verifyDetail' },
+  { id: 'report', labelKey: 'stages.report', detailKey: 'stages.reportDetail' },
 ] as const;
 
 export type DiagnosisStageId = (typeof DIAGNOSIS_STAGES)[number]['id'];

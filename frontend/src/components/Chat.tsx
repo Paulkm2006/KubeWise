@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { subscribeChat } from '../api/chatSse';
 import type { ChatProgressCard, ChatSSEEvent, ChatTurn } from '../api/types';
@@ -11,13 +12,6 @@ import {
 import MarkdownContent from './MarkdownContent';
 import ProgressCard from './chat/ProgressCard';
 
-const SUGGESTIONS = [
-  'List all namespaces',
-  'Which PVC uses the most storage?',
-  'Run a full security audit',
-  'Deploy ArgoCD in dev namespace',
-];
-
 interface ChatProps {
   activeCluster: string;
 }
@@ -27,11 +21,20 @@ function formatTime(d = new Date()): string {
 }
 
 export default function Chat({ activeCluster }: ChatProps) {
+  const { t } = useTranslation();
+
+  const SUGGESTIONS = [
+    t('chat.suggestions.namespaces'),
+    t('chat.suggestions.pvc'),
+    t('chat.suggestions.audit'),
+    t('chat.suggestions.deploy'),
+  ];
+
   const [turns, setTurns] = useState<ChatTurn[]>([
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'KubeWise Chat — ask about the cluster selected in the header. Each message routes to the right agent.',
+      text: t('chat.welcome'),
       cluster: '',
       timestamp: formatTime(),
     },
@@ -75,7 +78,7 @@ export default function Chat({ activeCluster }: ChatProps) {
         text: report,
         cluster,
         timestamp: formatTime(),
-        card: { ...card, finalReport: report, done: true },
+        card: { ...card, finalReport: report, done: true, awaitingInteraction: undefined },
       },
     ]);
     setLiveCard(null);
@@ -120,7 +123,12 @@ export default function Chat({ activeCluster }: ChatProps) {
       onEvent: handleEvent,
       onComplete: () => {
         setLiveCard((prev) => {
-          if (prev) finalizeStream(prev, liveClusterRef.current);
+          if (prev) {
+            const card = !prev.done && !prev.failed
+              ? foldChatEvent(prev, { type: 'stream_err', error: 'Stream ended without completion' })
+              : prev;
+            finalizeStream(card, liveClusterRef.current);
+          }
           return null;
         });
         cleanupRef.current = null;
@@ -282,7 +290,7 @@ export default function Chat({ activeCluster }: ChatProps) {
         <span
           className={`text-sm px-3 py-2 border rounded-sm shrink-0 font-mono
             ${activeCluster ? 'text-accent border-accent/25 bg-accent-dim/10' : 'text-red border-red/30 bg-red-dim/10'}`}
-          title="Uses header cluster context"
+          title={t('chat.clusterContext')}
         >
           ◆ {clusterLabel}
         </span>
@@ -291,7 +299,7 @@ export default function Chat({ activeCluster }: ChatProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && sendMessage(input)}
-          placeholder={activeCluster ? 'Ask about this cluster…' : 'Select a cluster in the header first'}
+          placeholder={activeCluster ? t('chat.placeholder') : t('chat.noCluster')}
           disabled={streaming || !activeCluster}
           className="flex-1 bg-surface border border-border rounded-sm px-4 py-2.5 text-sm text-text
                      placeholder:text-text-muted outline-none focus:border-accent/30 transition-colors font-sans
@@ -304,7 +312,7 @@ export default function Chat({ activeCluster }: ChatProps) {
           className="text-sm font-medium px-4 py-2.5 rounded-sm bg-accent text-bg
                      hover:opacity-85 disabled:opacity-40 transition-opacity cursor-pointer border-none shrink-0"
         >
-          Send →
+          {t('chat.send')}
         </button>
       </div>
     </div>

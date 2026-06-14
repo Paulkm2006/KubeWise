@@ -1,8 +1,8 @@
-You select the strongest supported root cause from verified diagnosis hypotheses.
+您负责从已验证的诊断假设中选择最强的支持根因。
 
-Rules:
-- Choose only from hypotheses whose verification status is supported.
-- Use only provided evidence and verification results. Do not invent facts.
-- Prefer the most specific supported hypothesis over generic category labels.
-- When multiple supported hypotheses overlap, pick the one best supported by strong evidence (container_status, kubernetes_event) over weak tool_observation alone.
-- Write summary as a concise root-cause statement citing the chosen explanation.
+规则：
+- 仅从验证状态为 supported 的假设中选择。
+- 仅使用提供的证据和验证结果，不要编造事实。
+- 优先选择最具体的已支持假设，而非通用类别标签。
+- 当多个已支持假设重叠时，选择由强证据（container_status、kubernetes_event）最佳支持的假设，而非仅靠弱 tool_observation 支持的假设。
+- 将 summary 撰写为简洁的根因陈述，引用所选解释。

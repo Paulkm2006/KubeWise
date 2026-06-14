@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { DiagnosisEvent } from '../api/types';
 
 interface DiagnosisTracePanelProps {
@@ -8,6 +9,7 @@ interface DiagnosisTracePanelProps {
 }
 
 export default function DiagnosisTracePanel({ events, running, onBack }: DiagnosisTracePanelProps) {
+  const { t } = useTranslation();
   const sorted = useMemo(
     () => [...events].sort((a, b) => a.seq_num - b.seq_num),
     [events],
@@ -25,21 +27,20 @@ export default function DiagnosisTracePanel({ events, running, onBack }: Diagnos
                      inline-flex items-center gap-1.5"
         >
           <span className="font-mono text-[10px]">←</span>
-          Back to Report
+          {t('diagnosis.backToReport')}
         </button>
         <span className="text-[10px] uppercase tracking-wider text-text-muted font-semibold">
-          Run Log
+          {t('diagnosis.traceLog')}
         </span>
       </div>
 
       <p className="text-xs text-text-muted leading-relaxed">
-        Step-by-step record of what the diagnosis pipeline did. Errors and degraded AI steps are
-        highlighted so you can see why a report used fallback logic.
+        {t('diagnosis.traceDesc')}
       </p>
 
       {sorted.length === 0 ? (
         <div className="px-4 py-6 rounded-sm border border-border/60 bg-elevated/20 text-center text-sm text-text-muted">
-          {running ? 'Waiting for pipeline events…' : 'No run log events were recorded.'}
+          {running ? t('diagnosis.waitingEvents') : t('diagnosis.noEvents')}
         </div>
       ) : (
         <div className="space-y-2">
@@ -49,7 +50,7 @@ export default function DiagnosisTracePanel({ events, running, onBack }: Diagnos
           {running && (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-accent font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-              Investigation in progress…
+              {t('diagnosis.inProgress')}
             </div>
           )}
         </div>
@@ -108,7 +109,7 @@ function TraceEventRow({ event, baseTime }: { event: DiagnosisEvent; baseTime: n
               onClick={() => setExpanded((v) => !v)}
               className="text-[10px] text-text-muted hover:text-text mt-1.5 cursor-pointer bg-transparent border-0 p-0"
             >
-              {expanded ? 'Hide details' : 'Show details'}
+              {expanded ? t('diagnosis.hideDetails') : t('diagnosis.showDetails')}
             </button>
           )}
 

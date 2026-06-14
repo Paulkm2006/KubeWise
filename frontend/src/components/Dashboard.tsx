@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { ClusterSummary, Issue, DiagnosisSummary } from '../api/types';
 
@@ -10,6 +11,7 @@ interface DashboardProps {
   onDiagnose: (cluster: string, namespace: string, pod: string) => Promise<void>;
   onOpenDiagnosis: (id: string) => void;
   diagnosedPods: Set<string>;
+  refreshKey?: number;
 }
 
 const PAGE_SIZE = 10;
@@ -39,14 +41,17 @@ export default function Dashboard({
   onClusterChange,
   onDiagnose,
   onOpenDiagnosis,
-  diagnosedPods
+  diagnosedPods,
+  refreshKey,
 }: DashboardProps) {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [clusters, setClusters] = useState<ClusterSummary[]>([]);
   const [allIssues, setAllIssues] = useState<Issue[]>([]);
   const [diagnoses, setDiagnoses] = useState<DiagnosisSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeDetail, setActiveDetail] = useState<'pods' | 'issues' | 'nodes' | 'namespaces' | null>(null);
 
   // Fetch issues for a specific cluster
   const fetchIssuesForCluster = useCallback(async (name: string): Promise<Issue[]> => {
@@ -95,7 +100,7 @@ export default function Dashboard({
     fetchAll();
     const interval = setInterval(fetchAll, 15000);
     return () => { mounted = false; clearInterval(interval); };
-  }, [focusCluster, fetchIssuesForCluster]);
+  }, [focusCluster, fetchIssuesForCluster, refreshKey]);
 
   // Sort issues by severity (high > medium > low)
   const sortedIssues = useMemo(() => {
@@ -117,6 +122,8 @@ export default function Dashboard({
 
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCluster = useRef<string | null>(null);
+  const issuesRef = useRef<HTMLDivElement>(null);
+  const clustersRef = useRef<HTMLDivElement>(null);
 
   // Cleanup timer on unmount
   useEffect(() => () => { if (clickTimer.current) clearTimeout(clickTimer.current); }, []);
@@ -162,13 +169,13 @@ export default function Dashboard({
   return (
     <div className="h-full overflow-y-auto">
       {/* Clusters */}
-      <div className="px-8 pt-6 pb-5 border-b border-border/60">
+      <div ref={clustersRef} className="px-8 pt-6 pb-5 border-b border-border/60">
         <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-sm font-semibold text-text tracking-wide">Clusters</h2>
+          <h2 className="text-sm font-semibold text-text tracking-wide">{t('dashboard.clusters')}</h2>
           {loading ? (
-            <span className="text-sm text-text-muted font-mono">loading...</span>
+            <span className="text-sm text-text-muted font-mono">{t('dashboard.loading')}</span>
           ) : (
-            <span className="text-sm text-text-muted font-mono">{clusters.length} connected</span>
+            <span className="text-sm text-text-muted font-mono">{t('dashboard.connected', { count: clusters.length })}</span>
           )}
           {error && <span className="text-xs text-red ml-2">{error}</span>}
         </div>
@@ -205,28 +212,28 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                     }>
                       ●
                     </span>{' '}
-                    {c.pods_ready}/{c.pods_total} pods ready
+                    {t('dashboard.podsReady', { ready: c.pods_ready, total: c.pods_total })}
                   </span>
                   <span className="text-xs text-text-muted font-mono">{c.last_updated}s</span>
                 </div>
                 <div className="mt-1.5">
                   {c.issues_count > 0 ? (
                     <span className={`text-sm font-medium ${c.issues_count > 2 ? 'text-red' : 'text-amber'}`}>
-                      {c.issues_count} issue{c.issues_count > 1 ? 's' : ''}
+                      {t('dashboard.issues', { count: c.issues_count })}
                     </span>
                   ) : (
-                    <span className="text-sm text-text-muted">0 issues</span>
+                    <span className="text-sm text-text-muted">{t('dashboard.noIssues')}</span>
                   )}
                 </div>
                 <div className={`mt-3 pt-3 border-t border-border/30 flex gap-3 text-xs text-text-muted ${isFiltered ? '' : 'opacity-0 group-hover:opacity-100 transition-opacity'}`}>
-                  <span>◈ {c.nodes} nodes</span>
-                  <span>▣ {c.namespaces} namespaces</span>
+                  <span>{t('dashboard.nodes', { count: c.nodes })}</span>
+                  <span>{t('dashboard.namespaces', { count: c.namespaces })}</span>
                 </div>
               </button>
             );
           })}
           {clusters.length === 0 && !loading && (
-            <div className="text-sm text-text-muted py-4">No clusters found. Check connection.</div>
+            <div className="text-sm text-text-muted py-4">{t('dashboard.noClusters')}</div>
           )}
         </div>
       </div>
@@ -234,14 +241,14 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
       {/* Issues + side content */}
       <div className="px-8 py-6 grid grid-cols-[1.5fr_1fr] gap-8 items-stretch">
         {/* Issues */}
-        <div className="flex flex-col">
+        <div ref={issuesRef} className="flex flex-col">
           <div className="flex items-center justify-between mb-4 shrink-0">
             <div className="flex items-center gap-3">
-              <h2 className="text-sm font-semibold text-text tracking-wide">Issues</h2>
+              <h2 className="text-sm font-semibold text-text tracking-wide">{t('dashboard.issuesTitle')}</h2>
               <span className="text-sm text-red/80 font-mono font-medium">
                 {sortedIssues.length > 0
-                  ? `${sortedIssues.length} total${focusCluster ? ` on ${focusCluster}` : ' across all clusters'}`
-                  : 'none'}
+                  ? `${t('dashboard.totalIssues', { count: sortedIssues.length })}${focusCluster ? ` ${t('dashboard.onCluster', { cluster: focusCluster })}` : ` ${t('dashboard.acrossAll')}`}`
+                  : t('dashboard.none')}
               </span>
             </div>
 
@@ -285,24 +292,24 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
 
           {loading && clusters.length === 0 ? (
             <div className="border border-border rounded-sm p-10 text-center">
-              <p className="text-sm text-text-muted">Loading issues...</p>
+              <p className="text-sm text-text-muted">{t('dashboard.loadingIssues')}</p>
             </div>
           ) : sortedIssues.length === 0 ? (
             <div className="border border-border rounded-sm p-10 text-center">
-              <p className="text-sm text-text-muted">No issues</p>
-              <p className="text-xs text-text-muted mt-1">All clusters are running normally</p>
+              <p className="text-sm text-text-muted">{t('dashboard.noIssuesDesc')}</p>
+              <p className="text-xs text-text-muted mt-1">{t('dashboard.allNormal')}</p>
             </div>
           ) : (
             <div key={`issues-${focusCluster || 'all'}-${page}`} className="border border-border rounded-sm overflow-hidden flex-1 flex flex-col animate-fade-in">
               <table className="w-full">
                 <thead>
                   <tr className="bg-elevated/50">
-                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Sev</th>
-                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Cluster</th>
-                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Pod</th>
-                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Status</th>
-                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">Ns</th>
-                    <th className="text-right text-xs text-text-muted font-semibold uppercase py-3 px-4">Action</th>
+                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">{t('dashboard.sev')}</th>
+                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">{t('dashboard.cluster')}</th>
+                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">{t('dashboard.pod')}</th>
+                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">{t('dashboard.status')}</th>
+                    <th className="text-left text-xs text-text-muted font-semibold uppercase py-3 px-4">{t('dashboard.ns')}</th>
+                    <th className="text-right text-xs text-text-muted font-semibold uppercase py-3 px-4">{t('dashboard.action')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -328,7 +335,7 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                                 : 'border-border hover:text-accent hover:border-accent/40 text-text-muted bg-transparent'
                               }`}
                           >
-                            {isDone ? '✓ Done' : 'Diagnose →'}
+                            {isDone ? t('dashboard.done') : t('dashboard.diagnose')}
                           </button>
                         </td>
                       </tr>
@@ -345,7 +352,7 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
           {/* Recent Diagnoses */}
           {diagnoses.length > 0 && (
             <div className="border border-border rounded-sm p-5 bg-surface">
-              <h3 className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-3">Recent Diagnoses</h3>
+              <h3 className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-3">{t('dashboard.recentDiagnoses')}</h3>
               <div className="space-y-2 max-h-[240px] overflow-y-auto">
                 {diagnoses.slice(0, 10).map((d) => (
                   <button
@@ -394,28 +401,127 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
             <>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: 'Pods', value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text' },
-                  { label: 'Issues', value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text' },
-                  { label: 'Nodes', value: currentCluster.nodes, color: 'text-text' },
-                  { label: 'Namespaces', value: currentCluster.namespaces, color: 'text-text' },
+                  { label: t('dashboard.pods'), value: `${currentCluster.pods_ready}/${currentCluster.pods_total}`, color: 'text-text', detail: 'pods' as const },
+                  { label: t('dashboard.issuesStat'), value: currentCluster.issues_count, color: currentCluster.issues_count > 0 ? 'text-red' : 'text-text', detail: 'issues' as const },
+                  { label: t('dashboard.nodesStat'), value: currentCluster.nodes, color: 'text-text', detail: 'nodes' as const },
+                  { label: t('dashboard.namespacesStat'), value: currentCluster.namespaces, color: 'text-text', detail: 'namespaces' as const },
                 ].map((s) => (
-                  <div key={s.label} className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer">
+                  <div
+                    key={s.label}
+                    onClick={() => setActiveDetail(activeDetail === s.detail ? null : s.detail)}
+                    className={`border rounded-sm p-4 text-center transition-colors cursor-pointer
+                      ${activeDetail === s.detail ? 'border-accent/40 bg-accent-dim/10' : 'border-border bg-surface hover:bg-elevated'}`}
+                  >
                     <p className={`text-2xl font-semibold font-mono ${s.color}`}>{s.value}</p>
                     <p className="text-sm text-text-muted mt-1">{s.label}</p>
                   </div>
                 ))}
               </div>
 
+              {/* Detail Panel */}
+              {activeDetail && (
+                <div className="border border-border rounded-sm bg-surface animate-fade-in">
+                  {activeDetail === 'pods' && (
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-text">{t('dashboard.podStatus')}</h3>
+                        <span className="text-xs text-text-muted">{t('dashboard.showProblemPods')}</span>
+                      </div>
+                      {sortedIssues.length > 0 ? (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {sortedIssues.map((iss, i) => (
+                            <div key={`${iss.pod}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${severityBadge[iss.severity]}`}>
+                                {iss.severity.toUpperCase()}
+                              </span>
+                              <span className="text-sm font-mono text-text flex-1 truncate">{iss.pod}</span>
+                              <span className="text-xs text-text-muted">{iss.namespace}</span>
+                              <span className="text-xs text-text-secondary font-mono">{iss.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">{t('dashboard.allPodsNormal')}</p>
+                      )}
+                    </div>
+                  )}
+                  {activeDetail === 'issues' && (
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-text">{t('dashboard.issuesList')}</h3>
+                        <span className="text-xs text-text-muted">{t('dashboard.issuesCount', { count: sortedIssues.length })}</span>
+                      </div>
+                      {sortedIssues.length > 0 ? (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {sortedIssues.map((iss, i) => (
+                            <div key={`${iss.pod}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${severityBadge[iss.severity]}`}>
+                                {iss.severity.toUpperCase()}
+                              </span>
+                              <span className="text-sm font-mono text-text flex-1 truncate">{iss.pod}</span>
+                              <span className="text-xs text-text-muted">{iss.namespace}</span>
+                              <span className="text-xs text-text-secondary font-mono">{iss.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">{t('dashboard.noIssues')}</p>
+                      )}
+                    </div>
+                  )}
+                  {activeDetail === 'nodes' && (
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-text mb-3">{t('dashboard.nodeInfo')}</h3>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">{t('dashboard.nodeCount')}</span>
+                          <span className="text-text font-mono">{currentCluster.nodes}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">{t('dashboard.clusterVersion')}</span>
+                          <span className="text-text font-mono">{currentCluster.version || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">{t('dashboard.healthStatus')}</span>
+                          <span className={`font-mono ${currentCluster.health === 'healthy' ? 'text-green' : currentCluster.health === 'degraded' ? 'text-amber' : 'text-red'}`}>
+                            {currentCluster.health}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {activeDetail === 'namespaces' && (
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-text mb-3">{t('dashboard.namespaceInfo')}</h3>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">{t('dashboard.namespaceCount')}</span>
+                          <span className="text-text font-mono">{currentCluster.namespaces}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">{t('dashboard.totalPods')}</span>
+                          <span className="text-text font-mono">{currentCluster.pods_total}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-text-muted">{t('dashboard.readyPods')}</span>
+                          <span className="text-text font-mono">{currentCluster.pods_ready}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Version info */}
               <div className="border border-border rounded-sm p-4 bg-surface">
-                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">Cluster Info</p>
+                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">{t('dashboard.clusterInfo')}</p>
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs">
-                    <span className="text-text-muted">Version</span>
+                    <span className="text-text-muted">{t('dashboard.version')}</span>
                     <span className="text-text-secondary font-mono">{currentCluster.version || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-text-muted">Fingerprint</span>
+                    <span className="text-text-muted">{t('dashboard.fingerprint')}</span>
                     <span className="text-text-secondary font-mono text-[10px]">{currentCluster.fingerprint.slice(0, 16)}...</span>
                   </div>
                 </div>
@@ -433,12 +539,17 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                   const totalNodes = clusters.reduce((s, c) => s + c.nodes, 0);
                   const totalNs = clusters.reduce((s, c) => s + c.namespaces, 0);
                   return [
-                    { label: 'Clusters', value: total, color: 'text-text' },
-                    { label: 'Pods', value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber' },
-                    { label: 'Issues', value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text' },
-                    { label: 'Nodes / NS', value: `${totalNodes} / ${totalNs}`, color: 'text-text' },
+                    { label: t('dashboard.clustersStat'), value: total, color: 'text-text', detail: 'clusters' as const },
+                    { label: t('dashboard.pods'), value: `${totalPodsReady}/${totalPods}`, color: totalPodsReady === totalPods ? 'text-green' : 'text-amber', detail: 'pods' as const },
+                    { label: t('dashboard.issuesStat'), value: totalIssues, color: totalIssues > 0 ? 'text-red' : 'text-text', detail: 'issues' as const },
+                    { label: t('dashboard.nodesNs'), value: `${totalNodes} / ${totalNs}`, color: 'text-text', detail: 'nodes' as const },
                   ].map((s) => (
-                    <div key={s.label} className="border border-border rounded-sm p-4 text-center bg-surface hover:bg-elevated transition-colors cursor-pointer">
+                    <div
+                      key={s.label}
+                      onClick={() => setActiveDetail(activeDetail === s.detail ? null : s.detail)}
+                      className={`border rounded-sm p-4 text-center transition-colors cursor-pointer
+                        ${activeDetail === s.detail ? 'border-accent/40 bg-accent-dim/10' : 'border-border bg-surface hover:bg-elevated'}`}
+                    >
                       <p className={`text-lg font-semibold font-mono ${s.color}`}>{s.value}</p>
                       <p className="text-sm text-text-muted mt-1">{s.label}</p>
                     </div>
@@ -446,9 +557,95 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
                 })()}
               </div>
 
+              {/* Aggregate Detail Panel */}
+              {activeDetail && (
+                <div className="border border-border rounded-sm bg-surface animate-fade-in">
+                  {activeDetail === 'pods' && (
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-text">{t('dashboard.podStatus')}</h3>
+                        <span className="text-xs text-text-muted">{t('dashboard.showProblemPods')}</span>
+                      </div>
+                      {sortedIssues.length > 0 ? (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {sortedIssues.map((iss, i) => (
+                            <div key={`${iss.pod}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${severityBadge[iss.severity]}`}>
+                                {iss.severity.toUpperCase()}
+                              </span>
+                              <span className="text-sm font-mono text-text flex-1 truncate">{iss.pod}</span>
+                              <span className="text-xs text-text-muted">{iss.cluster}</span>
+                              <span className="text-xs text-text-secondary font-mono">{iss.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">{t('dashboard.allPodsNormal')}</p>
+                      )}
+                    </div>
+                  )}
+                  {activeDetail === 'issues' && (
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-text">{t('dashboard.issuesList')}</h3>
+                        <span className="text-xs text-text-muted">{t('dashboard.issuesCount', { count: sortedIssues.length })}</span>
+                      </div>
+                      {sortedIssues.length > 0 ? (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {sortedIssues.map((iss, i) => (
+                            <div key={`${iss.pod}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-sm ${severityBadge[iss.severity]}`}>
+                                {iss.severity.toUpperCase()}
+                              </span>
+                              <span className="text-sm font-mono text-text flex-1 truncate">{iss.pod}</span>
+                              <span className="text-xs text-text-muted">{iss.cluster}</span>
+                              <span className="text-xs text-text-secondary font-mono">{iss.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">{t('dashboard.noIssues')}</p>
+                      )}
+                    </div>
+                  )}
+                  {activeDetail === 'nodes' && (
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-text mb-3">{t('dashboard.clusterOverview')}</h3>
+                      <div className="space-y-2">
+                        {clusters.map(c => (
+                          <div key={c.name} className="flex items-center justify-between px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                            <span className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${healthDot[c.health] || 'bg-text-muted'}`} />
+                              <span className="text-sm font-mono text-text">{c.name}</span>
+                            </span>
+                            <span className="text-xs text-text-muted">{c.nodes} {t('dashboard.nodesCount')} · {c.namespaces} {t('dashboard.namespacesCount')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {activeDetail === 'clusters' && (
+                    <div className="p-4">
+                      <h3 className="text-sm font-semibold text-text mb-3">{t('dashboard.clusterList')}</h3>
+                      <div className="space-y-2">
+                        {clusters.map(c => (
+                          <div key={c.name} className="flex items-center justify-between px-3 py-2 rounded-sm bg-elevated/50 border border-border/30">
+                            <span className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${healthDot[c.health] || 'bg-text-muted'}`} />
+                              <span className="text-sm font-mono text-text">{c.name}</span>
+                            </span>
+                            <span className="text-xs text-text-muted">{c.pods_ready}/{c.pods_total} Pod · {t('dashboard.issuesCount', { count: c.issues_count })}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* All clusters summary */}
               <div className="border border-border rounded-sm p-4 bg-surface">
-                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">All Clusters</p>
+                <p className="text-xs text-text-muted font-semibold uppercase tracking-wider mb-2">{t('dashboard.allClusters')}</p>
                 <div className="space-y-1.5">
                   {clusters.map(c => (
                     <div key={c.name} className="flex justify-between text-xs">
@@ -469,7 +666,7 @@ onDoubleClick={() => handleClusterDoubleClick(c.name)}
 
       <div className="px-8 pb-6">
         <p className="text-xs text-text-muted border-t border-border/30 pt-4">
-          CIS Kubernetes Benchmark v1.10 · NIST SP 800-204 · Auto-refresh 15s
+          {t('dashboard.footer')}
         </p>
       </div>
     </div>

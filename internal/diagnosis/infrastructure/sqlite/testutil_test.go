@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func openTestDB(t *testing.T) *sql.DB {
@@ -16,7 +16,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	}
 	t.Cleanup(func() { os.Remove(f.Name()) })
 
-	db, err := sql.Open("sqlite3", f.Name()+"?_foreign_keys=on")
+	db, err := sql.Open("sqlite", f.Name()+"?_foreign_keys=on")
 	if err != nil {
 		t.Fatal(err)
 	}

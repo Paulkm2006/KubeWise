@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 //go:embed migrations/*.sql
@@ -20,7 +20,7 @@ type DB struct {
 // Open opens (or creates) the SQLite database at the given dir.
 func Open(dir string) (*DB, error) {
 	path := filepath.Join(dir, "kubewise.db")
-	conn, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on")
+	conn, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}

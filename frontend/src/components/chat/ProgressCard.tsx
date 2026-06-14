@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { ChartCandidate, ChatProgressCard, DeployPlan, OperationStep } from '../../api/types';
 import { toggleDetailsExpanded, togglePhaseExpanded } from '../../lib/chatFold';
 import MarkdownContent from '../MarkdownContent';
@@ -44,6 +45,7 @@ export default function ProgressCard({
   onDeployCancel,
   onDeployCorrect,
 }: ProgressCardProps) {
+  const { t } = useTranslation();
   const running = !card.done && !card.failed;
   const interaction = card.awaitingInteraction && !card.awaitingInteraction.resolved
     ? card.awaitingInteraction
@@ -63,7 +65,7 @@ export default function ProgressCard({
 
       {report && (
         <div className="space-y-1">
-          <div className="text-xs font-mono text-accent uppercase tracking-wide">Report</div>
+          <div className="text-xs font-mono text-accent uppercase tracking-wide">{t('progress.report')}</div>
           <MarkdownContent content={report} />
         </div>
       )}
@@ -74,7 +76,7 @@ export default function ProgressCard({
           onClick={onToggleDetails}
           className="text-xs text-text-muted hover:text-accent font-mono"
         >
-          {card.detailsExpanded ? '▼' : '▶'} Execution details
+          {card.detailsExpanded ? '▼' : '▶'} {t('progress.executionDetails')}
           {card.durationMs != null && ` · ${(card.durationMs / 1000).toFixed(1)}s`}
         </button>
 
