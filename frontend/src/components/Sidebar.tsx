@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { ClusterSummary } from '../api/types';
 
 interface SidebarProps {
@@ -24,6 +25,7 @@ const typeStyle: Record<string, { border: string; dot: string }> = {
 };
 
 export default function Sidebar({ activities, activeCluster, clusters, onClear, onActivityClick, onFocusCluster }: SidebarProps) {
+  const { t } = useTranslation();
   const clusterInfo = clusters.find((c) => c.name === activeCluster);
 
   return (
@@ -31,8 +33,8 @@ export default function Sidebar({ activities, activeCluster, clusters, onClear, 
       {/* Activity Feed */}
       <div className="flex-1 flex flex-col min-h-0 p-4">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-text-muted tracking-widest uppercase">活动</span>
-          <span onClick={onClear} className="text-xs text-text-muted cursor-pointer hover:text-text transition-colors">清空</span>
+          <span className="text-xs font-semibold text-text-muted tracking-widest uppercase">{t('sidebar.activity')}</span>
+          <span onClick={onClear} className="text-xs text-text-muted cursor-pointer hover:text-text transition-colors">{t('sidebar.clear')}</span>
         </div>
         <div className="flex-1 overflow-y-auto space-y-1">
           {activities.map((a, i) => {
@@ -74,21 +76,21 @@ export default function Sidebar({ activities, activeCluster, clusters, onClear, 
               <span className={`text-xs px-2 py-0.5 rounded-sm font-medium ${
                 clusterInfo.issues_count > 0 ? 'bg-amber-dim text-amber' : 'bg-green-dim text-green'
               }`}>
-                {clusterInfo.issues_count} 个问题
+                {t('sidebar.issues', { count: clusterInfo.issues_count })}
               </span>
               <span className="text-sm text-text-muted font-mono">
-                {clusterInfo.pods_ready}/{clusterInfo.pods_total} Pod 就绪
+                {t('sidebar.podsReady', { ready: clusterInfo.pods_ready, total: clusterInfo.pods_total })}
               </span>
             </div>
             <div className="flex gap-3 mt-3 text-sm text-text-muted">
-              <span>◈ {clusterInfo.nodes} 节点</span>
-              <span>▣ {clusterInfo.namespaces} 命名空间</span>
+              <span>{t('sidebar.nodes', { count: clusterInfo.nodes })}</span>
+              <span>{t('sidebar.namespaces', { count: clusterInfo.namespaces })}</span>
             </div>
           </div>
         ) : activeCluster ? (
           <div className="p-4 bg-elevated border border-border rounded-sm">
             <p className="text-sm text-text-muted">{activeCluster}</p>
-            <p className="text-xs text-text-muted mt-2">加载集群信息...</p>
+            <p className="text-xs text-text-muted mt-2">{t('sidebar.loadingCluster')}</p>
           </div>
         ) : null}
       </div>
