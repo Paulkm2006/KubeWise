@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ChartCandidate, DeployPlan } from '../../api/types';
 
 interface ChartSelectCardProps {
@@ -18,14 +19,15 @@ export function ChartSelectCard({
   onManual,
   onCancel,
 }: ChartSelectCardProps) {
+  const { t } = useTranslation();
   const [manual, setManual] = useState(false);
   const [repoUrl, setRepoUrl] = useState('');
   const [chartName, setChartName] = useState('');
 
   return (
     <div className="mt-3 p-4 rounded-sm border border-accent/25 bg-accent-dim/10 space-y-3">
-      <div className="text-xs font-mono text-accent uppercase tracking-wide">选择 Helm Chart</div>
-      {appName && <div className="text-sm text-text-secondary">应用: {appName}</div>}
+      <div className="text-xs font-mono text-accent uppercase tracking-wide">{t('deploy.selectChart')}</div>
+      {appName && <div className="text-sm text-text-secondary">{t('deploy.app')} {appName}</div>}
 
       {!manual ? (
         <>
@@ -54,7 +56,7 @@ export function ChartSelectCard({
               onClick={() => setManual(true)}
               className="text-sm px-3 py-1.5 rounded-sm border border-border text-text-secondary"
             >
-              手动输入 Chart
+              {t('deploy.manual')}
             </button>
             <button
               type="button"
@@ -62,7 +64,7 @@ export function ChartSelectCard({
               onClick={onCancel}
               className="text-sm px-3 py-1.5 rounded-sm border border-border text-text-muted"
             >
-              取消
+              {t('deploy.cancel')}
             </button>
           </div>
         </>
@@ -87,10 +89,10 @@ export function ChartSelectCard({
               onClick={() => onManual(repoUrl.trim(), chartName.trim())}
               className="text-sm px-3 py-1.5 rounded-sm bg-accent text-bg font-medium disabled:opacity-40"
             >
-              使用此 Chart
+              {t('deploy.useChart')}
             </button>
             <button type="button" onClick={() => setManual(false)} className="text-sm px-3 py-1.5 rounded-sm border border-border">
-              返回
+              {t('deploy.back')}
             </button>
           </div>
         </div>
@@ -110,6 +112,7 @@ interface DeployConfirmCardProps {
 }
 
 export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorrect }: DeployConfirmCardProps) {
+  const { t } = useTranslation();
   const [values, setValues] = useState(plan.CustomValues || '');
   const [correction, setCorrection] = useState('');
   const [tab, setTab] = useState<ValuesTab>('override');
@@ -122,14 +125,14 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
   return (
     <div className="mt-3 w-full min-w-0 p-4 rounded-sm border border-accent/30 bg-accent-dim/10 space-y-4">
       <div className="space-y-1">
-        <div className="text-xs font-mono text-accent uppercase tracking-wide">部署预览</div>
+        <div className="text-xs font-mono text-accent uppercase tracking-wide">{t('deploy.review')}</div>
         <div className="text-sm text-text flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-medium">{chartName}</span>
           <span className="text-text-muted">→</span>
           <span className="font-mono text-text-secondary">{namespace}/{release}</span>
           {plan.IsUpgrade && (
             <span className="text-xs px-1.5 py-0.5 rounded-sm bg-amber-dim/40 text-amber border border-amber/20">
-              升级
+              {t('deploy.upgrade')}
             </span>
           )}
         </div>
@@ -156,8 +159,8 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
                 : 'border-transparent text-text-muted hover:text-text-secondary'
             }`}
           >
-            覆盖值
-            <span className="ml-1.5 text-xs text-text-muted">（可编辑）</span>
+            {t('deploy.override')}
+            <span className="ml-1.5 text-xs text-text-muted">{t('deploy.editable')}</span>
           </button>
           <button
             type="button"
@@ -168,8 +171,8 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
                 : 'border-transparent text-text-muted hover:text-text-secondary'
             }`}
           >
-            Chart 默认值
-            <span className="ml-1.5 text-xs text-text-muted">（只读）</span>
+            {t('deploy.defaults')}
+            <span className="ml-1.5 text-xs text-text-muted">{t('deploy.readonly')}</span>
           </button>
         </div>
 
@@ -182,7 +185,7 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
             disabled={disabled}
             className="w-full text-xs font-mono leading-relaxed bg-bg border border-border rounded-sm p-3 text-text-secondary
                        outline-none focus:border-accent/40 disabled:opacity-50 resize-y min-h-[200px]"
-            placeholder="# Helm 覆盖值 (YAML)"
+            placeholder={t('deploy.valuesPlaceholder')}
           />
         ) : (
           <pre
@@ -195,16 +198,16 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
       </div>
 
       <div className="space-y-2 pt-1 border-t border-border/60">
-        <div className="text-sm font-medium text-text">自然语言修正</div>
+        <div className="text-sm font-medium text-text">{t('deploy.nlCorrection')}</div>
         <p className="text-xs text-text-muted">
-          描述需要修改的内容 — Agent 将重新生成覆盖值并展示更新后的部署计划。
+          {t('deploy.nlDesc')}
         </p>
         <textarea
           value={correction}
           onChange={(e) => setCorrection(e.target.value)}
           rows={2}
           disabled={disabled}
-          placeholder="例如：设置 NodePort 为 30090，副本数增加到 3"
+          placeholder={t('deploy.nlPlaceholder')}
           className="w-full text-sm bg-bg border border-border rounded-sm px-3 py-2 text-text
                      outline-none focus:border-accent/40 disabled:opacity-50 resize-y"
           onKeyDown={(e) => {
@@ -224,7 +227,7 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
           }}
           className="text-sm px-4 py-2 rounded-sm bg-accent text-bg font-medium disabled:opacity-40"
         >
-          重新生成值
+          {t('deploy.regenerate')}
         </button>
       </div>
 
@@ -235,7 +238,7 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
           onClick={() => onExecute(values)}
           className="text-sm px-4 py-2 rounded-sm bg-green text-bg font-medium disabled:opacity-40"
         >
-          使用此配置部署
+          {t('deploy.deployBtn')}
         </button>
         <button
           type="button"
@@ -243,10 +246,10 @@ export function DeployConfirmCard({ plan, disabled, onExecute, onCancel, onCorre
           onClick={onCancel}
           className="text-sm px-4 py-2 rounded-sm border border-border text-text-muted hover:border-red/30 hover:text-red"
         >
-          取消部署
+          {t('deploy.cancelDeploy')}
         </button>
         <span className="text-xs text-text-muted ml-auto hidden sm:inline">
-          提示：可直接编辑 YAML，或使用上方自然语言修正
+          {t('deploy.tip')}
         </span>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { DiagnosisEvent } from '../api/types';
 
 interface DiagnosisTracePanelProps {
@@ -8,6 +9,7 @@ interface DiagnosisTracePanelProps {
 }
 
 export default function DiagnosisTracePanel({ events, running, onBack }: DiagnosisTracePanelProps) {
+  const { t } = useTranslation();
   const sorted = useMemo(
     () => [...events].sort((a, b) => a.seq_num - b.seq_num),
     [events],
@@ -25,20 +27,20 @@ export default function DiagnosisTracePanel({ events, running, onBack }: Diagnos
                      inline-flex items-center gap-1.5"
         >
           <span className="font-mono text-[10px]">←</span>
-          返回报告
+          {t('diagnosis.backToReport')}
         </button>
         <span className="text-[10px] uppercase tracking-wider text-text-muted font-semibold">
-          运行日志
+          {t('diagnosis.traceLog')}
         </span>
       </div>
 
       <p className="text-xs text-text-muted leading-relaxed">
-        诊断管道每一步的执行记录。错误和降级的 AI 步骤会高亮显示，以便查看报告使用回退逻辑的原因。
+        {t('diagnosis.traceDesc')}
       </p>
 
       {sorted.length === 0 ? (
         <div className="px-4 py-6 rounded-sm border border-border/60 bg-elevated/20 text-center text-sm text-text-muted">
-          {running ? '等待管道事件…' : '无运行日志事件记录。'}
+          {running ? t('diagnosis.waitingEvents') : t('diagnosis.noEvents')}
         </div>
       ) : (
         <div className="space-y-2">
@@ -48,7 +50,7 @@ export default function DiagnosisTracePanel({ events, running, onBack }: Diagnos
           {running && (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-accent font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-              调查进行中…
+              {t('diagnosis.inProgress')}
             </div>
           )}
         </div>
@@ -107,7 +109,7 @@ function TraceEventRow({ event, baseTime }: { event: DiagnosisEvent; baseTime: n
               onClick={() => setExpanded((v) => !v)}
               className="text-[10px] text-text-muted hover:text-text mt-1.5 cursor-pointer bg-transparent border-0 p-0"
             >
-              {expanded ? '隐藏详情' : '显示详情'}
+              {expanded ? t('diagnosis.hideDetails') : t('diagnosis.showDetails')}
             </button>
           )}
 
