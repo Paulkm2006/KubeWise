@@ -16,7 +16,7 @@ function parseTerminalStatus(data: string): string {
   } catch {
     /* ignore malformed terminal payload */
   }
-  return 'completed';
+  return 'unknown';
 }
 
 export function subscribeDiagnosis(
