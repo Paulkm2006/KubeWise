@@ -45,10 +45,10 @@ func verifyOne(ctx context.Context, exec *toolv2.Executor, allowed []string, h h
 		if len(h.EvidenceIDs) > 0 {
 			return Result{
 				HypothesisID: h.ID, Status: "supported",
-				Reason: "确定性证据充分，无需额外验证路径",
+				Reason: "确定性证据已足够支持该假设",
 			}
 		}
-		return Result{HypothesisID: h.ID, Status: "uncertain", Reason: "无证据且无验证路径"}
+		return Result{HypothesisID: h.ID, Status: "uncertain", Reason: "缺少证据，且没有可用的验证路径"}
 	}
 
 	res := Result{HypothesisID: h.ID, Status: "supported"}
@@ -86,7 +86,7 @@ func verifyOne(ctx context.Context, exec *toolv2.Executor, allowed []string, h h
 		}
 	}
 	if res.Status == "supported" {
-		res.Reason = "验证路径观测结果符合预期"
+		res.Reason = "验证通过"
 	}
 	return res
 }
@@ -95,26 +95,26 @@ func evaluateStep(output string, step hypothesis.VerifyStep, llmClient llm.Clien
 	lower := strings.ToLower(output)
 	for _, needle := range step.MustContain {
 		if !strings.Contains(lower, strings.ToLower(needle)) {
-			return false, fmt.Sprintf("期望输出包含 %q", needle)
+			return false, fmt.Sprintf("工具输出中未找到期望内容 %q", needle)
 		}
 	}
 	if step.LLMJudge && step.Expectation != "" {
 		if llmClient == nil {
 			if output == "" {
-				return false, "期望 LLM 判断有非空工具输出"
+				return false, "需要非空工具输出才能进行 LLM 判断"
 			}
-			return true, "LLM 不可用，已接受非空验证输出"
+			return true, "LLM 不可用，已基于非空工具输出暂时接受该验证结果"
 		}
 		ok, reason, err := llmJudge(ctx, llmClient, output, step.Expectation)
 		if err != nil {
-			return output != "", "LLM 判断失败，已接受非空输出：" + err.Error()
+			return output != "", "LLM 判断失败，已基于非空工具输出暂时接受：" + err.Error()
 		}
 		return ok, reason
 	}
 	if len(step.MustContain) == 0 && output == "" {
-		return false, "验证工具返回空输出"
+		return false, "验证工具返回为空"
 	}
-	return true, "验证期望已满足"
+	return true, "验证条件满足"
 }
 
 type judgeOutput struct {

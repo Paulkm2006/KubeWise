@@ -41,7 +41,7 @@ func crashLoopVerifySteps(target casefile.Target, container string) []VerifyStep
 	}
 	return []VerifyStep{{
 		Tool: "get_pod_logs", Args: args,
-		Expectation: "日志应显示重启前的应用错误或崩溃",
+		Expectation: "日志中应能看到容器重启前的应用错误、异常退出或崩溃信息",
 		LLMJudge:    true,
 	}}
 }

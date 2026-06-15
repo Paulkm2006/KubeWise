@@ -10,8 +10,8 @@ func structuralFromEvidence(evs []casefile.Evidence, target casefile.Target, obs
 		switch ev.Type {
 		case casefile.TypeOOMKilled:
 			out = append(out, Hypothesis{
-				ID: "hp-oom", Category: "oom_killed", Title: "内存限制过低",
-				Reasoning:   "容器因 OOMKilled 被终止，通常表示内存不足或限制过低",
+				ID: "hp-oom", Category: "oom_killed", Title: "容器内存不足或 limit 偏低",
+				Reasoning:   "容器被 OOMKilled，通常说明运行时内存压力过高，或 memory limit 设置不足",
 				EvidenceIDs: []string{ev.ID}, Confidence: "high",
 				VerifySteps: []VerifyStep{{
 					Tool:        "get_pod_resource_usage",
@@ -21,29 +21,29 @@ func structuralFromEvidence(evs []casefile.Evidence, target casefile.Target, obs
 			})
 		case casefile.TypeImagePullBackOff:
 			out = append(out, Hypothesis{
-				ID: "hp-image-pull", Category: "image_pull", Title: "镜像拉取授权/标签问题",
-				Reasoning:   "容器镜像拉取正在回退，可能是镜像引用错误或认证问题",
+				ID: "hp-image-pull", Category: "image_pull", Title: "镜像引用、标签或拉取凭据异常",
+				Reasoning:   "容器进入 ImagePullBackOff/ErrImagePull，常见原因是 image 引用错误、tag 不存在或 registry 认证失败",
 				EvidenceIDs: []string{ev.ID}, Confidence: "high",
 			})
 		case casefile.TypeCrashLoopBackOff:
 			container := containerFromEvidenceID(ev.ID, "ev-crashloop-")
 			out = append(out, Hypothesis{
-				ID: "hp-crashloop", Category: "app_crash", Title: "应用启动崩溃",
-				Reasoning:   "容器反复重启并处于 CrashLoopBackOff 状态",
+				ID: "hp-crashloop", Category: "app_crash", Title: "应用启动后崩溃或快速退出",
+				Reasoning:   "容器反复重启并进入 CrashLoopBackOff，需要结合启动日志确认应用异常",
 				EvidenceIDs: []string{ev.ID}, Confidence: "medium",
 				VerifySteps: crashLoopVerifySteps(target, container),
 			})
 		case casefile.TypeFailedScheduling:
 			out = append(out, Hypothesis{
-				ID: "hp-scheduling", Category: "scheduling", Title: "可调度资源/约束不足",
-				Reasoning:   "调度器报告该 Pod 调度失败",
+				ID: "hp-scheduling", Category: "scheduling", Title: "资源不足或调度约束无法满足",
+				Reasoning:   "scheduler 对该 Pod 报告 FailedScheduling，说明当前节点资源或调度约束无法满足",
 				EvidenceIDs: []string{ev.ID}, Confidence: "high",
 				VerifySteps: schedulingVerifySteps(target, obs),
 			})
 		case casefile.TypeFailedMount:
 			out = append(out, Hypothesis{
-				ID: "hp-mount", Category: "volume_mount", Title: "卷挂载问题",
-				Reasoning:   "kubelet 报告卷挂载/设置失败",
+				ID: "hp-mount", Category: "volume_mount", Title: "Volume 挂载失败",
+				Reasoning:   "kubelet 报告 volume mount 失败，需检查 Secret、ConfigMap、PVC 或挂载路径相关事件",
 				EvidenceIDs: []string{ev.ID}, Confidence: "high",
 				VerifySteps: []VerifyStep{{
 					Tool: "get_resource_events",
@@ -55,8 +55,8 @@ func structuralFromEvidence(evs []casefile.Evidence, target casefile.Target, obs
 			})
 		case casefile.TypeProbeFailure:
 			out = append(out, Hypothesis{
-				ID: "hp-probe", Category: "probe_failure", Title: "健康探针配置错误或应用不健康",
-				Reasoning:   "探针失败表明端点/超时/启动不匹配或服务不稳定",
+				ID: "hp-probe", Category: "probe_failure", Title: "健康检查探针配置不匹配或应用未就绪",
+				Reasoning:   "探针失败通常来自 endpoint、timeout、startupProbe 时序或应用健康状态不匹配",
 				EvidenceIDs: []string{ev.ID}, Confidence: "medium",
 			})
 		}

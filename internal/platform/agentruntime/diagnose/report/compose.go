@@ -52,16 +52,16 @@ func Compose(ctx context.Context, llmClient llm.ClientPort, file *casefile.CaseF
 	if !found {
 		return &DiagnosisReport{
 			Target: target, GeneratedAt: time.Now().UTC(),
-			Summary: "已收集证据，但没有支持的根因候选。" ,
+			Summary: "已完成证据采集，但未找到被证据充分支持的根因候选",
 			Verdict: VerdictInconclusive,
 			RootCause: RootCause{
-				Category: "unknown", Title: "诊断无法确定",
+				Category: "unknown", Title: "暂无法确认根因",
 				ConfidenceScore: 0.2, ConfidenceLabel: "low",
-				Summary: "根据收集并验证的证据，未产生支持的根因候选。" ,
+				Summary: "证据采集和验证完成后，仍没有足够证据支持某个明确根因",
 			},
 			Evidence: evidence, Hypotheses: reportHypotheses,
-			Actions:     []Action{{Priority: "p2", Description: "审查已收集的证据，添加更多证据后重新运行诊断。" }},
-			Impact:      Impact{Severity: "unknown", Description: "无法根据已收集的证据确定影响。" },
+			Actions:     []Action{{Priority: "p2", Description: "复核已采集证据，并补充日志、事件或资源指标后重新诊断"}},
+			Impact:      Impact{Severity: "unknown", Description: "仅凭当前证据无法判断影响范围"},
 			Limitations: limitations, Enrichment: enrichment,
 		}
 	}
@@ -72,7 +72,7 @@ func Compose(ctx context.Context, llmClient llm.ClientPort, file *casefile.CaseF
 	score := confidenceScore(selected, checks, strength)
 	return &DiagnosisReport{
 		Target: target, GeneratedAt: time.Now().UTC(),
-		Summary: fmt.Sprintf("诊断在证据收集和验证后选择：%s", selected.Title),
+		Summary: fmt.Sprintf("基于证据采集和验证，当前诊断指向：%s", selected.Title),
 		Verdict: verdictFor(score),
 		RootCause: RootCause{
 			Category: selected.Category, Title: selected.Title,
@@ -81,7 +81,7 @@ func Compose(ctx context.Context, llmClient llm.ClientPort, file *casefile.CaseF
 		},
 		Evidence: evidence, Hypotheses: reportHypotheses,
 		Actions:     actionsFor(selected),
-		Impact:      Impact{Severity: impactSeverity(selected.Category), Description: "目标 Pod 不健康，需要干预"},
+		Impact:      Impact{Severity: impactSeverity(selected.Category), Description: "目标 Pod 处于异常状态，需要人工介入处理"},
 		Limitations: limitations, Enrichment: enrichment,
 	}
 }
@@ -153,15 +153,15 @@ func hasStrongEvidence(h hypothesis.Hypothesis, strength map[string]string) bool
 func actionsFor(h hypothesis.Hypothesis) []Action {
 	switch h.Category {
 	case "image_pull":
-		return []Action{{Priority: "p1", Description: "检查受影响容器的镜像引用、仓库可达性和镜像拉取凭证。" }}
+		return []Action{{Priority: "p1", Description: "检查 image 引用、tag、registry 连通性以及 imagePullSecret/拉取凭据"}}
 	case "oom_killed":
-		return []Action{{Priority: "p1", Description: "检查容器内存使用情况，调整内存限制或应用内存行为。" }}
+		return []Action{{Priority: "p1", Description: "检查容器内存使用峰值，并评估是否需要调整 memory requests/limits"}}
 	case "scheduling":
-		return []Action{{Priority: "p1", Description: "审查 Pod 资源请求、节点容量、污点、容忍度、亲和性和调度约束。" }}
+		return []Action{{Priority: "p1", Description: "检查 Pod requests、节点可用容量、taints/tolerations 以及 affinity 配置"}}
 	case "volume_mount":
-		return []Action{{Priority: "p1", Description: "检查引用的卷、Secret、ConfigMap、PVC 和挂载事件。" }}
+		return []Action{{Priority: "p1", Description: "检查引用的 volumes、Secrets、ConfigMaps、PVC 以及相关挂载事件"}}
 	default:
-		return []Action{{Priority: "p2", Description: "审查引用的证据，处理选定的根因候选。" }}
+		return []Action{{Priority: "p2", Description: "复核报告引用的证据，并按选定根因制定修复动作"}}
 	}
 }
 
@@ -185,7 +185,7 @@ func BuildEnrichment(file *casefile.CaseFile) EnrichmentInfo {
 	return EnrichmentInfo{
 		Status:        EnrichmentDegraded,
 		DegradedSteps: steps,
-		Message:       "部分 AI 分析步骤暂时不可用。本报告使用已收集的集群证据和确定性回退逻辑。受影响的步骤：" + strings.Join(steps, "，") + "。" ,
+		Message:       "部分 AI 分析步骤不可用，报告已退回使用集群证据和确定性规则。受影响步骤：" + strings.Join(steps, "，") + "。",
 	}
 }
 

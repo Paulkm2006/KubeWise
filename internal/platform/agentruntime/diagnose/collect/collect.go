@@ -120,9 +120,9 @@ func emitBaselineDone(st *runtime.State, target casefile.Target, obs casefile.Ob
 
 func summarizeObservation(obs casefile.Observation) string {
 	if obs.Pod == nil {
-		return "Pod 观测不可用"
+		return "Pod 观测数据不可用"
 	}
-	return fmt.Sprintf("阶段=%s 事件=%d 日志=%d", obs.Pod.Status.Phase, len(obs.Events), len(obs.Logs))
+	return fmt.Sprintf("Phase=%s，事件=%d，日志容器=%d", obs.Pod.Status.Phase, len(obs.Events), len(obs.Logs))
 }
 
 func NewReadRegistry(k8s *cluster.Client) (*toolv2.Registry, error) {
@@ -171,7 +171,7 @@ func planSupplemental(ctx context.Context, llmClient llm.ClientPort, target case
 		Temperature: floatPtr(0.1),
 	}, supplementalSchema(), &out)
 	if err != nil {
-		return nil, fmt.Errorf("plan supplemental collection: %w", err)
+		return nil, fmt.Errorf("规划补充采集失败: %w", err)
 	}
 	calls := make([]toolCall, 0, len(out.Calls))
 	for i, call := range out.Calls {
