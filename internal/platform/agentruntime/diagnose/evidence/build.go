@@ -21,7 +21,7 @@ func Build(ctx context.Context, file *casefile.CaseFile, collected collect.Resul
 	out := deterministic(collected.Observation)
 	out = append(out, supplemental(collected.Supplemental)...)
 	if len(collected.Observation.Logs) == 0 {
-		file.AddMissing("container_logs", "container logs were unavailable or empty")
+		file.AddMissing("container_logs", "容器日志不可用或为空")
 	} else {
 		logEvs, err := fromLogs(ctx, collected.Observation.Logs, llmClient)
 		if err != nil {
@@ -30,7 +30,7 @@ func Build(ctx context.Context, file *casefile.CaseFile, collected collect.Resul
 			out = append(out, logEvs...)
 		}
 	}
-	file.AddMissing("metrics", "metrics-server usage data was not verified in this pass")
+	file.AddMissing("metrics", "本轮未验证 metrics-server 的使用数据")
 	return dedup(out)
 }
 
@@ -46,8 +46,8 @@ func deterministic(obs casefile.Observation) []casefile.Evidence {
 			term := cs.LastTerminationState.Terminated
 			add(casefile.Evidence{
 				ID: "ev-oom-" + cs.Name, Type: casefile.TypeOOMKilled, Source: "container_status", Signal: "OOMKilled",
-				Strength: casefile.StrengthStrong, Title: "Container terminated with OOMKilled",
-				Summary: fmt.Sprintf("container %s was OOMKilled", cs.Name),
+				Strength: casefile.StrengthStrong, Title: "容器因 OOM 被终止",
+				Summary: fmt.Sprintf("容器 %s 因 OOM 被终止", cs.Name),
 				Detail:  fmt.Sprintf("exitCode=%d", term.ExitCode),
 				Refs:    []string{"pod.status.containerStatuses.lastTerminationState"},
 			})
@@ -55,17 +55,17 @@ func deterministic(obs casefile.Observation) []casefile.Evidence {
 		if cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff" {
 			add(casefile.Evidence{
 				ID: "ev-crashloop-" + cs.Name, Type: casefile.TypeCrashLoopBackOff, Source: "container_status", Signal: "CrashLoopBackOff",
-				Strength: casefile.StrengthStrong, Title: "Container in CrashLoopBackOff",
-				Summary: fmt.Sprintf("container %s is restarting repeatedly", cs.Name),
+				Strength: casefile.StrengthStrong, Title: "容器处于 CrashLoopBackOff",
+				Summary: fmt.Sprintf("容器 %s 正在反复重启", cs.Name),
 				Detail:  cs.State.Waiting.Message,
 				Refs:    []string{"pod.status.containerStatuses.state.waiting"},
 			})
 		}
-		if cs.State.Waiting != nil && cs.State.Waiting.Reason == "ImagePullBackOff" {
+		if cs.State.Waiting != nil && (cs.State.Waiting.Reason == "ImagePullBackOff" || cs.State.Waiting.Reason == "ErrImagePull") {
 			add(casefile.Evidence{
 				ID: "ev-imagepull-" + cs.Name, Type: casefile.TypeImagePullBackOff, Source: "container_status", Signal: "ImagePullBackOff",
-				Strength: casefile.StrengthStrong, Title: "Container image pull failed",
-				Summary: fmt.Sprintf("container %s is in ImagePullBackOff", cs.Name),
+				Strength: casefile.StrengthStrong, Title: "容器镜像拉取失败",
+				Summary: fmt.Sprintf("容器 %s 处于 %s 状态", cs.Name, cs.State.Waiting.Reason),
 				Detail:  cs.State.Waiting.Message,
 				Refs:    []string{"pod.status.containerStatuses.state.waiting"},
 			})
@@ -77,24 +77,34 @@ func deterministic(obs casefile.Observation) []casefile.Evidence {
 		case "FailedScheduling":
 			add(casefile.Evidence{
 				ID: "ev-failed-scheduling", Type: casefile.TypeFailedScheduling, Source: "kubernetes_event", Signal: "FailedScheduling",
-				Strength: casefile.StrengthStrong, Title: "Pod scheduling failed",
-				Summary: "scheduler cannot place this pod", Detail: ev.Message,
+				Strength: casefile.StrengthStrong, Title: "Pod 调度失败",
+				Summary: "调度器无法调度该 Pod", Detail: ev.Message,
 				Refs: []string{"events.reason=FailedScheduling"},
 			})
 		case "FailedMount":
 			add(casefile.Evidence{
 				ID: "ev-failed-mount", Type: casefile.TypeFailedMount, Source: "kubernetes_event", Signal: "FailedMount",
-				Strength: casefile.StrengthStrong, Title: "Pod volume mount failed",
-				Summary: "volume mount/setup failed", Detail: ev.Message,
+				Strength: casefile.StrengthStrong, Title: "Pod 卷挂载失败",
+				Summary: "卷挂载/设置失败", Detail: ev.Message,
 				Refs: []string{"events.reason=FailedMount"},
 			})
 		case "Unhealthy":
 			if strings.Contains(strings.ToLower(ev.Message), "probe") {
 				add(casefile.Evidence{
 					ID: "ev-probe-failure", Type: casefile.TypeProbeFailure, Source: "kubernetes_event", Signal: "Unhealthy",
-					Strength: casefile.StrengthModerate, Title: "Probe check failing",
-					Summary: "liveness/readiness probe failure detected", Detail: ev.Message,
+					Strength: casefile.StrengthModerate, Title: "探针检查失败",
+					Summary: "检测到存活/就绪探针失败", Detail: ev.Message,
 					Refs: []string{"events.reason=Unhealthy"},
+				})
+			}
+		case "Failed":
+			msg := strings.ToLower(ev.Message)
+			if strings.Contains(msg, "imagepull") || strings.Contains(msg, "pull image") || strings.Contains(msg, "failed to pull") || strings.Contains(msg, "failed to resolve reference") {
+				add(casefile.Evidence{
+					ID: "ev-imagepull-event", Type: casefile.TypeImagePullBackOff, Source: "kubernetes_event", Signal: "Failed",
+					Strength: casefile.StrengthStrong, Title: "事件显示镜像拉取失败",
+					Summary: "Kubernetes 事件显示镜像拉取失败", Detail: ev.Message,
+					Refs: []string{"events.reason=Failed"},
 				})
 			}
 		}
@@ -107,7 +117,7 @@ func supplemental(results []toolv2.ToolResult) []casefile.Evidence {
 	for _, result := range results {
 		summary := strings.TrimSpace(result.Display)
 		if summary == "" {
-			summary = fmt.Sprintf("%s returned data", result.Meta.ToolName)
+			summary = fmt.Sprintf("%s 返回了数据", result.Meta.ToolName)
 		}
 		if len(summary) > 240 {
 			summary = summary[:240] + "..."
@@ -117,7 +127,7 @@ func supplemental(results []toolv2.ToolResult) []casefile.Evidence {
 			Type:       "tool_observation",
 			Source:     "tool:" + result.Meta.ToolName,
 			Strength:   casefile.StrengthWeak,
-			Title:      result.Meta.ToolName + " observation",
+			Title:      result.Meta.ToolName + " 观测结果",
 			Summary:    summary,
 			Detail:     strings.TrimSpace(result.Display),
 			RawExcerpt: strings.TrimSpace(result.Display),
@@ -170,7 +180,7 @@ func fromLogs(ctx context.Context, logs map[string]string, llmClient llm.ClientP
 		}
 		evs = append(evs, casefile.Evidence{
 			ID: id, Type: casefile.TypeLogSignal, Source: "container_log", Signal: item.Signal,
-			Strength: casefile.StrengthModerate, Title: "Log signal in " + item.Container,
+			Strength: casefile.StrengthModerate, Title: "日志信号 - " + item.Container,
 			Summary: item.Summary, Detail: item.RawExcerpt, RawExcerpt: item.RawExcerpt,
 			Refs: []string{"logs:" + item.Container},
 		})
@@ -187,10 +197,10 @@ func heuristicLogs(logs map[string]string) []casefile.Evidence {
 		needles []string
 		title   string
 	}{
-		{"oom", []string{"out of memory", "oom", "killed"}, "Log indicates memory pressure"},
-		{"connection_refused", []string{"connection refused", "connect: connection refused"}, "Log indicates connection refused"},
-		{"panic", []string{"panic:", "fatal error"}, "Log indicates application panic/fatal error"},
-		{"class_not_found", []string{"classnotfoundexception", "no such file or directory"}, "Log indicates missing dependency or file"},
+		{"oom", []string{"out of memory", "oom", "killed"}, "日志指示内存压力"},
+		{"connection_refused", []string{"connection refused", "connect: connection refused"}, "日志指示连接被拒绝"},
+		{"panic", []string{"panic:", "fatal error"}, "日志指示应用 panic/致命错误"},
+		{"class_not_found", []string{"classnotfoundexception", "no such file or directory"}, "日志指示缺少依赖或文件"},
 	}
 	var out []casefile.Evidence
 	idx := 0
@@ -206,7 +216,7 @@ func heuristicLogs(logs map[string]string) []casefile.Evidence {
 				out = append(out, casefile.Evidence{
 					ID: fmt.Sprintf("ev-log-heuristic-%d", idx), Type: casefile.TypeLogSignal,
 					Source: "container_log", Signal: p.signal, Strength: casefile.StrengthModerate,
-					Title: p.title, Summary: p.title + " in " + container,
+					Title: p.title, Summary: p.title + " - " + container,
 					Detail: excerpt, RawExcerpt: excerpt, Refs: []string{"logs:" + container},
 				})
 				break

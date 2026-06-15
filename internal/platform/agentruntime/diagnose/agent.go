@@ -42,7 +42,7 @@ func (a *Agent) Run(ctx context.Context, queryID string, target runtime.Target, 
 		QueryID:  queryID,
 		Result:   markdown,
 		Duration: time.Since(start),
-		Summary:  "diagnosis pipeline finished",
+		Summary:  "诊断流水线完成",
 		Payload:  donePayload,
 	})
 	return rep, markdown, runErr
@@ -51,7 +51,7 @@ func (a *Agent) Run(ctx context.Context, queryID string, target runtime.Target, 
 func (a *Agent) HandleQuery(ctx context.Context, userQuery string, entities types.Entities, queryID string, eventCh chan<- event.Event) (string, error) {
 	ns, pod := resolvePodTarget(entities)
 	if ns == "" || pod == "" {
-		return "", fmt.Errorf("troubleshooting requires namespace and pod in the query context")
+		return "", fmt.Errorf("诊断需要指定命名空间和 Pod")
 	}
 	_, markdown, err := a.Run(ctx, queryID, runtime.Target{
 		Cluster: "", Namespace: ns, Pod: pod,
@@ -74,7 +74,7 @@ func (a *Agent) run(st *runtime.State, profile Profile) (*report.DiagnosisReport
 	}, st.Profile)
 
 	st.Phase = runtime.PhaseCollect
-	st.EmitPhase("collecting baseline pod context", stagePayload(st.Phase, "running", 0))
+	st.EmitPhase("正在收集 Pod 基线上下文", stagePayload(st.Phase, "running", 0))
 	collected, err := collect.Run(st.Ctx, a.k8s, a.llmClient, file, collect.Profile{
 		MaxSupplementalTools: profile.MaxSupplementalTools,
 	}, st)
@@ -82,44 +82,44 @@ func (a *Agent) run(st *runtime.State, profile Profile) (*report.DiagnosisReport
 		st.Fail(err)
 		return nil, "", err
 	}
-	st.EmitPhase("collected pod state, events, and supplemental observations", stagePayload(st.Phase, "completed", 0))
+	st.EmitPhase("已收集 Pod 状态、事件和补充观测", stagePayload(st.Phase, "completed", 0))
 
 	st.Phase = runtime.PhaseEvidence
-	st.EmitPhase("building evidence catalog", stagePayload(st.Phase, "running", 0))
+	st.EmitPhase("正在构建证据目录", stagePayload(st.Phase, "running", 0))
 	evs := evidence.Build(st.Ctx, file, collected, a.llmClient)
 	file.Catalog.Add(evs...)
 	st.Evidence = file.Catalog.All()
-	st.EmitPhase("built evidence catalog", evidencePayload(st.Evidence))
+	st.EmitPhase("已构建证据目录", evidencePayload(st.Evidence))
 
 	st.Phase = runtime.PhaseHypothesis
-	runtime.RecordLLMStart(st, "llm_hypothesis_proposal", "hypothesis", "proposing evidence-grounded hypotheses")
+	runtime.RecordLLMStart(st, "llm_hypothesis_proposal", "hypothesis", "正在提出基于证据的假设")
 	hs := hypothesis.Generate(st.Ctx, a.llmClient, file, st.Evidence, file.Target, collected.Observation)
 	st.Hypotheses = hs
 	st.Emit(event.ToolDone{
 		QueryID: st.QueryID, ToolName: "generate_hypotheses", Step: 1,
-		Summary: fmt.Sprintf("generated %d hypotheses", len(hs)),
+		Summary: fmt.Sprintf("生成了 %d 个假设", len(hs)),
 		Payload: &event.Payload{Kind: event.PayloadKindDiagnosisHypothesis, Data: hs},
 	})
 	st.EmitPhase(fmt.Sprintf("built %d evidence items and %d hypotheses", len(st.Evidence), len(hs)), stagePayload(st.Phase, "completed", len(st.Evidence)))
 
 	st.Phase = runtime.PhaseVerify
-	st.EmitPhase("verifying hypotheses against executable paths", stagePayload(st.Phase, "running", 0))
+	st.EmitPhase("正在验证假设的可执行路径", stagePayload(st.Phase, "running", 0))
 	reg, err := collect.NewReadRegistry(a.k8s)
 	if err != nil {
 		st.Fail(err)
 		return nil, "", err
 	}
 	checks := verify.Run(st.Ctx, toolv2.NewExecutor(reg), reg.Names(), file, hs, a.llmClient, st)
-	st.EmitPhase("verified hypotheses against evidence", stagePayload(st.Phase, "completed", len(st.Evidence)))
+	st.EmitPhase("已验证假设与证据的匹配", stagePayload(st.Phase, "completed", len(st.Evidence)))
 	st.Emit(event.ToolDone{
 		QueryID: st.QueryID, ToolName: "verify_hypotheses", Step: 1,
-		Summary: fmt.Sprintf("verified %d hypotheses", len(checks)),
+		Summary: fmt.Sprintf("验证了 %d 个假设", len(checks)),
 		Payload: &event.Payload{Kind: event.PayloadKindDiagnosisVerification, Data: checks},
 	})
 
 	st.Phase = runtime.PhaseReport
-	st.EmitPhase("composing structured diagnosis report", stagePayload(st.Phase, "running", 0))
-	runtime.RecordLLMStart(st, "llm_root_selection", "report", "selecting strongest supported root cause")
+	st.EmitPhase("正在编写结构化诊断报告", stagePayload(st.Phase, "running", 0))
+	runtime.RecordLLMStart(st, "llm_root_selection", "report", "正在选择最强支持的根因")
 	rep := report.Compose(st.Ctx, a.llmClient, file, hs, checks)
 	if err := report.Validate(*rep); err != nil {
 		st.Fail(err)
@@ -127,16 +127,16 @@ func (a *Agent) run(st *runtime.State, profile Profile) (*report.DiagnosisReport
 	}
 	st.Emit(event.ToolDone{
 		QueryID: st.QueryID, ToolName: "build_report", Step: 1,
-		Summary: "assembled structured diagnosis report",
+		Summary: "已组装结构化诊断报告",
 		Payload: &event.Payload{Kind: event.PayloadKindDiagnosisReport, Data: rep},
 	})
 
 	md := report.ToMarkdown(*rep)
 	st.Markdown = md
-	st.EmitPhase("formatted report to markdown", stagePayload(st.Phase, "completed", len(st.Evidence)))
+	st.EmitPhase("已将报告格式化为 Markdown", stagePayload(st.Phase, "completed", len(st.Evidence)))
 
 	st.Phase = runtime.PhaseDone
-	st.EmitPhase("diagnosis complete", stagePayload(st.Phase, "completed", len(st.Evidence)))
+	st.EmitPhase("诊断完成", stagePayload(st.Phase, "completed", len(st.Evidence)))
 	return rep, md, nil
 }
 

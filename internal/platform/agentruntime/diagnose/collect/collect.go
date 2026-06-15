@@ -120,9 +120,9 @@ func emitBaselineDone(st *runtime.State, target casefile.Target, obs casefile.Ob
 
 func summarizeObservation(obs casefile.Observation) string {
 	if obs.Pod == nil {
-		return "pod observation unavailable"
+		return "Pod 观测不可用"
 	}
-	return fmt.Sprintf("phase=%s events=%d logs=%d", obs.Pod.Status.Phase, len(obs.Events), len(obs.Logs))
+	return fmt.Sprintf("阶段=%s 事件=%d 日志=%d", obs.Pod.Status.Phase, len(obs.Events), len(obs.Logs))
 }
 
 func NewReadRegistry(k8s *cluster.Client) (*toolv2.Registry, error) {

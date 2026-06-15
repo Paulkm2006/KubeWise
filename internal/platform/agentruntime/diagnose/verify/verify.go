@@ -45,10 +45,10 @@ func verifyOne(ctx context.Context, exec *toolv2.Executor, allowed []string, h h
 		if len(h.EvidenceIDs) > 0 {
 			return Result{
 				HypothesisID: h.ID, Status: "supported",
-				Reason: "deterministic evidence sufficient; no additional verification path required",
+				Reason: "确定性证据充分，无需额外验证路径",
 			}
 		}
-		return Result{HypothesisID: h.ID, Status: "uncertain", Reason: "no evidence and no verification path"}
+		return Result{HypothesisID: h.ID, Status: "uncertain", Reason: "无证据且无验证路径"}
 	}
 
 	res := Result{HypothesisID: h.ID, Status: "supported"}
@@ -67,7 +67,7 @@ func verifyOne(ctx context.Context, exec *toolv2.Executor, allowed []string, h h
 			})
 			res.Steps = append(res.Steps, StepResult{Tool: step.Tool, Passed: false, Reason: err.Error()})
 			res.Status = "uncertain"
-			res.Reason = "verification tool failed"
+			res.Reason = "验证工具执行失败"
 			*stepNum++
 			continue
 		}
@@ -86,7 +86,7 @@ func verifyOne(ctx context.Context, exec *toolv2.Executor, allowed []string, h h
 		}
 	}
 	if res.Status == "supported" {
-		res.Reason = "verification path observations matched expectations"
+		res.Reason = "验证路径观测结果符合预期"
 	}
 	return res
 }
@@ -95,26 +95,26 @@ func evaluateStep(output string, step hypothesis.VerifyStep, llmClient llm.Clien
 	lower := strings.ToLower(output)
 	for _, needle := range step.MustContain {
 		if !strings.Contains(lower, strings.ToLower(needle)) {
-			return false, fmt.Sprintf("expected output to contain %q", needle)
+			return false, fmt.Sprintf("期望输出包含 %q", needle)
 		}
 	}
 	if step.LLMJudge && step.Expectation != "" {
 		if llmClient == nil {
 			if output == "" {
-				return false, "expected non-empty tool output for LLM judgment"
+				return false, "期望 LLM 判断有非空工具输出"
 			}
-			return true, "LLM unavailable; accepted non-empty verification output"
+			return true, "LLM 不可用，已接受非空验证输出"
 		}
 		ok, reason, err := llmJudge(ctx, llmClient, output, step.Expectation)
 		if err != nil {
-			return output != "", "LLM judgment failed; accepted non-empty output: " + err.Error()
+			return output != "", "LLM 判断失败，已接受非空输出：" + err.Error()
 		}
 		return ok, reason
 	}
 	if len(step.MustContain) == 0 && output == "" {
-		return false, "verification tool returned empty output"
+		return false, "验证工具返回空输出"
 	}
-	return true, "verification expectations met"
+	return true, "验证期望已满足"
 }
 
 type judgeOutput struct {

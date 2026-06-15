@@ -52,16 +52,16 @@ func Compose(ctx context.Context, llmClient llm.ClientPort, file *casefile.CaseF
 	if !found {
 		return &DiagnosisReport{
 			Target: target, GeneratedAt: time.Now().UTC(),
-			Summary: "Evidence was collected, but no supported root cause candidate was available.",
+			Summary: "已收集证据，但没有支持的根因候选。" ,
 			Verdict: VerdictInconclusive,
 			RootCause: RootCause{
-				Category: "unknown", Title: "Inconclusive diagnosis",
+				Category: "unknown", Title: "诊断无法确定",
 				ConfidenceScore: 0.2, ConfidenceLabel: "low",
-				Summary: "No supported root cause candidate was produced from collected and verified evidence.",
+				Summary: "根据收集并验证的证据，未产生支持的根因候选。" ,
 			},
 			Evidence: evidence, Hypotheses: reportHypotheses,
-			Actions:     []Action{{Priority: "p2", Description: "Review collected evidence and rerun diagnosis with additional evidence."}},
-			Impact:      Impact{Severity: "unknown", Description: "Impact could not be determined from collected evidence."},
+			Actions:     []Action{{Priority: "p2", Description: "审查已收集的证据，添加更多证据后重新运行诊断。" }},
+			Impact:      Impact{Severity: "unknown", Description: "无法根据已收集的证据确定影响。" },
 			Limitations: limitations, Enrichment: enrichment,
 		}
 	}
@@ -72,7 +72,7 @@ func Compose(ctx context.Context, llmClient llm.ClientPort, file *casefile.CaseF
 	score := confidenceScore(selected, checks, strength)
 	return &DiagnosisReport{
 		Target: target, GeneratedAt: time.Now().UTC(),
-		Summary: fmt.Sprintf("Diagnosis selected %s after evidence collection and verification.", selected.Title),
+		Summary: fmt.Sprintf("诊断在证据收集和验证后选择：%s", selected.Title),
 		Verdict: verdictFor(score),
 		RootCause: RootCause{
 			Category: selected.Category, Title: selected.Title,
@@ -81,7 +81,7 @@ func Compose(ctx context.Context, llmClient llm.ClientPort, file *casefile.CaseF
 		},
 		Evidence: evidence, Hypotheses: reportHypotheses,
 		Actions:     actionsFor(selected),
-		Impact:      Impact{Severity: impactSeverity(selected.Category), Description: "target pod is unhealthy and requires intervention"},
+		Impact:      Impact{Severity: impactSeverity(selected.Category), Description: "目标 Pod 不健康，需要干预"},
 		Limitations: limitations, Enrichment: enrichment,
 	}
 }
@@ -153,15 +153,15 @@ func hasStrongEvidence(h hypothesis.Hypothesis, strength map[string]string) bool
 func actionsFor(h hypothesis.Hypothesis) []Action {
 	switch h.Category {
 	case "image_pull":
-		return []Action{{Priority: "p1", Description: "Verify the image reference, registry reachability, and image pull credentials for the affected container."}}
+		return []Action{{Priority: "p1", Description: "检查受影响容器的镜像引用、仓库可达性和镜像拉取凭证。" }}
 	case "oom_killed":
-		return []Action{{Priority: "p1", Description: "Inspect container memory usage and adjust memory limits or application memory behavior."}}
+		return []Action{{Priority: "p1", Description: "检查容器内存使用情况，调整内存限制或应用内存行为。" }}
 	case "scheduling":
-		return []Action{{Priority: "p1", Description: "Review pod resource requests, node capacity, taints, tolerations, affinity, and scheduling constraints."}}
+		return []Action{{Priority: "p1", Description: "审查 Pod 资源请求、节点容量、污点、容忍度、亲和性和调度约束。" }}
 	case "volume_mount":
-		return []Action{{Priority: "p1", Description: "Inspect referenced volumes, secrets, config maps, PVCs, and mount events."}}
+		return []Action{{Priority: "p1", Description: "检查引用的卷、Secret、ConfigMap、PVC 和挂载事件。" }}
 	default:
-		return []Action{{Priority: "p2", Description: "Review the cited evidence and remediate the selected root cause candidate."}}
+		return []Action{{Priority: "p2", Description: "审查引用的证据，处理选定的根因候选。" }}
 	}
 }
 
@@ -185,7 +185,7 @@ func BuildEnrichment(file *casefile.CaseFile) EnrichmentInfo {
 	return EnrichmentInfo{
 		Status:        EnrichmentDegraded,
 		DegradedSteps: steps,
-		Message:       "Some AI analysis steps were temporarily unavailable. This report used collected cluster evidence and deterministic fallback logic. Affected steps: " + strings.Join(steps, ", ") + ".",
+		Message:       "部分 AI 分析步骤暂时不可用。本报告使用已收集的集群证据和确定性回退逻辑。受影响的步骤：" + strings.Join(steps, "，") + "。" ,
 	}
 }
 
