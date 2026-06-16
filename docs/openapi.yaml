@@ -1,143 +1,189 @@
 openapi: 3.0.3
 info:
   title: KubeWise API
-  description: Kubernetes intelligent operations agent system REST API
-  version: 1.0.0
+  description: |
+    KubeWise HTTP API 面向 Kubernetes 智能运维场景，提供自然语言问答、SSE 流式交互、
+    会话管理、集群观测、故障诊断、集群安全审计和活动流查询能力。
 
+    所有错误响应默认使用统一的 `ErrorResponse` 结构。SSE 接口会保持长连接并持续推送事件，
+    客户端应根据事件名解析 `data` 中的 JSON 内容。
+  version: 1.0.0
 servers:
   - url: http://localhost:8080
-    description: Local development server
+    description: 本地开发服务
+tags:
+  - name: System
+    description: 服务健康和基础入口
+  - name: Chat
+    description: 自然语言问答和人机协同交互
+  - name: Sessions
+    description: 对话会话管理
+  - name: Observability
+    description: Kubernetes 集群观测数据
+  - name: Diagnoses
+    description: Pod 故障诊断任务
+  - name: Audits
+    description: 集群安全审计任务
+  - name: Activities
+    description: 系统活动时间线
 
 paths:
+  /:
+    get:
+      tags: [System]
+      summary: 服务入口
+      description: 返回一段纯文本，用于快速确认 KubeWise HTTP 服务已经启动并可访问。
+      operationId: root
+      responses:
+        "200":
+          description: 服务已启动，响应体为纯文本状态信息。
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: 服务运行状态文本。
+                example: KubeWise — server running
+
   /health:
     get:
-      summary: Health check
+      tags: [System]
+      summary: 健康检查
+      description: 返回服务健康状态和版本标识，通常用于负载均衡、部署探针或监控系统存活检测。
       operationId: health
       responses:
         "200":
-          description: Service is healthy
+          description: 服务正常运行。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
 
-  /api/v1/chat:
+  /api/v1/chats:
     post:
-      summary: Synchronous chat query
-      description: Send a natural language query and receive the final result synchronously.
+      tags: [Chat]
+      summary: 同步问答
+      description: |
+        提交一个自然语言运维问题，由 KubeWise Agent 同步处理并在完成后一次性返回最终结果。
+        该接口会阻塞到 Agent 处理结束，适合命令行、简单集成或无需实时过程展示的场景。
       operationId: chatSync
       requestBody:
         required: true
+        description: 同步问答请求体，至少需要提供 `query`。
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/ChatRequest"
       responses:
         "200":
-          description: Query result
+          description: 查询成功完成，返回本次查询 ID 和最终文本结果。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatResponse"
         "400":
-          description: Invalid request
+          description: 请求体无法解析，或缺少必填的自然语言问题。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
-          description: Query failed
+          description: Agent 执行失败、模型调用失败或后端运行时出现未预期错误。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/v1/chat/stream:
+  /api/v1/chats/stream:
     get:
-      summary: SSE streaming chat query
+      tags: [Chat]
+      summary: 流式问答
       description: |
-        Send a natural language query and receive real-time Server-Sent Events as the agent processes it.
-        The stream ends with a `stream_done` or `stream_err` event.
+        通过 Server-Sent Events 实时接收 Agent 处理过程，包括阶段变化、工具调用、
+        模型增量文本、人机协同请求、完成事件或错误事件。
+
+        正常情况下流会以 `stream_done` 结束；失败时可能发送 `stream_err`。如果 Agent 需要用户确认，
+        服务会发送 `interaction_request`，客户端应调用 `/api/v1/chats/interactions` 提交回答。
       operationId: chatStream
       parameters:
-        - name: query
-          in: query
-          required: true
-          schema:
-            type: string
-          description: The natural language query
+        - $ref: "#/components/parameters/QueryParam"
+        - $ref: "#/components/parameters/QueryIDParam"
+        - $ref: "#/components/parameters/SessionIDQueryParam"
+        - $ref: "#/components/parameters/ClusterQueryParam"
       responses:
         "200":
-          description: SSE event stream
+          description: SSE 连接建立成功，后续响应体持续推送问答事件流。
           content:
             text/event-stream:
               schema:
                 type: string
                 description: |
-                  SSE stream. Each event has:
-                  ```
-                  event: <type>
-                  data: <json>
-                  ```
+                  SSE 文本流。每条消息包含 `event: <事件名>` 和 `data: <JSON>`。
 
-                  Event types and their data shapes:
-
-                  - `phase` → `{"query_id":"...","phase":"thinking"}`
-                  - `agent_start` → `{"query_id":"...","agent_name":"Query Agent"}`
-                  - `agent_done` → `{"query_id":"...","duration_ns":123,"in_tokens":10,"out_tokens":50}`
-                  - `tool_call` → `{"query_id":"...","tool_name":"get_pods","step":1}`
-                  - `tool_done` → `{"query_id":"...","tool_name":"get_pods","step":1,"elapsed_ns":500000000}`
-                  - `tool_fail` → `{"query_id":"...","tool_name":"get_pods","step":1,"elapsed_ns":500000000,"error":"timeout"}`
-                  - `llm_text_delta` → `{"query_id":"...","delta":"思考中"}`
-                  - `supervisor` → `{"query_id":"...","reason":"loop detected","decision":"interrupt","detail":"..."}`
-                  - `interaction_request` → see InteractionRequestData schema below
-                  - `stream_done` → `{"query_id":"...","result":"..."}`
-                  - `stream_err` → `{"query_id":"...","error":"..."}`
+                  常见事件：
+                  - `phase`：处理阶段变化。
+                  - `agent_start` / `agent_done`：Agent 开始或完成。
+                  - `tool_call` / `tool_done` / `tool_fail`：工具调用生命周期。
+                  - `llm_text_delta`：模型增量文本。
+                  - `supervisor`：监督器拦截、降级或中断决策。
+                  - `interaction_request`：需要用户输入或确认。
+                  - `stream_done`：流式问答正常结束。
+                  - `stream_err`：流式问答失败。
         "400":
-          description: Missing query parameter
+          description: 缺少必填的 `query` 查询参数。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 当前 HTTP 响应不支持流式输出，或初始化 SSE 写入器失败。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /api/v1/chat/interaction:
+  /api/v1/chats/interactions:
     post:
-      summary: Answer human-in-the-loop interaction
+      tags: [Chat]
+      summary: 提交交互回答
       description: |
-        Respond to an `interaction_request` SSE event. The agent is blocked until this endpoint is called.
-        Payload shape depends on `kind` in the SSE event (e.g. `operation_step`, `chart_select`, `deploy_confirm`).
+        当流式问答发送 `interaction_request` 事件后，客户端通过该接口提交用户回答，
+        用于解除 Agent 的等待状态。`payload` 的结构由事件中的 `kind` 决定，例如操作步骤确认、
+        Helm Chart 选择或部署执行确认。
       operationId: chatInteraction
       requestBody:
         required: true
+        description: 人机协同回答请求体。
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/InteractionAnswerRequest"
       responses:
         "200":
-          description: Response accepted
+          description: 交互回答已接收，Agent 可以继续执行。
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
+                $ref: "#/components/schemas/StatusOKResponse"
         "400":
-          description: Invalid request
+          description: 请求体无法解析，或缺少必填的 `interaction_id`。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: interaction_id not found or already responded
+          description: 指定的交互 ID 不存在，通常表示该交互已超时、已被回答或所属流已结束。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Agent no longer waiting for interaction
+          description: Agent 已不再等待该交互回答，提交内容未被消费。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 处理交互回答时发生未预期错误。
           content:
             application/json:
               schema:
@@ -145,316 +191,1776 @@ paths:
 
   /api/v1/sessions:
     get:
-      summary: List sessions
+      tags: [Sessions]
+      summary: 会话列表
+      description: 返回最近的对话会话摘要，当前服务固定读取最近 50 个会话并按存储层顺序返回。
       operationId: listSessions
       responses:
         "200":
-          description: List of sessions
+          description: 会话摘要列表读取成功。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SessionListResponse"
+        "500":
+          description: 会话存储读取失败。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     post:
-      summary: Create session
+      tags: [Sessions]
+      summary: 创建会话
+      description: 创建一个新的对话会话。请求体可省略；未提供标题时服务会创建空标题会话。
       operationId: createSession
       requestBody:
+        required: false
+        description: 可选的新会话信息。
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateSessionRequest"
       responses:
         "201":
-          description: Session created
+          description: 会话创建成功，返回新会话摘要。
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SessionResponse"
+                $ref: "#/components/schemas/SessionSummary"
+        "500":
+          description: 会话存储写入失败。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/sessions/{id}:
     get:
-      summary: Get session detail
+      tags: [Sessions]
+      summary: 会话详情
+      description: 根据会话 ID 获取会话详情和消息列表，用于恢复历史对话或展示完整上下文。
       operationId: getSession
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/SessionIDPathParam"
       responses:
         "200":
-          description: Session detail
+          description: 会话详情读取成功。
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SessionDetailResponse"
+                $ref: "#/components/schemas/SessionDetail"
         "404":
-          description: Session not found
+          description: 指定会话不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 会话存储读取失败。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      summary: Delete session
+      tags: [Sessions]
+      summary: 删除会话
+      description: 删除指定 ID 的对话会话及其持久化记录。删除成功后不可通过详情接口恢复。
       operationId: deleteSession
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/SessionIDPathParam"
       responses:
         "200":
-          description: Session deleted
+          description: 会话删除成功。
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: deleted
+                $ref: "#/components/schemas/DeleteResponse"
         "404":
-          description: Session not found
+          description: 指定会话不存在，或删除底层文件失败。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/clusters:
+    get:
+      tags: [Observability]
+      summary: 集群列表
+      description: 返回 KubeWise 当前已知 Kubernetes 集群的概览，包括健康状态、Pod 就绪数量、节点数、命名空间数和版本信息。
+      operationId: listClusters
+      responses:
+        "200":
+          description: 集群概览列表读取成功；未配置观测数据源时返回空数组。
+          content:
+            application/json:
+              schema:
+                type: array
+                description: 集群概览数组。
+                items:
+                  $ref: "#/components/schemas/ClusterSummary"
+
+  /api/v1/clusters/{name}/issues:
+    get:
+      tags: [Observability]
+      summary: 集群问题列表
+      description: 扫描指定集群中的 Pod 状态，返回非 Running/Succeeded Pod 及其重启次数、严重程度和存活时间。
+      operationId: listClusterIssues
+      parameters:
+        - $ref: "#/components/parameters/ClusterNamePathParam"
+      responses:
+        "200":
+          description: 集群问题列表读取成功。
+          content:
+            application/json:
+              schema:
+                type: array
+                description: Pod 问题数组。
+                items:
+                  $ref: "#/components/schemas/ClusterIssue"
+        "400":
+          description: 缺少集群名称。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 指定集群未注册或无法找到。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: 集群离线，或集群网关/观测读取器不可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 读取 Kubernetes Pod 列表时发生未预期错误。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/clusters/{name}/events:
+    get:
+      tags: [Observability]
+      summary: 集群事件列表
+      description: 返回指定集群全部命名空间下的 Kubernetes Event，适合用于观测面板、故障上下文和诊断前置材料。
+      operationId: listClusterEvents
+      parameters:
+        - $ref: "#/components/parameters/ClusterNamePathParam"
+      responses:
+        "200":
+          description: Kubernetes Event 列表读取成功。
+          content:
+            application/json:
+              schema:
+                type: array
+                description: Kubernetes Event 数组，字段来自 Kubernetes core/v1 Event。
+                items:
+                  $ref: "#/components/schemas/KubernetesEvent"
+        "400":
+          description: 缺少集群名称。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 指定集群未注册或无法找到。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: 集群离线，或集群网关/观测读取器不可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 读取 Kubernetes Event 时发生未预期错误。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/diagnoses:
+    post:
+      tags: [Diagnoses]
+      summary: 启动诊断
+      description: 针对指定集群、命名空间和 Pod 启动异步故障诊断任务。接口返回任务 ID 后，客户端可轮询详情或订阅事件流获取进度。
+      operationId: startDiagnosis
+      requestBody:
+        required: true
+        description: 诊断目标。
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiagnosisStartRequest"
+      responses:
+        "202":
+          description: 诊断任务已创建并开始运行。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagnosisStartResponse"
+        "400":
+          description: 请求体无法解析，或缺少 `cluster`、`namespace`、`pod` 中任一必填字段。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: 诊断服务依赖不可用，例如数据库或 Agent 运行时未就绪。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 创建诊断任务时发生未预期错误。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      tags: [Diagnoses]
+      summary: 诊断列表
+      description: 分页查询历史诊断任务，返回任务摘要数组和总数。`limit` 超出 1 到 100 范围时服务使用默认值 20。
+      operationId: listDiagnoses
+      parameters:
+        - $ref: "#/components/parameters/LimitParam"
+        - $ref: "#/components/parameters/OffsetParam"
+      responses:
+        "200":
+          description: 诊断任务列表读取成功。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagnosisListResponse"
+        "503":
+          description: 诊断服务不可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 查询诊断列表时发生未预期错误。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/diagnoses/latest:
+    get:
+      tags: [Diagnoses]
+      summary: 最新诊断
+      description: 根据集群、命名空间和 Pod 查询最近一次诊断结果及事件列表，用于页面刷新后恢复最新诊断状态。
+      operationId: getLatestDiagnosis
+      parameters:
+        - $ref: "#/components/parameters/ClusterQueryRequiredParam"
+        - $ref: "#/components/parameters/NamespaceQueryParam"
+        - $ref: "#/components/parameters/PodQueryParam"
+      responses:
+        "200":
+          description: 最新诊断读取成功。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagnosisStatusResponse"
+        "400":
+          description: 缺少 `cluster`、`namespace` 或 `pod` 查询参数。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 指定目标没有历史诊断记录。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: 诊断服务不可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 查询最新诊断时发生未预期错误。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/diagnoses/{id}:
+    get:
+      tags: [Diagnoses]
+      summary: 诊断详情
+      description: 根据诊断 ID 获取任务状态、目标对象、已记录事件以及最终诊断结果。任务完成前 `result` 可能为空。
+      operationId: getDiagnosis
+      parameters:
+        - $ref: "#/components/parameters/DiagnosisIDPathParam"
+      responses:
+        "200":
+          description: 诊断详情读取成功。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagnosisStatusResponse"
+        "404":
+          description: 指定诊断任务不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/diagnoses/{id}/cancel:
+    post:
+      tags: [Diagnoses]
+      summary: 取消诊断
+      description: 请求取消指定诊断任务。只有仍可取消的运行中任务会成功；已完成、已失败或不可取消状态会返回冲突。
+      operationId: cancelDiagnosis
+      parameters:
+        - $ref: "#/components/parameters/DiagnosisIDPathParam"
+      responses:
+        "200":
+          description: 诊断任务已取消。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagnosisCancelResponse"
+        "400":
+          description: 缺少诊断 ID。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 指定诊断任务不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: 诊断任务当前状态不允许取消。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: 诊断服务不可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/diagnoses/{id}/events:
+    get:
+      tags: [Diagnoses]
+      summary: 诊断事件流
+      description: |
+        订阅指定诊断任务的 SSE 事件流。服务每 500ms 查询一次新事件，并使用事件序号作为 SSE `id`。
+        客户端可通过 `since` 查询参数或 `Last-Event-ID` 请求头断点续传。任务进入终态且事件发送完成后，
+        服务发送 `stream_complete` 事件并关闭连接。
+      operationId: streamDiagnosisEvents
+      parameters:
+        - $ref: "#/components/parameters/DiagnosisIDPathParam"
+        - $ref: "#/components/parameters/SinceParam"
+        - $ref: "#/components/parameters/LastEventIDHeader"
+      responses:
+        "200":
+          description: SSE 连接建立成功，后续推送 `diagnosis_event` 和 `stream_complete` 事件。
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: 诊断 SSE 文本流，`diagnosis_event` 的 data 为 `DiagnosisEventRecord`。
+        "400":
+          description: 缺少诊断 ID。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 当前 HTTP 响应不支持流式输出，或初始化 SSE 写入器失败。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/audits:
+    post:
+      tags: [Audits]
+      summary: 启动审计
+      description: 针对指定 Kubernetes 集群启动异步安全审计任务，检查 RBAC、Pod 安全、网络策略和镜像安全等风险。
+      operationId: startAudit
+      requestBody:
+        required: true
+        description: 审计目标集群。
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuditStartRequest"
+      responses:
+        "202":
+          description: 审计任务已创建并开始运行。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStartResponse"
+        "400":
+          description: 请求体无法解析，或缺少必填的 `cluster` 字段。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: 审计服务依赖不可用，例如数据库或 Agent 运行时未就绪。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 创建审计任务时发生未预期错误。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      tags: [Audits]
+      summary: 审计列表
+      description: 分页查询历史审计任务，返回审计摘要数组和总数。`limit` 超出 1 到 100 范围时服务使用默认值 20。
+      operationId: listAudits
+      parameters:
+        - $ref: "#/components/parameters/LimitParam"
+        - $ref: "#/components/parameters/OffsetParam"
+      responses:
+        "200":
+          description: 审计任务列表读取成功。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditListResponse"
+        "503":
+          description: 审计服务不可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 查询审计列表时发生未预期错误。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/audits/latest:
+    get:
+      tags: [Audits]
+      summary: 最新审计
+      description: 根据集群名称查询最近一次审计任务详情和事件列表，用于恢复集群安全审计页面状态。
+      operationId: getLatestAudit
+      parameters:
+        - $ref: "#/components/parameters/ClusterQueryRequiredParam"
+      responses:
+        "200":
+          description: 最新审计读取成功。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStatusResponse"
+        "400":
+          description: 缺少 `cluster` 查询参数。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 指定集群没有历史审计记录。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: 审计服务不可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 查询最新审计时发生未预期错误。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/audits/{id}:
+    get:
+      tags: [Audits]
+      summary: 审计详情
+      description: 根据审计 ID 获取任务状态、目标集群、已记录事件、最终审计结果和失败信息。任务完成前 `result` 可能为空。
+      operationId: getAudit
+      parameters:
+        - $ref: "#/components/parameters/AuditIDPathParam"
+      responses:
+        "200":
+          description: 审计详情读取成功。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditStatusResponse"
+        "404":
+          description: 指定审计任务不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/audits/{id}/cancel:
+    post:
+      tags: [Audits]
+      summary: 取消审计
+      description: 请求取消指定审计任务。只有仍可取消的运行中任务会成功；已完成、已失败或不可取消状态会返回冲突。
+      operationId: cancelAudit
+      parameters:
+        - $ref: "#/components/parameters/AuditIDPathParam"
+      responses:
+        "200":
+          description: 审计任务已取消。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditCancelResponse"
+        "400":
+          description: 缺少审计 ID。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: 指定审计任务不存在。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: 审计任务当前状态不允许取消。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: 审计服务不可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/audits/{id}/events:
+    get:
+      tags: [Audits]
+      summary: 审计事件流
+      description: |
+        订阅指定审计任务的 SSE 事件流。服务每 500ms 查询一次新事件，并使用事件序号作为 SSE `id`。
+        客户端可通过 `since` 查询参数或 `Last-Event-ID` 请求头断点续传。任务进入终态且事件发送完成后，
+        服务发送 `stream_complete` 事件并关闭连接。
+      operationId: streamAuditEvents
+      parameters:
+        - $ref: "#/components/parameters/AuditIDPathParam"
+        - $ref: "#/components/parameters/SinceParam"
+        - $ref: "#/components/parameters/LastEventIDHeader"
+      responses:
+        "200":
+          description: SSE 连接建立成功，后续推送 `audit_event` 和 `stream_complete` 事件。
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: 审计 SSE 文本流，`audit_event` 的 data 为 `AuditEventRecord`。
+        "400":
+          description: 缺少审计 ID。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 当前 HTTP 响应不支持流式输出，或初始化 SSE 写入器失败。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/activities:
+    get:
+      tags: [Activities]
+      summary: 活动列表
+      description: 分页查询系统活动流，返回诊断、集群切换和系统事件等时间线记录。非法分页参数会被忽略并使用默认值。
+      operationId: listActivities
+      parameters:
+        - $ref: "#/components/parameters/ActivityLimitParam"
+        - $ref: "#/components/parameters/ActivityOffsetParam"
+      responses:
+        "200":
+          description: 活动列表读取成功。
+          content:
+            application/json:
+              schema:
+                type: array
+                description: 活动记录数组。
+                items:
+                  $ref: "#/components/schemas/Activity"
+        "503":
+          description: 活动流服务或存储不可用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: 查询活动流时发生未预期错误。
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
 components:
+  parameters:
+    QueryParam:
+      name: query
+      in: query
+      required: true
+      description: 用户输入的自然语言问题，需要 URL 编码。
+      schema:
+        type: string
+      example: 列出 default 命名空间下异常的 Pod
+    QueryIDParam:
+      name: query_id
+      in: query
+      required: false
+      description: 客户端提供的查询 ID；未提供时服务端自动生成。
+      schema:
+        type: string
+      example: q-web-001
+    SessionIDQueryParam:
+      name: session_id
+      in: query
+      required: false
+      description: 关联的会话 ID，用于客户端维持对话上下文。
+      schema:
+        type: string
+      example: 18b84d8c
+    SessionIDPathParam:
+      name: id
+      in: path
+      required: true
+      description: 会话 ID。
+      schema:
+        type: string
+      example: 18b84d8c
+    ClusterQueryParam:
+      name: cluster
+      in: query
+      required: false
+      description: 目标集群名称；提供后服务会把集群上下文注入 Agent 查询。
+      schema:
+        type: string
+      example: kind-a
+    ClusterQueryRequiredParam:
+      name: cluster
+      in: query
+      required: true
+      description: 目标 Kubernetes 集群名称。
+      schema:
+        type: string
+      example: kind-a
+    ClusterNamePathParam:
+      name: name
+      in: path
+      required: true
+      description: 目标 Kubernetes 集群名称或上下文名称。
+      schema:
+        type: string
+      example: kind-a
+    NamespaceQueryParam:
+      name: namespace
+      in: query
+      required: true
+      description: Pod 所在 Kubernetes 命名空间。
+      schema:
+        type: string
+      example: default
+    PodQueryParam:
+      name: pod
+      in: query
+      required: true
+      description: 目标 Pod 名称。
+      schema:
+        type: string
+      example: nginx-7c79c4bf97-abcde
+    DiagnosisIDPathParam:
+      name: id
+      in: path
+      required: true
+      description: 诊断任务 ID。
+      schema:
+        type: string
+      example: diag_01HX7Z6QP3
+    AuditIDPathParam:
+      name: id
+      in: path
+      required: true
+      description: 审计任务 ID。
+      schema:
+        type: string
+      example: audit_01HX7Z6QP3
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      description: 每页返回数量；有效范围为 1 到 100，超出范围时服务使用默认值 20。
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      example: 20
+    OffsetParam:
+      name: offset
+      in: query
+      required: false
+      description: 分页偏移量，从 0 开始。
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      example: 0
+    ActivityLimitParam:
+      name: limit
+      in: query
+      required: false
+      description: 活动流每页返回数量；非法值会被忽略并使用默认值 20。
+      schema:
+        type: integer
+        minimum: 1
+        default: 20
+      example: 20
+    ActivityOffsetParam:
+      name: offset
+      in: query
+      required: false
+      description: 活动流分页偏移量；非法值会被忽略并使用默认值 0。
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      example: 0
+    SinceParam:
+      name: since
+      in: query
+      required: false
+      description: 只返回序号大于该值的事件，用于 SSE 断点续传。
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      example: 12
+    LastEventIDHeader:
+      name: Last-Event-ID
+      in: header
+      required: false
+      description: SSE 客户端自动携带的最后事件 ID；服务会从下一个事件继续推送。
+      schema:
+        type: string
+      example: "12"
+
   schemas:
     HealthResponse:
       type: object
+      description: 服务健康检查响应。
       properties:
         status:
           type: string
+          description: 服务健康状态。
           example: ok
         version:
           type: string
+          description: 服务版本标识。
           example: dev
+
+    StatusOKResponse:
+      type: object
+      description: 通用成功状态响应。
+      properties:
+        status:
+          type: string
+          description: 操作状态。
+          example: ok
+
+    DeleteResponse:
+      type: object
+      description: 删除成功响应。
+      properties:
+        status:
+          type: string
+          description: 删除操作状态。
+          example: deleted
+
+    ErrorResponse:
+      type: object
+      description: 统一错误响应。
+      properties:
+        error:
+          type: string
+          description: 简短错误信息，适合直接展示或用于日志定位。
+          example: invalid request
+        detail:
+          type: string
+          description: 可选的详细错误信息，通常包含底层异常内容。
+          example: unexpected EOF
 
     ChatRequest:
       type: object
-      required:
-        - query
+      description: 同步问答请求。
+      required: [query]
       properties:
         query:
           type: string
-          description: Natural language query
-          example: "列出所有命名空间"
+          description: 用户输入的自然语言运维问题。
+          example: 列出 default 命名空间下异常的 Pod
         query_id:
           type: string
-          description: Optional client-supplied query ID
+          description: 可选的客户端查询 ID；未提供时服务端自动生成。
+          example: q-web-001
+        session_id:
+          type: string
+          description: 可选的会话 ID，用于客户端把问答关联到已有会话。
+          example: 18b84d8c
+        cluster:
+          type: string
+          description: 可选的目标集群名称；提供后 Agent 会在该集群上下文中处理问题。
+          example: kind-a
 
     ChatResponse:
       type: object
+      description: 同步问答响应。
       properties:
         query_id:
           type: string
+          description: 本次查询 ID。
+          example: q-web-001
         result:
           type: string
+          description: Agent 生成的最终文本结果。
+          example: default 命名空间中发现 1 个异常 Pod：nginx-xxx 处于 CrashLoopBackOff。
 
     InteractionAnswerRequest:
       type: object
-      required:
-        - interaction_id
+      description: 人机协同回答请求。
+      required: [interaction_id]
       properties:
         interaction_id:
           type: string
-          description: ID from the interaction_request SSE event
+          description: "`interaction_request` SSE 事件中返回的交互 ID。"
+          example: 550e8400-e29b-41d4-a716-446655440000
         payload:
           oneOf:
             - $ref: "#/components/schemas/OperationStepPayload"
             - $ref: "#/components/schemas/ChartSelectPayload"
             - $ref: "#/components/schemas/DeployConfirmPayload"
-          description: |
-            Kind-specific JSON body:
-
-            - `operation_step` → `{"confirmed":true}` or `{"confirmed":false,"correction":"改成3个副本"}`
-            - `chart_select` → `{"cancelled":true}` or `{"use_manual_chart":false,"candidate_index":0}`
-            - `deploy_confirm` → `{"action":"execute"}` or `{"action":"cancel"}` or `{"action":"execute","values":"...","correction":"..."}`
-
-    CreateSessionRequest:
-      type: object
-      properties:
-        title:
-          type: string
-
-    SessionResponse:
-      type: object
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        message_count:
-          type: integer
-
-    SessionDetailResponse:
-      type: object
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        messages:
-          type: array
-          items:
-            $ref: "#/components/schemas/Message"
-
-    SessionListResponse:
-      type: object
-      properties:
-        sessions:
-          type: array
-          items:
-            $ref: "#/components/schemas/SessionResponse"
-
-    Message:
-      type: object
-      properties:
-        role:
-          type: string
-          enum: [user, assistant]
-        content:
-          type: string
-        timestamp:
-          type: string
-          format: date-time
-
-    ErrorResponse:
-      type: object
-      properties:
-        error:
-          type: string
-        detail:
-          type: string
-
-    # --- SSE Event Data Schemas ---
+          description: 根据交互类型变化的回答内容；为空时服务按空对象处理。
 
     InteractionRequestData:
       type: object
+      description: "`interaction_request` SSE 事件数据。"
       properties:
-        query_id:
-          type: string
         interaction_id:
           type: string
+          description: 本次交互 ID，提交回答时必须带回。
+        query_id:
+          type: string
+          description: 所属查询 ID。
         kind:
           type: string
-          enum: [operation_step, chart_select, deploy_confirm]
+          description: 交互类型，决定 `payload` 和回答结构。
+          enum: [operation_step, chart_select, deploy_confirm, unknown]
         payload:
           type: object
-          description: Opaque JSON; see kind-specific schemas
+          description: 交互展示所需的上下文数据，具体结构由 `kind` 决定。
+          additionalProperties: true
         total_steps:
           type: integer
-          description: Only for operation_step
+          description: 操作步骤总数；仅 `operation_step` 类型可能出现。
 
     OperationStepPayload:
       type: object
+      description: 操作步骤确认回答。
       properties:
         confirmed:
           type: boolean
+          description: 是否确认执行当前操作步骤。
+          example: true
         correction:
           type: string
+          description: 用户拒绝或修正时提供的补充说明。
+          example: 先不要删除资源，改为查看日志。
 
     ChartSelectPayload:
       type: object
+      description: Helm Chart 选择回答。
       properties:
         cancelled:
           type: boolean
+          description: 是否取消 Chart 选择流程。
+          example: false
         use_manual_chart:
           type: boolean
+          description: 是否使用手动填写的 Chart 信息。
+          example: false
         candidate_index:
           type: integer
+          description: 被选中的候选 Chart 下标，从 0 开始。
+          example: 0
+        manual_repo_url:
+          type: string
+          description: 手动 Chart 仓库地址，仅使用手动 Chart 时填写。
+          example: https://charts.bitnami.com/bitnami
+        manual_chart_name:
+          type: string
+          description: 手动 Chart 名称，仅使用手动 Chart 时填写。
+          example: nginx
 
     DeployConfirmPayload:
       type: object
+      description: 部署执行确认回答。
       properties:
         action:
           type: string
+          description: 部署决策，`execute` 表示执行，`cancel` 表示取消。
           enum: [execute, cancel]
+          example: execute
         values:
           type: string
+          description: 用户调整后的 Helm values YAML 内容。
         correction:
           type: string
+          description: 用户对部署计划的修正说明。
 
-    DetailPayload:
+    CreateSessionRequest:
       type: object
+      description: 创建会话请求。
       properties:
-        kind:
+        title:
           type: string
-        name:
-          type: string
-        namespace:
-          type: string
-        status:
-          type: object
-          additionalProperties:
-            type: string
-        containers:
-          type: array
-          items:
-            $ref: "#/components/schemas/ContainerInfo"
-        conditions:
-          type: array
-          items:
-            $ref: "#/components/schemas/ConditionInfo"
-        events:
-          type: array
-          items:
-            $ref: "#/components/schemas/EventInfo"
-        recent_logs:
-          type: string
-        labels:
-          type: object
-          additionalProperties:
-            type: string
+          description: 会话标题；为空时由后续消息或客户端自行维护展示。
+          example: 排查 default 命名空间异常
 
-    ContainerInfo:
+    SessionSummary:
       type: object
+      description: 会话摘要。
       properties:
-        name:
+        id:
           type: string
-        image:
+          description: 会话 ID。
+          example: 18b84d8c
+        title:
           type: string
-        ready:
-          type: boolean
-        restart_count:
+          description: 会话标题。
+          example: 排查 default 命名空间异常
+        created_at:
+          type: string
+          format: date-time
+          description: 会话创建时间。
+        updated_at:
+          type: string
+          format: date-time
+          description: 会话最近更新时间。
+        message_count:
           type: integer
-        state:
-          type: string
+          description: 会话内消息数量。
+          example: 4
 
-    ConditionInfo:
+    SessionListResponse:
       type: object
+      description: 会话列表响应。
       properties:
-        type:
-          type: string
-        status:
-          type: string
-        reason:
-          type: string
-        message:
-          type: string
+        sessions:
+          type: array
+          description: 会话摘要数组。
+          items:
+            $ref: "#/components/schemas/SessionSummary"
 
-    EventInfo:
+    SessionDetail:
       type: object
+      description: 会话详情。
       properties:
-        type:
+        id:
           type: string
-        reason:
+          description: 会话 ID。
+        title:
           type: string
-        message:
+          description: 会话标题。
+        created_at:
           type: string
+          format: date-time
+          description: 会话创建时间。
+        updated_at:
+          type: string
+          format: date-time
+          description: 会话最近更新时间。
+        messages:
+          type: array
+          description: 会话消息列表。
+          items:
+            $ref: "#/components/schemas/SessionMessage"
+
+    SessionMessage:
+      type: object
+      description: 会话消息。
+      properties:
+        role:
+          type: string
+          description: 消息角色。
+          enum: [user, assistant]
+          example: user
+        content:
+          type: string
+          description: 消息文本内容。
+          example: 帮我排查 nginx Pod 为什么重启。
         timestamp:
           type: string
+          format: date-time
+          description: 消息创建时间。
+
+    ClusterSummary:
+      type: object
+      description: Kubernetes 集群概览。
+      properties:
+        id:
+          type: string
+          description: 集群唯一标识。
+        name:
+          type: string
+          description: 集群名称或 kubeconfig context 名称。
+          example: kind-a
+        health:
+          type: string
+          description: 集群健康状态。
+          enum: [healthy, degraded, offline]
+          example: healthy
+        pods_ready:
+          type: integer
+          description: 已就绪 Pod 数量。
+          example: 12
+        pods_total:
+          type: integer
+          description: Pod 总数。
+          example: 13
+        issues_count:
+          type: integer
+          description: 当前检测到的问题数量。
+          example: 1
+        nodes:
+          type: integer
+          description: 节点数量。
+          example: 3
+        namespaces:
+          type: integer
+          description: 命名空间数量。
+          example: 6
+        version:
+          type: string
+          description: Kubernetes 服务端版本。
+          example: v1.30.0
+        fingerprint:
+          type: string
+          description: 集群指纹，用于区分同名或重建后的集群。
+        last_updated:
+          type: integer
+          description: 最近更新时间戳，单位由后端采集实现决定。
+
+    ClusterIssue:
+      type: object
+      description: 集群中的 Pod 问题摘要。
+      properties:
+        severity:
+          type: string
+          description: 问题严重程度。
+          enum: [low, medium, high]
+          example: high
+        cluster:
+          type: string
+          description: 所属集群名称。
+          example: kind-a
+        pod:
+          type: string
+          description: Pod 名称。
+          example: nginx-7c79c4bf97-abcde
+        namespace:
+          type: string
+          description: Pod 所在命名空间。
+          example: default
+        status:
+          type: string
+          description: Pod 状态摘要，包含 phase、重启数和容器数。
+          example: Pending (3/1)
+        restarts:
+          type: integer
+          description: 容器累计重启次数。
+          example: 3
+        age:
+          type: string
+          description: Pod 已存在时长。
+          example: 5m30s
+
+    KubernetesEvent:
+      type: object
+      description: Kubernetes core/v1 Event。实际响应保留 Kubernetes 原始字段，本 schema 只列出常用字段。
+      additionalProperties: true
+      properties:
+        metadata:
+          type: object
+          description: Kubernetes 对象元数据。
+          additionalProperties: true
+        involvedObject:
+          type: object
+          description: 事件关联的 Kubernetes 对象引用。
+          additionalProperties: true
+        reason:
+          type: string
+          description: 事件原因。
+          example: Failed
+        message:
+          type: string
+          description: 事件详细消息。
+        type:
+          type: string
+          description: 事件类型，例如 Normal 或 Warning。
+          example: Warning
+        count:
+          type: integer
+          description: 事件出现次数。
+        firstTimestamp:
+          type: string
+          format: date-time
+          description: 首次出现时间。
+        lastTimestamp:
+          type: string
+          format: date-time
+          description: 最近出现时间。
+
+    DiagnosisStartRequest:
+      type: object
+      description: 启动诊断请求。
+      required: [cluster, namespace, pod]
+      properties:
+        cluster:
+          type: string
+          description: 目标集群名称。
+          example: kind-a
+        namespace:
+          type: string
+          description: 目标 Pod 所在命名空间。
+          example: default
+        pod:
+          type: string
+          description: 目标 Pod 名称。
+          example: nginx-7c79c4bf97-abcde
+
+    DiagnosisStartResponse:
+      type: object
+      description: 启动诊断响应。
+      properties:
+        diagnosis_id:
+          type: string
+          description: 新建诊断任务 ID。
+          example: diag_01HX7Z6QP3
+        status:
+          type: string
+          description: 任务初始状态。
+          example: running
+
+    DiagnosisCancelResponse:
+      type: object
+      description: 取消诊断响应。
+      properties:
+        status:
+          type: string
+          description: 取消状态。
+          example: cancelled
+        diagnosis_id:
+          type: string
+          description: 被取消的诊断任务 ID。
+
+    DiagnosisListResponse:
+      type: object
+      description: 诊断列表响应。
+      properties:
+        diagnoses:
+          type: array
+          description: 诊断任务数组。
+          items:
+            $ref: "#/components/schemas/Diagnosis"
+        total:
+          type: integer
+          description: 符合条件的诊断任务总数。
+          example: 42
+
+    DiagnosisStatusResponse:
+      type: object
+      description: 诊断详情响应。
+      properties:
+        diagnosis_id:
+          type: string
+          description: 诊断任务 ID。
+        status:
+          type: string
+          description: 当前诊断状态。
+          enum: [pending, running, completed, failed, cancelled]
+        created_at:
+          type: string
+          format: date-time
+          description: 诊断创建时间。
+        target:
+          $ref: "#/components/schemas/DiagnosisTarget"
+        events:
+          type: array
+          description: 已记录的诊断事件。
+          items:
+            $ref: "#/components/schemas/DiagnosisEventRecord"
+        result:
+          $ref: "#/components/schemas/DiagnosisResult"
+
+    Diagnosis:
+      type: object
+      description: 诊断任务摘要或持久化记录。
+      properties:
+        id:
+          type: string
+          description: 诊断任务 ID。
+        cluster_fingerprint:
+          type: string
+          description: 集群指纹。
+        cluster_display:
+          type: string
+          description: 面向用户展示的集群名称。
+        namespace:
+          type: string
+          description: 诊断目标命名空间。
+        pod:
+          type: string
+          description: 诊断目标 Pod。
+        status:
+          type: string
+          description: 诊断状态。
+          enum: [pending, running, completed, failed, cancelled]
+        report:
+          $ref: "#/components/schemas/DiagnosisResult"
+        root_cause:
+          type: string
+          description: 兼容旧客户端的根因摘要。
+        confidence:
+          type: string
+          description: 兼容旧客户端的置信度标签。
+        evidence:
+          type: array
+          description: 兼容旧客户端的证据列表。
+          items:
+            $ref: "#/components/schemas/DiagnosisEvidence"
+        fix_actions:
+          type: array
+          description: 兼容旧客户端的修复动作列表。
+          items:
+            $ref: "#/components/schemas/FixAction"
+        impact:
+          type: string
+          description: 兼容旧客户端的影响说明。
+        duration_ms:
+          type: integer
+          format: int64
+          description: 诊断耗时，单位毫秒。
+        created_at:
+          type: string
+          format: date-time
+          description: 诊断创建时间。
+
+    DiagnosisTarget:
+      type: object
+      description: 诊断目标对象。
+      properties:
+        cluster:
+          type: string
+          description: 集群指纹或内部集群标识。
+        cluster_display:
+          type: string
+          description: 面向用户展示的集群名称。
+        namespace:
+          type: string
+          description: Pod 所在命名空间。
+        pod:
+          type: string
+          description: Pod 名称。
+
+    DiagnosisEventRecord:
+      type: object
+      description: 诊断事件记录。
+      properties:
+        diagnosis_id:
+          type: string
+          description: 所属诊断任务 ID。
+        seq_num:
+          type: integer
+          description: 事件序号，递增并用于 SSE 断点续传。
+        event_type:
+          type: string
+          description: 事件类型。
+          example: phase
+        message:
+          type: string
+          description: 面向用户的事件消息。
+        summary:
+          type: string
+          description: 事件摘要。
+        detail:
+          type: string
+          description: 事件详细信息。
+        payload_kind:
+          type: string
+          description: 事件载荷类型。
+        payload_json:
+          type: string
+          description: JSON 字符串形式的事件载荷。
+        token_in:
+          type: integer
+          description: 本步骤输入 token 数。
+        token_out:
+          type: integer
+          description: 本步骤输出 token 数。
+        elapsed_ms:
+          type: integer
+          description: 本步骤耗时，单位毫秒。
+        created_at:
+          type: integer
+          format: int64
+          description: 事件创建时间戳。
+
+    DiagnosisResult:
+      type: object
+      description: 结构化诊断结果。
+      properties:
+        verdict:
+          type: string
+          description: 诊断结论可信程度。
+          enum: [confirmed, likely, inconclusive]
+        root_cause:
+          $ref: "#/components/schemas/RootCause"
+        evidence:
+          type: array
+          description: 支撑或反驳诊断结论的证据。
+          items:
+            $ref: "#/components/schemas/DiagnosisEvidence"
+        hypotheses:
+          type: array
+          description: 诊断过程中验证过的候选假设。
+          items:
+            $ref: "#/components/schemas/Hypothesis"
+        actions:
+          type: array
+          description: 建议执行的修复动作。
+          items:
+            $ref: "#/components/schemas/FixAction"
+        impact:
+          $ref: "#/components/schemas/Impact"
+        limitations:
+          type: array
+          description: 诊断限制或仍缺失的信息。
+          items:
+            type: string
+        enrichment:
+          $ref: "#/components/schemas/EnrichmentInfo"
+        markdown:
+          type: string
+          description: 适合直接展示的 Markdown 诊断报告。
+        duration_ms:
+          type: integer
+          format: int64
+          description: 诊断耗时，单位毫秒。
+
+    RootCause:
+      type: object
+      description: 根因分析结果。
+      properties:
+        category:
+          type: string
+          description: 根因类别。
+        title:
+          type: string
+          description: 根因标题。
+        confidence_score:
+          type: number
+          format: double
+          description: 置信度分数。
+        confidence_label:
+          type: string
+          description: 置信度标签。
+        summary:
+          type: string
+          description: 根因说明。
+
+    DiagnosisEvidence:
+      type: object
+      description: 诊断证据。
+      properties:
+        id:
+          type: string
+          description: 证据 ID。
+        source:
+          type: string
+          description: 证据来源，例如事件、日志、资源状态。
+        signal:
+          type: string
+          description: 证据信号名称。
+        strength:
+          type: string
+          description: 证据强度。
+        summary:
+          type: string
+          description: 证据摘要。
+        detail:
+          type: string
+          description: 证据详情。
+        raw_excerpt:
+          type: string
+          description: 原始内容摘录。
+        num:
+          type: integer
+          description: 兼容旧客户端的证据序号。
+        text:
+          type: string
+          description: 兼容旧客户端的证据文本。
+
+    Hypothesis:
+      type: object
+      description: 候选诊断假设。
+      properties:
+        id:
+          type: string
+          description: 假设 ID。
+        category:
+          type: string
+          description: 假设类别。
+        title:
+          type: string
+          description: 假设标题。
+        status:
+          type: string
+          description: 验证状态。
+        confidence_delta:
+          type: number
+          format: double
+          description: 该假设验证后带来的置信度变化。
+        supporting_evidence:
+          type: array
+          description: 支持该假设的证据 ID 列表。
+          items:
+            type: string
+        refuting_evidence:
+          type: array
+          description: 反驳该假设的证据 ID 列表。
+          items:
+            type: string
+        rationale:
+          type: string
+          description: 假设判断理由。
+
+    FixAction:
+      type: object
+      description: 修复建议动作。
+      properties:
+        priority:
+          type: string
+          description: 动作优先级。
+        type:
+          type: string
+          description: 动作类型。
+        description:
+          type: string
+          description: 修复动作说明。
+        command:
+          type: string
+          description: 可选的建议命令。
+        risk:
+          type: string
+          description: 执行动作可能带来的风险。
+
+    Impact:
+      type: object
+      description: 故障影响。
+      properties:
+        severity:
+          type: string
+          description: 影响严重程度。
+        description:
+          type: string
+          description: 影响说明。
+
+    EnrichmentInfo:
+      type: object
+      description: 诊断增强信息。
+      properties:
+        status:
+          type: string
+          description: 增强数据处理状态。
+        degraded_steps:
+          type: array
+          description: 降级处理的步骤列表。
+          items:
+            type: string
+        message:
+          type: string
+          description: 增强处理说明。
+
+    AuditStartRequest:
+      type: object
+      description: 启动审计请求。
+      required: [cluster]
+      properties:
+        cluster:
+          type: string
+          description: 目标集群名称。
+          example: kind-a
+
+    AuditStartResponse:
+      type: object
+      description: 启动审计响应。
+      properties:
+        audit_id:
+          type: string
+          description: 新建审计任务 ID。
+          example: audit_01HX7Z6QP3
+        status:
+          type: string
+          description: 任务初始状态。
+          example: running
+
+    AuditCancelResponse:
+      type: object
+      description: 取消审计响应。
+      properties:
+        status:
+          type: string
+          description: 取消状态。
+          example: cancelled
+        audit_id:
+          type: string
+          description: 被取消的审计任务 ID。
+
+    AuditListResponse:
+      type: object
+      description: 审计列表响应。
+      properties:
+        audits:
+          type: array
+          description: 审计任务数组。
+          items:
+            $ref: "#/components/schemas/Audit"
+        total:
+          type: integer
+          description: 符合条件的审计任务总数。
+          example: 18
+
+    AuditStatusResponse:
+      type: object
+      description: 审计详情响应。
+      properties:
+        audit_id:
+          type: string
+          description: 审计任务 ID。
+        status:
+          type: string
+          description: 当前审计状态。
+          enum: [running, completed, failed, cancelled]
+        created_at:
+          type: string
+          format: date-time
+          description: 审计创建时间。
+        target:
+          $ref: "#/components/schemas/AuditTarget"
+        events:
+          type: array
+          description: 已记录的审计事件。
+          items:
+            $ref: "#/components/schemas/AuditEventRecord"
+        result:
+          $ref: "#/components/schemas/AuditResult"
+        error_message:
+          type: string
+          description: 审计失败时的错误信息。
+
+    Audit:
+      type: object
+      description: 审计任务摘要或持久化记录。
+      properties:
+        id:
+          type: string
+          description: 审计任务 ID。
+        cluster_fingerprint:
+          type: string
+          description: 集群指纹。
+        cluster_display:
+          type: string
+          description: 面向用户展示的集群名称。
+        status:
+          type: string
+          description: 审计状态。
+          enum: [running, completed, failed, cancelled]
+        result:
+          $ref: "#/components/schemas/AuditResult"
+        error_message:
+          type: string
+          description: 审计失败时的错误信息。
+        duration_ms:
+          type: integer
+          format: int64
+          description: 审计耗时，单位毫秒。
+        created_at:
+          type: string
+          format: date-time
+          description: 审计创建时间。
+
+    AuditTarget:
+      type: object
+      description: 审计目标集群。
+      properties:
+        cluster:
+          type: string
+          description: 集群指纹或内部集群标识。
+        cluster_display:
+          type: string
+          description: 面向用户展示的集群名称。
+
+    AuditEventRecord:
+      type: object
+      description: 审计事件记录。
+      properties:
+        audit_id:
+          type: string
+          description: 所属审计任务 ID。
+        seq_num:
+          type: integer
+          description: 事件序号，递增并用于 SSE 断点续传。
+        event_type:
+          type: string
+          description: 事件类型。
+        message:
+          type: string
+          description: 面向用户的事件消息。
+        summary:
+          type: string
+          description: 事件摘要。
+        detail:
+          type: string
+          description: 事件详细信息。
+        payload_kind:
+          type: string
+          description: 事件载荷类型。
+        payload_json:
+          type: string
+          description: JSON 字符串形式的事件载荷。
+        elapsed_ms:
+          type: integer
+          description: 本步骤耗时，单位毫秒。
+        created_at:
+          type: integer
+          format: int64
+          description: 事件创建时间戳。
+
+    AuditResult:
+      type: object
+      description: 结构化安全审计结果。
+      properties:
+        findings:
+          type: array
+          description: 安全风险发现列表。
+          items:
+            $ref: "#/components/schemas/AuditFinding"
+        summary:
+          $ref: "#/components/schemas/AuditSummary"
+        markdown:
+          type: string
+          description: 适合直接展示的 Markdown 审计报告。
+        duration_ms:
+          type: integer
+          format: int64
+          description: 审计耗时，单位毫秒。
+
+    AuditFinding:
+      type: object
+      description: 安全审计风险发现。
+      properties:
+        severity:
+          type: string
+          description: 风险严重程度。
+          enum: [critical, high, medium, low]
+        category:
+          type: string
+          description: 风险类别。
+        resource:
+          type: string
+          description: 关联 Kubernetes 资源。
+        risk:
+          type: string
+          description: 风险描述。
+        impact:
+          type: string
+          description: 影响说明。
+        suggestion:
+          type: string
+          description: 修复或缓解建议。
+
+    AuditSummary:
+      type: object
+      description: 审计风险数量汇总。
+      properties:
+        total:
+          type: integer
+          description: 风险总数。
+        critical:
+          type: integer
+          description: 严重风险数量。
+        high:
+          type: integer
+          description: 高风险数量。
+        medium:
+          type: integer
+          description: 中风险数量。
+        low:
+          type: integer
+          description: 低风险数量。
+
+    Activity:
+      type: object
+      description: 活动流记录。
+      properties:
+        id:
+          type: string
+          description: 活动 ID。
+        type:
+          type: string
+          description: 活动类型。
+          enum: [diagnosis, cluster_switch, system]
+          example: diagnosis
+        text:
+          type: string
+          description: 活动展示文本。
+          example: 完成 default/nginx 的故障诊断。
+        cluster_display:
+          type: string
+          description: 关联集群展示名称。
+          example: kind-a
+        diagnosis_id:
+          type: string
+          description: 关联诊断任务 ID，仅诊断类活动可能存在。
+        created_at:
+          type: string
+          format: date-time
+          description: 活动创建时间。
