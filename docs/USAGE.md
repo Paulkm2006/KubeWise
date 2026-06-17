@@ -66,7 +66,7 @@ VITE_PROXY_TARGET=http://localhost:8080 npm run dev
 - 本地开发：`http://localhost:5173`
 
 <p align="center">
-  <img src="docs\assets\usage\first-time.png" alt="Web 控制台首页" width="800">
+  <img src="assets\usage\first-time.png" alt="Web 控制台首页" width="800">
 </p>
 
 <p align="center">
@@ -93,7 +93,7 @@ Dashboard 是 KubeWise 的默认首页，提供多集群的全局视角。
 ### 查看集群概览
 
 <p align="center">
-  <img src="docs/assets/readme/dashboard.png" alt="Dashboard 集群概览" width="800">
+  <img src="assets/readme/dashboard.png" alt="Dashboard 集群概览" width="800">
 </p>
 
 Dashboard 顶部展示以下关键指标：
@@ -116,7 +116,7 @@ Dashboard 下方的「问题 Pod」列表聚合了所有非正常状态的 Pod�
 - **显示关键信息**：Pod 名称、命名空间、状态、重启次数、所在节点
 
 <p align="center">
-  <img src="docs\assets\usage\error-pods.png" alt="异常 Pod 列表" width="800">
+  <img src="assets\usage\error-pods.png" alt="异常 Pod 列表" width="800">
 </p>
 
 <p align="center">
@@ -144,7 +144,7 @@ Pod 诊断是 KubeWise 的核心功能，通过多阶段证据采集和假设验
 诊断启动后，界面会自动跳转到诊断视图，实时展示诊断进度：
 
 <p align="center">
-  <img src="docs\assets\usage\diag-status.png" alt="诊断进度" width="800">
+  <img src="assets\usage\diag-status.png" alt="诊断进度" width="800">
 </p>
 
 <p align="center">
@@ -169,7 +169,7 @@ Pod 诊断是 KubeWise 的核心功能，通过多阶段证据采集和假设验
 诊断完成后，会展示结构化报告：
 
 <p align="center">
-  <img src="docs/assets/readme/diagnosis-report.png" alt="诊断报告" width="600">
+  <img src="assets/readme/diagnosis-report.png" alt="诊断报告" width="600">
 </p>
 
 报告包含以下部分：
@@ -200,7 +200,7 @@ Pod 诊断是 KubeWise 的核心功能，通过多阶段证据采集和假设验
 3. 点击「开始审计」按钮
 
 <p align="center">
-  <img src="docs\assets\usage\sec-audit.png" alt="安全审计页面" width="800">
+  <img src="assets\usage\sec-audit.png" alt="安全审计页面" width="800">
 </p>
 
 **方式二：Chat 对话**
@@ -239,7 +239,7 @@ Pod 诊断是 KubeWise 的核心功能，通过多阶段证据采集和假设验
 Chat 标签页提供自然语言交互界面，支持五种意图类型的操作。
 
 <p align="center">
-  <img src="docs\assets\usage\chat.png" alt="Chat 对话界面" width="800">
+  <img src="assets\usage\chat.png" alt="Chat 对话界面" width="800">
 </p>
 
 <p align="center">
@@ -294,7 +294,7 @@ default 命名空间的 nginx-pod 为什么一直重启？
 当你请求执行写操作（扩缩容、重启、删除、apply、部署）时，KubeWise 不会直接执行，而是进入确认流程：
 
 <p align="center">
-  <img src="docs\assets\usage\exec-confirm.png" alt="操作确认" width="600">
+  <img src="assets\usage\exec-confirm.png" alt="操作确认" width="600">
 </p>
 
 <p align="center">
@@ -352,7 +352,7 @@ kubewise tui
 ```
 
 <p align="center">
-  <img src="docs\assets\readme\tui.png" alt="TUI 界面" width="700">
+  <img src="assets\readme\tui.png" alt="TUI 界面" width="700">
 </p>
 
 ### TUI 常用操作
